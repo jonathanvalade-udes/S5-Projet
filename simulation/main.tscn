@@ -1,4 +1,4 @@
-[gd_scene load_steps=14 format=3 uid="uid://bk5l7umgip4v5"]
+[gd_scene load_steps=15 format=3 uid="uid://bk5l7umgip4v5"]
 
 [ext_resource type="Script" uid="uid://tq58jihq45r4" path="res://scripts/main.gd" id="1_eka3w"]
 [ext_resource type="Script" uid="uid://xfwg5cs2hgt0" path="res://addons/finite_state_machine/scripts/finite_state_machine.gd" id="2_wl1fq"]
@@ -7,6 +7,7 @@
 [ext_resource type="Script" uid="uid://bxh02m00uaty3" path="res://scripts/fsm/NetworkConnectingState.gd" id="5_itktg"]
 [ext_resource type="Script" uid="uid://bc4g0fv1b3qge" path="res://scripts/fsm/NetworkProcessState.gd" id="6_017ts"]
 [ext_resource type="PackedScene" uid="uid://xroxh5wjbwp6" path="res://line_follower_sensor.tscn" id="9_a0528"]
+[ext_resource type="Script" path="res://scripts/ball_monitor.gd" id="10_bmon"]
 
 [sub_resource type="GDScript" id="GDScript_d2gei"]
 
@@ -110,6 +111,7 @@ size = Vector3(0.1, 0.1, 0.1)
 [node name="Bille" type="RigidBody3D" parent="."]
 transform = Transform3D(1, 0, -4.47035e-08, 0, 1, 0, 4.47035e-08, 0, 1, 1.99787, 0.205514, -0.300465)
 mass = 0.1
+script = ExtResource("10_bmon")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Bille"]
 transform = Transform3D(0.1, 0, 0, 0, 0.1, 0, 0, 0, 0.1, 0, 0, 0)

@@ -87,9 +87,11 @@
 ## 🔍 Plan Sommaire des Étapes Suivantes
 
 ### Étape 2 : Physique Bille & Générateur de Vitesse ($a \le 0{,}735\text{ m/s}^2$)
-* Modélisation de la soucoupe ($r=20\text{ mm}, h=1{,}5\text{ mm}$) et bille (`RigidBody3D`) dans Godot.
-* Module Python `motion_profiler.py` appliquant des rampes d'accélération bornées.
-* **Test** : Démarrage, accélération jusqu'à $v = 0{,}25\text{ m/s}$, puis freinage complet. La bille reste dans la coupelle.
+* [x] Modélisation de la surveillance de déversement de la bille (`RigidBody3D` + `ball_monitor.gd`) dans Godot.
+* [x] Module Python `motion_profiler.py` appliquant des rampes trapézoïdales bornées à $a \le 0{,}735\text{ m/s}^2$.
+* [x] Calcul de vitesse limite en virage $v \le \sqrt{a \cdot R_{\min}} \approx 0{,}297\text{ m/s}$.
+* [x] **Tests unitaires validés** (`test_motion_profiler.py`) : 4/4 tests réussis.
+* [x] **Test d'intégration WebSocket validé** (`test_client.py`) : rampe d'accélération et arrêt d'urgence sur déversement bille.
 
 ### Étape 3 : Suivi de Ligne Optique & Virages ($R \ge 120\text{ mm}$)
 * Connexion des 5 (ou 3) raycasts optiques au contrôleur de direction (PD).

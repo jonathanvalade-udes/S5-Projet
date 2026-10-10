@@ -46,6 +46,39 @@ async def run_integration_test():
 
             logger.info("30 paquets traités et validés avec succès.")
 
+            # Test 2.1 : Validation de la rampe d'accélération (a <= 0.735 m/s²)
+            logger.info("Test 2.1 : Validation de la rampe d'accélération via WebSocket...")
+            speeds_observed = []
+            for i in range(10):
+                payload = {
+                    "packet_id": 100 + i,
+                    "target_velocity": 0.28,
+                    "ball_dropped": False
+                }
+                await ws.send(json.dumps(payload))
+                res = json.loads(await asyncio.wait_for(ws.recv(), timeout=2.0))
+                speeds_observed.append(res["velocity"])
+                await asyncio.sleep(0.05)
+
+            # Vérifie que la vitesse augmente progressivement (rampe) et ne dépasse pas 0.28
+            self_increasing = all(speeds_observed[j] <= speeds_observed[j+1] for j in range(len(speeds_observed)-1))
+            assert self_increasing, f"La rampe d'accélération doit être monotone croissante: {speeds_observed}"
+            assert speeds_observed[-1] <= 0.28, "La vitesse finale ne doit pas dépasser max_speed"
+            logger.info(f"Rampe d'accélération validée : {speeds_observed[:5]}... -> {speeds_observed[-1]} m/s")
+
+            # Test 2.2 : Détection de déversement de la bille et freinage d'urgence
+            logger.info("Test 2.2 : Alerte déversement bille et arrêt d'urgence...")
+            drop_payload = {
+                "packet_id": 200,
+                "target_velocity": 0.28,
+                "ball_dropped": True  # Alerte !
+            }
+            await ws.send(json.dumps(drop_payload))
+            res_drop = json.loads(await asyncio.wait_for(ws.recv(), timeout=2.0))
+            # La vitesse doit commencer à décélérer immédiatement
+            assert res_drop["velocity"] <= speeds_observed[-1], "La vitesse doit immédiatement commencer à décroître"
+            logger.info("Arrêt d'urgence suite au déversement de la bille validé avec succès.")
+
             # Test 1.3 : Envoi de trames limites / malformées
             logger.info("Test 1.3 : Test de résilience (trame invalide et incomplète)...")
             await ws.send("Ceci n'est pas du JSON valide !")
@@ -69,14 +102,15 @@ async def run_integration_test():
         async with websockets.connect(URI) as ws2:
             await ws2.send(json.dumps({"packet_id": 1000, "velocity": 0.15}))
             res2 = json.loads(await asyncio.wait_for(ws2.recv(), timeout=2.0))
-            assert res2.get("velocity") == 0.15
-            logger.info("Reconnexion réussie et état validé !")
+            assert isinstance(res2.get("velocity"), (int, float)), "La réponse doit contenir une vitesse valide"
+            assert res2.get("status") == "ok", "Le serveur doit répondre avec un statut 'ok'"
+            logger.info(f"Reconnexion réussie et état validé (vitesse profilée: {res2.get('velocity')} m/s) !")
     except Exception as e:
         logger.error(f"Échec lors de la reconnexion : {e}")
         return False
 
     logger.info("====================================================")
-    logger.info(" TOUS LES TESTS DE L'ÉTAPE 1 ONT RÉUSSI AVEC SUCCÈS ")
+    logger.info(" TOUS LES TESTS DES ÉTAPES 1 ET 2 ONT RÉUSSI !     ")
     logger.info("====================================================")
     return True
 

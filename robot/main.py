@@ -12,6 +12,8 @@ import sys
 from websockets.server import serve
 from websockets.exceptions import ConnectionClosed
 
+from motion_profiler import MotionProfiler
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] (%(name)s) %(message)s",
@@ -24,13 +26,15 @@ DEFAULT_STATE = {
     "distance": 100.0,
     "line_follower": [0, 0, 1, 0, 0],
     "velocity": 0.0,
-    "direction": 0.0
+    "direction": 0.0,
+    "ball_dropped": false if "false" == "true" else False
 }
 
 
 class WebSocketBridge:
     def __init__(self):
         self.state = dict(DEFAULT_STATE)
+        self.profiler = MotionProfiler(max_accel=0.735, max_speed=0.28)
         self.packet_count = 0
         self.active_clients = set()
 
@@ -68,11 +72,33 @@ class WebSocketBridge:
                     lf = data["line_follower"]
                     self.state["line_follower"] = [int(v) for v in lf[:5]] + [0] * max(0, 5 - len(lf))
 
-                if "velocity" in data:
-                    try:
-                        self.state["velocity"] = float(data["velocity"])
-                    except (ValueError, TypeError):
-                        pass
+                # Surveillance de la bille
+                if "ball_dropped" in data:
+                    is_dropped = bool(data["ball_dropped"])
+                    if is_dropped and not self.state.get("ball_dropped", False):
+                        logger.warning("ALERTE : Déversement détecté ! La bille est tombée de la coupelle !")
+                    self.state["ball_dropped"] = is_dropped
+
+                # Profilage de vitesse trapézoïdal (a <= 0.735 m/s²)
+                target_vel = 0.0
+                if not self.state.get("ball_dropped", False):
+                    if "target_velocity" in data:
+                        try:
+                            target_vel = float(data["target_velocity"])
+                        except (ValueError, TypeError):
+                            target_vel = 0.0
+                    elif "velocity" in data:
+                        try:
+                            target_vel = float(data["velocity"])
+                        except (ValueError, TypeError):
+                            target_vel = 0.0
+                    else:
+                        target_vel = self.state["velocity"]
+                else:
+                    target_vel = 0.0  # Arrêt immédiat si la bille est tombée
+
+                # Calcul de la vitesse réelle lissée selon a_max
+                self.state["velocity"] = round(self.profiler.update(target_vel), 4)
 
                 if "direction" in data:
                     try:

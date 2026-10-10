@@ -47,17 +47,20 @@ func _process(delta):
 		
 	
 	# If websocket connection
-	if nfsm.current_state == $"../NetworkFSM/NetworkProcessState" :
-		#print(nfsm.data_received['line_follower'])
-		nfsm.data_to_send["velocity"] = speed
-		nfsm.data_to_send["direction"] = steer_dir
+	if nfsm.current_state == $"../NetworkFSM/NetworkProcessState":
+		var rx_speed = nfsm.data_received.get("velocity", speed)
+		var rx_steer = nfsm.data_received.get("direction", steer_dir)
+		translate(Vector3(-rx_speed * acceleration, 0, 0))
+		rotate_y(-rx_steer * rot_acceleration)
 		
+		# Feedback télémesure vers Python
+		nfsm.data_to_send["velocity"] = rx_speed
+		nfsm.data_to_send["direction"] = rx_steer
 		lfs_simulated_ignored = true
 	else:
 		if steer_dir != turn_angle_big:
 			translate(Vector3(-speed * acceleration, 0, 0))
 		rotate_y(-steer_dir * rot_acceleration)
-		
 		lfs_simulated_ignored = false
 
 func _physics_process(delta):
