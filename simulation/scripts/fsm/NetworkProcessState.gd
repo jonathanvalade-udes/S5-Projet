@@ -20,10 +20,13 @@ func on_process(delta: float) -> void:
 
 		# Received packets and process them
 		while get_parent().socket.get_available_packet_count():
-			get_parent().data_received = JSON.parse_string(get_parent().socket.get_packet().get_string_from_utf8())
-			print(get_parent().data_received)
-			if get_parent().data_received == null:
-				print("Error while parsing received string")
+			var raw_packet = get_parent().socket.get_packet().get_string_from_utf8()
+			var parsed_data = JSON.parse_string(raw_packet)
+			if parsed_data is Dictionary:
+				for key in parsed_data.keys():
+					get_parent().data_received[key] = parsed_data[key]
+			else:
+				print("Error while parsing received string or non-dictionary payload")
 
 		# Send current data to send JSON packet every 50ms ish
 		if test > 0.05:

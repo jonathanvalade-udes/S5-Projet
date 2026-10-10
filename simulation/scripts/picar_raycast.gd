@@ -36,7 +36,8 @@ func _ready():
 func _process(delta):
 	car_speed(delta)
 	
-	if nfsm.data_received['distance'] < 30 && nfsm.data_received['distance'] > 20:
+	var current_dist = nfsm.data_received.get('distance', 100.0)
+	if current_dist < 30 && current_dist > 20:
 		wall_avoidance = true
 		
 	if wall_avoidance:
