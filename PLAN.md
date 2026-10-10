@@ -94,9 +94,12 @@
 * [x] **Test d'intégration WebSocket validé** (`test_client.py`) : rampe d'accélération et arrêt d'urgence sur déversement bille.
 
 ### Étape 3 : Suivi de Ligne Optique & Virages ($R \ge 120\text{ mm}$)
-* Connexion des 5 (ou 3) raycasts optiques au contrôleur de direction (PD).
-* Calcul et bridage automatique de la vitesse en virage ($v \le 0{,}297\text{ m/s}$).
-* **Test** : 3 tours consécutifs du circuit fermé Godot en autonomie totale.
+* [x] Contrôleur PD unifié en Python (`line_follower.py`) avec calcul d'erreur barycentrique.
+* [x] Modulation automatique de vitesse en virage ($v \le 0{,}16\text{ m/s}$) sous la limite critique centrifuge ($0{,}297\text{ m/s}$).
+* [x] Mémoire de trajectoire anti-décrochage lors de pertes momentanées de ligne.
+* [x] Intégration du circuit officiel $2\text{ m} \times 2\text{ m}$ (`parcours.blend`) dans `main.tscn`.
+* [x] **Tests unitaires validés** (`test_line_follower.py`) : 6/6 tests réussis.
+* [x] **Test d'intégration WebSocket validé** (`test_client.py`) : asservissement optique et régulation de virage.
 
 ### Étape 4 : Capteur Ultrasons, Filtrage Numérique & Arrêt $\pm 30\text{ mm}$
 * Module de filtrage (médian + moyenne mobile EMA) pour rejeter le bruit ultrasons.
