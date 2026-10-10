@@ -9,7 +9,7 @@ func _ready():
 	NetworkIPAddrRegex.compile(r'^((25[0-5]|(2[0-4]|1\d|[1-9]|)\d)(\.(?!$)|$)){4}$')
 	#get_node("NetworkFSM").current_state = $NetworkFSM/NetworkInitState
 # Called every frame. 'delta' is the elapsed time since the previous frame.
-func _process(delta):
+func _process(_delta):
 	pass
 
 # Signals functions

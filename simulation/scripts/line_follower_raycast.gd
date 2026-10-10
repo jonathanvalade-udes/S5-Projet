@@ -8,7 +8,7 @@ func _ready():
 	pass # Replace with function body.
 
 # Called every frame. 'delta' is the elapsed time since the previous frame.
-func _process(delta):
+func _process(_delta):
 	pass
 
 func _on_body_shape_entered(body_rid, body, body_shape_index, local_shape_index):	
@@ -22,5 +22,5 @@ func _on_body_shape_exited(body_rid, body, body_shape_index, local_shape_index):
 		line_follower_array[local_shape_index] = 0
 
 
-func _on_area_exited(area: Area3D) -> void:
+func _on_area_exited(_area: Area3D) -> void:
 	pass # Replace with function body.
