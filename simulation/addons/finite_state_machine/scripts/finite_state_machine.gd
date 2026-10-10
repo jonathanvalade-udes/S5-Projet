@@ -3,8 +3,9 @@ class_name FiniteStateMachine
 extends Node
 
 var socket = WebSocketPeer.new()
-var data_to_send = {"velocity": 0.0,"direction": 0.0}
+var data_to_send = {"velocity": 0.0}
 var data_received = {"distance": 0, "line_follower": [0,0,0,0,0]}
+
 
 ## Node that represents an implementation of the finite state machine pattern.
 ## Nodes that represent states need to be added as children of this node.

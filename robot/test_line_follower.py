@@ -54,8 +54,9 @@ class TestLineFollowerController(unittest.TestCase):
         # 1. Enregistrer le début de perte de ligne
         self.controller.update([0, 0, 0, 0, 0], dt=0.05)
         
-        # 2. Attendre que le timeout soit dépassé (0.4 s > 0.35 s)
-        time.sleep(0.40)
+        # 2. Attendre que le timeout soit dépassé
+        time.sleep(self.controller.LINE_LOSS_TIMEOUT + 0.05)
+
         
         # 3. La seconde mise à jour doit déclencher l'arrêt sécuritaire
         steer_stop, speed_stop = self.controller.update([0, 0, 0, 0, 0], dt=0.05)

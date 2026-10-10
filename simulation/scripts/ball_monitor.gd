@@ -32,22 +32,25 @@ func _physics_process(delta):
 		_notify_fsm(true)
 		return
 
-	# La bille est tombée si elle s'écarte de plus de 10 cm en X/Z du support
-	# ou si sa hauteur chute en dessous du plan de la coupelle
-	var delta_xz = Vector2(global_position.x - initial_position.x, global_position.z - initial_position.z).length()
-	var delta_y = initial_position.y - global_position.y
+	# La position relative par rapport au parent
+	var local_pos = position
+	var delta_xz = Vector2(local_pos.x, local_pos.z).length()
+	var delta_y = abs(local_pos.y - 0.138)
 
-	# Seuil de déversement : sortie de cuvette (> 0.08 m) ou chute verticale (> 0.05 m)
-	if delta_xz > 0.08 or delta_y > 0.05:
+	# Seuil de déversement : sortie de cuvette (> 0.025 m) ou chute verticale (> 0.015 m)
+	if delta_xz > 0.025 or delta_y > 0.02:
 		is_dropped = true
 		emit_signal("ball_dropped_event", global_position)
-		print("[ALERTE FastDrink] La bille est tombée ! Déversement du breuvage à la position: ", global_position)
+		print("[ALERTE FastDrink] La bille est tombée ! Déversement du breuvage à: ", global_position)
 		_notify_fsm(true)
 	else:
 		_notify_fsm(false)
 
 
+
+
 func _notify_fsm(dropped_state: bool):
-	var nfsm = get_node_or_null("../NetworkFSM")
+	var nfsm = get_node_or_null("/root/Main/NetworkFSM")
 	if nfsm and ("data_to_send" in nfsm):
 		nfsm.data_to_send["ball_dropped"] = dropped_state
+

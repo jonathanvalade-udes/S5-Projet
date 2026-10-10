@@ -18,16 +18,17 @@ class LineFollowerController:
     SENSOR_WEIGHTS = [-2.0, -1.0, 0.0, 1.0, 2.0]
 
     # Paramètres d'asservissement PD de direction
-    DEFAULT_KP: float = 0.45
-    DEFAULT_KD: float = 0.15
+    DEFAULT_KP: float = 0.65
+    DEFAULT_KD: float = 0.20
 
     # Vitesses de référence (m/s)
-    CRUISE_SPEED: float = 0.26  # Vitesse nominale en ligne droite
-    MIN_CURVE_SPEED: float = 0.15  # Vitesse sécuritaire en virage serré (R = 120 mm)
-    SPEED_REDUCTION_GAIN: float = 0.06  # Ralentissement proportionnel à la courbure
+    CRUISE_SPEED: float = 0.22  # Vitesse nominale en ligne droite
+    MIN_CURVE_SPEED: float = 0.10  # Vitesse sécuritaire en virage serré (R = 120 mm)
+    SPEED_REDUCTION_GAIN: float = 0.08  # Ralentissement proportionnel à la courbure
 
     # Temps maximal de maintien de la dernière direction en cas de perte de ligne (secondes)
-    LINE_LOSS_TIMEOUT: float = 0.35
+    LINE_LOSS_TIMEOUT: float = 1.20
+
 
     def __init__(self, kp: float = DEFAULT_KP, kd: float = DEFAULT_KD):
         self.kp = kp
@@ -87,6 +88,12 @@ class LineFollowerController:
         self.last_time = now
 
         error = self.compute_barycentric_error(sensor_array)
+
+        # Cas 0 : Détection de la barre d'arrêt terminale en T (au moins 4 capteurs actifs)
+        active_count = sum(1 for s in sensor_array if s == 1)
+        if active_count >= 4:
+            # Ligne d'arrivée atteinte
+            return 0.0, 0.0
 
         # Cas 1 : Ligne détectée par au moins un capteur
         if error is not None:

@@ -28,10 +28,9 @@ func on_process(delta: float) -> void:
 			else:
 				print("Error while parsing received string or non-dictionary payload")
 
-		# Send current data to send JSON packet every 50ms ish
-		if test > 0.05:
+		# Send current data to send JSON packet at 50Hz (every 20ms) for snappy reactive steering
+		if test >= 0.02:
 			var json_data = JSON.stringify(get_parent().data_to_send).to_utf8_buffer()
-			#print(json_data)
 			get_parent().socket.send(json_data)
 			test = 0
 		else:

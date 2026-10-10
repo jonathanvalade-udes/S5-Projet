@@ -7,7 +7,18 @@ var NetworkIPAddrRegex = RegEx.new()
 # Called when the node enters the scene tree for the first time.
 func _ready():
 	NetworkIPAddrRegex.compile(r'^((25[0-5]|(2[0-4]|1\d|[1-9]|)\d)(\.(?!$)|$)){4}$')
-	#get_node("NetworkFSM").current_state = $NetworkFSM/NetworkInitState
+	# Configure CircuitParcours static body to collision layer 2 (Optical line sensor mask)
+	var circuit = get_node_or_null("CircuitParcours")
+	if circuit:
+		_set_collision_layer_recursive(circuit, 2)
+
+func _set_collision_layer_recursive(node: Node, layer: int) -> void:
+	if node is StaticBody3D:
+		node.collision_layer = layer
+		node.collision_mask = layer
+	for child in node.get_children():
+		_set_collision_layer_recursive(child, layer)
+
 # Called every frame. 'delta' is the elapsed time since the previous frame.
 func _process(_delta):
 	pass

@@ -27,9 +27,12 @@ const low_speed = 0.05	# Speed is float from 0.0 to 1.0
 
 # Called when the node enters the scene tree for the first time.
 func _ready():
-	ray = get_node("RayCast3D")
-	lfs = $line_follower_sensor.get_child(0)
-	nfsm = $"../NetworkFSM"
+	ray = get_node_or_null("RayCast3D")
+	var lfs_node = get_node_or_null("line_follower_sensor")
+	if lfs_node and lfs_node.get_child_count() > 0:
+		lfs = lfs_node.get_child(0)
+	nfsm = get_node_or_null("/root/Main/NetworkFSM")
+
 
 
 # Called every frame. 'delta' is the elapsed time since the previous frame.
@@ -50,18 +53,28 @@ func _process(delta):
 	if nfsm.current_state == $"../NetworkFSM/NetworkProcessState":
 		var rx_speed = nfsm.data_received.get("velocity", speed)
 		var rx_steer = nfsm.data_received.get("direction", steer_dir)
-		translate(Vector3(-rx_speed * acceleration, 0, 0))
-		rotate_y(-rx_steer * rot_acceleration)
 		
-		# Feedback télémesure vers Python
+		# Vraie cinématique métrique unifiée S10 (m/s et rad/s liés à delta)
+		# Empattement PiCar L ≈ 0.14 m, angle max roues ≈ 48° (R_min ≈ 126 mm, conforme S3)
+		var steer_rad = rx_steer * deg_to_rad(48.0)
+		var angular_velocity = (rx_speed / 0.14) * tan(steer_rad)
+		
+		translate(Vector3(-rx_speed * delta, 0, 0))
+		rotate_y(angular_velocity * delta)
+
+		
+		# Feedback télémesure vers Python (seulement la vitesse mesurée, la direction est décidée par Python)
 		nfsm.data_to_send["velocity"] = rx_speed
-		nfsm.data_to_send["direction"] = rx_steer
+		if "direction" in nfsm.data_to_send:
+			nfsm.data_to_send.erase("direction")
 		lfs_simulated_ignored = true
+
 	else:
 		if steer_dir != turn_angle_big:
-			translate(Vector3(-speed * acceleration, 0, 0))
-		rotate_y(-steer_dir * rot_acceleration)
+			translate(Vector3(-speed * delta, 0, 0))
+		rotate_y(-steer_dir * delta * 2.0)
 		lfs_simulated_ignored = false
+
 
 func _physics_process(delta):
 	#pass
