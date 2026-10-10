@@ -29,6 +29,7 @@ mono_crash.*.json
 *.blend2
 **/*.blend1
 **/*.blend2
+robot_server.log
 
 # ==========================================
 # Python (Robot)
