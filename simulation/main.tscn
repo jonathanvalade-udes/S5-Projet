@@ -1,4 +1,4 @@
-[gd_scene load_steps=15 format=3 uid="uid://bk5l7umgip4v5"]
+[gd_scene load_steps=16 format=3 uid="uid://bk5l7umgip4v5"]
 
 [ext_resource type="Script" uid="uid://tq58jihq45r4" path="res://scripts/main.gd" id="1_eka3w"]
 [ext_resource type="Script" uid="uid://xfwg5cs2hgt0" path="res://addons/finite_state_machine/scripts/finite_state_machine.gd" id="2_wl1fq"]
@@ -8,6 +8,7 @@
 [ext_resource type="Script" uid="uid://bc4g0fv1b3qge" path="res://scripts/fsm/NetworkProcessState.gd" id="6_017ts"]
 [ext_resource type="PackedScene" uid="uid://xroxh5wjbwp6" path="res://line_follower_sensor.tscn" id="9_a0528"]
 [ext_resource type="Script" path="res://scripts/ball_monitor.gd" id="10_bmon"]
+[ext_resource type="PackedScene" uid="uid://d1snkvvda4vrh" path="res://assets/plaquette_blender_scale.blend" id="11_plaq"]
 
 [sub_resource type="GDScript" id="GDScript_d2gei"]
 
@@ -104,9 +105,8 @@ text = "Connect"
 layout_mode = 2
 text = "Quit"
 
-[node name="CSGBox3D" type="CSGBox3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.33023, 0.0713751, 0.100219)
-size = Vector3(0.1, 0.1, 0.1)
+[node name="PlaquetteSupport" parent="." instance=ExtResource("11_plaq")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.99787, 0.15, -0.300465)
 
 [node name="Bille" type="RigidBody3D" parent="."]
 transform = Transform3D(1, 0, -4.47035e-08, 0, 1, 0, 4.47035e-08, 0, 1, 1.99787, 0.205514, -0.300465)
