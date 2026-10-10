@@ -35,8 +35,8 @@ func on_process(delta: float) -> void:
 			test = 0
 		else:
 			test += delta
-	elif state == WebSocketPeer.STATE_CLOSING || WebSocketPeer.STATE_CLOSING:
-		get_parent().current_state = $"../NetworkDisconnectingState"
+	elif state == WebSocketPeer.STATE_CLOSING or state == WebSocketPeer.STATE_CLOSED:
+		get_parent().current_state = null
 
 
 # Called every physics frame when this state is active.

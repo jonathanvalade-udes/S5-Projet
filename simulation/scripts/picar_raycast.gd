@@ -37,43 +37,30 @@ func _ready():
 
 # Called every frame. 'delta' is the elapsed time since the previous frame.
 func _process(delta):
-	car_speed(delta)
-	
-	var current_dist = nfsm.data_received.get('distance', 100.0)
-	if current_dist < 30 && current_dist > 20:
-		wall_avoidance = true
-		
-	if wall_avoidance:
-		wall_avoidance_loop(delta)	
-	else:
-		line_follower_car_angle(delta)
-		
-	
-	# If websocket connection
-	if nfsm.current_state == $"../NetworkFSM/NetworkProcessState":
-		var rx_speed = nfsm.data_received.get("velocity", speed)
-		var rx_steer = nfsm.data_received.get("direction", steer_dir)
-		
-		# Vraie cinématique métrique unifiée S10 (m/s et rad/s liés à delta)
-		# Empattement PiCar L ≈ 0.14 m, angle max roues ≈ 48° (R_min ≈ 126 mm, conforme S3)
-		var steer_rad = rx_steer * deg_to_rad(48.0)
-		var angular_velocity = (rx_speed / 0.14) * tan(steer_rad)
-		
-		translate(Vector3(-rx_speed * delta, 0, 0))
-		rotate_y(angular_velocity * delta)
-
-		
-		# Feedback télémesure vers Python (seulement la vitesse mesurée, la direction est décidée par Python)
-		nfsm.data_to_send["velocity"] = rx_speed
-		if "direction" in nfsm.data_to_send:
-			nfsm.data_to_send.erase("direction")
-		lfs_simulated_ignored = true
-
-	else:
-		if steer_dir != turn_angle_big:
-			translate(Vector3(-speed * delta, 0, 0))
-		rotate_y(-steer_dir * delta * 2.0)
+	# Si pas connecté au serveur WebSocket Python, la voiture RESTE STRICTEMENT IMMOBILE
+	if nfsm == null or nfsm.current_state != $"../NetworkFSM/NetworkProcessState":
+		speed = 0.0
+		steer_dir = 0.0
 		lfs_simulated_ignored = false
+		return
+
+	# Mode connecté : cinématique pilotée exclusivement par Python
+	var rx_speed = nfsm.data_received.get("velocity", 0.0)
+	var rx_steer = nfsm.data_received.get("direction", 0.0)
+	
+	# Vraie cinématique métrique unifiée S10 (m/s et rad/s liés à delta)
+	# Empattement PiCar L ≈ 0.14 m, angle max roues ≈ 48° (R_min ≈ 126 mm, conforme S3)
+	var steer_rad = rx_steer * deg_to_rad(48.0)
+	var angular_velocity = (rx_speed / 0.14) * tan(steer_rad)
+	
+	translate(Vector3(-rx_speed * delta, 0, 0))
+	rotate_y(angular_velocity * delta)
+	
+	# Feedback télémesure vers Python
+	nfsm.data_to_send["velocity"] = rx_speed
+	if "direction" in nfsm.data_to_send:
+		nfsm.data_to_send.erase("direction")
+	lfs_simulated_ignored = true
 
 
 func _physics_process(delta):
@@ -184,8 +171,6 @@ func line_follower_car_angle(delta):
 	
 	
 	if len(dir_buf) > 15:
-		print("Here")
-		print(dir_buf)
 		dir_buf.pop_front()
 		dir_buf.append(temp_dir)
 	else:
