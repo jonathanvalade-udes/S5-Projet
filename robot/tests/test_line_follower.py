@@ -6,6 +6,10 @@ Vérifie le calcul d'erreur barycentrique, l'asservissement PD, le ralentissemen
 
 import time
 import unittest
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from line_follower import LineFollowerController
 
 

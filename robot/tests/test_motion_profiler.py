@@ -6,6 +6,10 @@ Vérifie qu'aucun pas temporel ne viole le seuil critique a <= 0.735 m/s².
 
 import math
 import unittest
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from motion_profiler import MotionProfiler
 
 
