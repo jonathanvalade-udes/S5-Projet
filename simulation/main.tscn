@@ -1,4 +1,4 @@
-[gd_scene load_steps=16 format=3 uid="uid://bk5l7umgip4v5"]
+[gd_scene format=3 uid="uid://bk5l7umgip4v5"]
 
 [ext_resource type="Script" uid="uid://tq58jihq45r4" path="res://scripts/main.gd" id="1_eka3w"]
 [ext_resource type="Script" uid="uid://xfwg5cs2hgt0" path="res://addons/finite_state_machine/scripts/finite_state_machine.gd" id="2_wl1fq"]
@@ -7,7 +7,7 @@
 [ext_resource type="Script" uid="uid://bxh02m00uaty3" path="res://scripts/fsm/NetworkConnectingState.gd" id="5_itktg"]
 [ext_resource type="Script" uid="uid://bc4g0fv1b3qge" path="res://scripts/fsm/NetworkProcessState.gd" id="6_017ts"]
 [ext_resource type="PackedScene" uid="uid://xroxh5wjbwp6" path="res://line_follower_sensor.tscn" id="9_a0528"]
-[ext_resource type="Script" path="res://scripts/ball_monitor.gd" id="10_bmon"]
+[ext_resource type="Script" uid="uid://yia7brf1mnk5" path="res://scripts/ball_monitor.gd" id="10_bmon"]
 [ext_resource type="PackedScene" uid="uid://d1snkvvda4vrh" path="res://assets/plaquette_blender_scale.blend" id="11_plaq"]
 
 [sub_resource type="GDScript" id="GDScript_d2gei"]
@@ -30,94 +30,104 @@ sky = SubResource("Sky_nfout")
 
 [sub_resource type="SphereShape3D" id="SphereShape3D_iys2i"]
 
-[node name="Main" type="Node3D"]
+[sub_resource type="BoxShape3D" id="BoxShape3D_plaq"]
+size = Vector3(0.5, 0.04, 0.5)
+
+[node name="Main" type="Node3D" unique_id=601723906]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0100098, 0.0284071, -0.0135775)
 script = ExtResource("1_eka3w")
 
-[node name="NetworkFSM" type="Node" parent="." node_paths=PackedStringArray("current_state")]
+[node name="NetworkFSM" type="Node" parent="." unique_id=1334670366 node_paths=PackedStringArray("current_state")]
 script = ExtResource("2_wl1fq")
 current_state = NodePath("NetworkWaitingState")
 
-[node name="NetworkInitState" type="Node" parent="NetworkFSM"]
+[node name="NetworkInitState" type="Node" parent="NetworkFSM" unique_id=1162554007]
 script = ExtResource("3_lglb8")
 
-[node name="NetworkWaitingState" type="Node" parent="NetworkFSM"]
+[node name="NetworkWaitingState" type="Node" parent="NetworkFSM" unique_id=409881363]
 script = ExtResource("4_s7v0d")
 
-[node name="NetworkConnectingState" type="Node" parent="NetworkFSM"]
+[node name="NetworkConnectingState" type="Node" parent="NetworkFSM" unique_id=1611647086]
 script = ExtResource("5_itktg")
 
-[node name="NetworkProcessState" type="Node" parent="NetworkFSM"]
+[node name="NetworkProcessState" type="Node" parent="NetworkFSM" unique_id=1667736804]
 script = ExtResource("6_017ts")
 
-[node name="NetworkDisconnectingState" type="Node" parent="NetworkFSM"]
+[node name="NetworkDisconnectingState" type="Node" parent="NetworkFSM" unique_id=2132251556]
 script = SubResource("GDScript_d2gei")
 
-[node name="Floor" type="CSGBox3D" parent="."]
+[node name="Floor" type="CSGBox3D" parent="." unique_id=1652192768]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.053, -0.25, -0.027)
+use_collision = true
 size = Vector3(5, 0.5, 5)
 material = SubResource("StandardMaterial3D_y2p80")
 
-[node name="PiCar#RayCast3D" type="RayCast3D" parent="."]
+[node name="PiCar#RayCast3D" type="RayCast3D" parent="." unique_id=711673984]
 transform = Transform3D(-7.39508e-06, 1, 0, -1, -7.39508e-06, 0, 0, 0, 1, 0, 0.048, 0)
 target_position = Vector3(0, -0.8, 0)
 hit_from_inside = true
 
-[node name="PiCar#Camera3D" type="Camera3D" parent="."]
-transform = Transform3D(-4.37114e-08, -0.258819, 0.965926, 0, 0.965926, 0.258819, -1, 1.13133e-08, -4.2222e-08, 2, 1, 0)
+[node name="PiCar#Camera3D" type="Camera3D" parent="." unique_id=498650643]
+transform = Transform3D(-4.37114e-08, -0.25881898, 0.9659259, 0, 0.9659259, 0.25881898, -1, 1.131334e-08, -4.222197e-08, 3.042676, 1, 0)
 current = true
 
-[node name="PiCar#line_follower_sensor" parent="." instance=ExtResource("9_a0528")]
+[node name="PiCar#line_follower_sensor" parent="." unique_id=1091166352 instance=ExtResource("9_a0528")]
 transform = Transform3D(-4.37114e-08, 0, -1, 0, 1, 0, 1, 0, -4.37114e-08, -0.166544, 0.0646156, 0.00079032)
 
-[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=2083766227]
 environment = SubResource("Environment_c8ocf")
 
-[node name="GridContainer" type="GridContainer" parent="."]
+[node name="GridContainer" type="GridContainer" parent="." unique_id=1130326244]
 offset_left = 3.0
 offset_right = 320.0
 offset_bottom = 89.0
 columns = 2
 
-[node name="CheckBox" type="CheckBox" parent="GridContainer"]
+[node name="CheckBox" type="CheckBox" parent="GridContainer" unique_id=1272806309]
 layout_mode = 2
 text = "Localhost"
 
-[node name="lb_ConnectionStatusPackets" type="Label" parent="GridContainer"]
+[node name="lb_ConnectionStatusPackets" type="Label" parent="GridContainer" unique_id=325927368]
 layout_mode = 2
 text = "Disconnected"
 
-[node name="le_IpAdress" type="LineEdit" parent="GridContainer"]
+[node name="le_IpAdress" type="LineEdit" parent="GridContainer" unique_id=1579573758]
 layout_mode = 2
 text = "127.0.0.1"
 placeholder_text = "192.168.13.XX"
 expand_to_text_length = true
 context_menu_enabled = false
-virtual_keyboard_enabled = false
 clear_button_enabled = true
 middle_mouse_paste_enabled = false
+virtual_keyboard_enabled = false
 
-[node name="btn_Connect" type="Button" parent="GridContainer"]
+[node name="btn_Connect" type="Button" parent="GridContainer" unique_id=1443713077]
 layout_mode = 2
 text = "Connect"
 
-[node name="btn_Quit" type="Button" parent="GridContainer"]
+[node name="btn_Quit" type="Button" parent="GridContainer" unique_id=550675181]
 layout_mode = 2
 text = "Quit"
 
-[node name="PlaquetteSupport" parent="." instance=ExtResource("11_plaq")]
+[node name="PlaquetteSupport" parent="." unique_id=1599129438 instance=ExtResource("11_plaq")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.99787, 0.15, -0.300465)
 
-[node name="Bille" type="RigidBody3D" parent="."]
-transform = Transform3D(1, 0, -4.47035e-08, 0, 1, 0, 4.47035e-08, 0, 1, 1.99787, 0.205514, -0.300465)
+[node name="StaticBody3D" type="StaticBody3D" parent="PlaquetteSupport"]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlaquetteSupport/StaticBody3D"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.02, 0)
+shape = SubResource("BoxShape3D_plaq")
+
+[node name="Bille" type="RigidBody3D" parent="." unique_id=1804454935]
+transform = Transform3D(1, 0, -4.47035e-08, 0, 1, 0, 4.47035e-08, 0, 1, 1.99787, 0.23, -0.300465)
 mass = 0.1
 script = ExtResource("10_bmon")
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="Bille"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Bille" unique_id=537514198]
 transform = Transform3D(0.1, 0, 0, 0, 0.1, 0, 0, 0, 0.1, 0, 0, 0)
 shape = SubResource("SphereShape3D_iys2i")
 
-[node name="CSGSphere3D" type="CSGSphere3D" parent="Bille"]
+[node name="CSGSphere3D" type="CSGSphere3D" parent="Bille" unique_id=112168558]
 transform = Transform3D(0.1, 0, 0, 0, 0.1, 0, 0, 0, 0.1, 0, -0.0329106, 0)
 radial_segments = 32
 rings = 32

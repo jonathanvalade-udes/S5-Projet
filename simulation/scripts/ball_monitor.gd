@@ -6,17 +6,27 @@ extends RigidBody3D
 
 var initial_position: Vector3 = Vector3.ZERO
 var is_dropped: bool = false
+var is_settled: bool = false
+var settle_timer: float = 0.5
 
 signal ball_dropped_event(drop_position: Vector3)
 
 
 func _ready():
 	initial_position = global_position
-	# Vérifie que le mode physique est activé
 	freeze = false
 
 
-func _physics_process(_delta):
+func _physics_process(delta):
+	# Période de stabilisation initiale (permet à la bille de se caler au fond de la cuvette)
+	if not is_settled:
+		settle_timer -= delta
+		if settle_timer <= 0.0:
+			is_settled = true
+			initial_position = global_position
+			print("[FastDrink] Bille stabilisée dans la coupelle à : ", initial_position)
+		return
+
 	# Si la bille est déjà déclarée tombée, on continue d'émettre l'état
 	if is_dropped:
 		_notify_fsm(true)
