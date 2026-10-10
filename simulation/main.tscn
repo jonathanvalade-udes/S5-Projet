@@ -1,19 +1,13 @@
 [gd_scene format=3 uid="uid://bk5l7umgip4v5"]
 
 [ext_resource type="Script" uid="uid://tq58jihq45r4" path="res://scripts/main.gd" id="1_eka3w"]
-[ext_resource type="Script" uid="uid://xfwg5cs2hgt0" path="res://addons/finite_state_machine/scripts/finite_state_machine.gd" id="2_wl1fq"]
-[ext_resource type="Script" uid="uid://xo6c22v7fla4" path="res://scripts/fsm/NetworkInitState.gd" id="3_lglb8"]
-[ext_resource type="Script" uid="uid://ohex7sfx3l0p" path="res://scripts/fsm/NetworkWaitingState.gd" id="4_s7v0d"]
-[ext_resource type="Script" uid="uid://bxh02m00uaty3" path="res://scripts/fsm/NetworkConnectingState.gd" id="5_itktg"]
-[ext_resource type="Script" uid="uid://bc4g0fv1b3qge" path="res://scripts/fsm/NetworkProcessState.gd" id="6_017ts"]
+[ext_resource type="Script" path="res://scripts/network_client.gd" id="2_net"]
 [ext_resource type="Script" uid="uid://cp202pm1s1eic" path="res://scripts/picar_raycast.gd" id="7_picar"]
 [ext_resource type="PackedScene" uid="uid://byj45xn4tx86d" path="res://assets/Cybertruck.blend" id="8_cyber"]
 [ext_resource type="PackedScene" uid="uid://xroxh5wjbwp6" path="res://line_follower_sensor.tscn" id="9_a0528"]
 [ext_resource type="Script" uid="uid://yia7brf1mnk5" path="res://scripts/ball_monitor.gd" id="10_bmon"]
 [ext_resource type="PackedScene" uid="uid://d1snkvvda4vrh" path="res://assets/plaquette_blender_scale.blend" id="11_plaq"]
 [ext_resource type="PackedScene" uid="uid://difir3bb2pwv4" path="res://assets/parcours.blend" id="12_parcours"]
-
-[sub_resource type="GDScript" id="GDScript_d2gei"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_floor"]
 albedo_color = Color(0.12, 0.12, 0.14, 1)
@@ -42,24 +36,8 @@ sky = SubResource("Sky_nfout")
 [node name="Main" type="Node3D" unique_id=601723906]
 script = ExtResource("1_eka3w")
 
-[node name="NetworkFSM" type="Node" parent="." unique_id=1334670366 node_paths=PackedStringArray("current_state")]
-script = ExtResource("2_wl1fq")
-current_state = NodePath("NetworkWaitingState")
-
-[node name="NetworkInitState" type="Node" parent="NetworkFSM" unique_id=1162554007]
-script = ExtResource("3_lglb8")
-
-[node name="NetworkWaitingState" type="Node" parent="NetworkFSM" unique_id=409881363]
-script = ExtResource("4_s7v0d")
-
-[node name="NetworkConnectingState" type="Node" parent="NetworkFSM" unique_id=1611647086]
-script = ExtResource("5_itktg")
-
-[node name="NetworkProcessState" type="Node" parent="NetworkFSM" unique_id=1667736804]
-script = ExtResource("6_017ts")
-
-[node name="NetworkDisconnectingState" type="Node" parent="NetworkFSM" unique_id=2132251556]
-script = SubResource("GDScript_d2gei")
+[node name="NetworkClient" type="Node" parent="." unique_id=1334670366]
+script = ExtResource("2_net")
 
 [node name="Floor" type="CSGBox3D" parent="." unique_id=1652192768]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.25, 0)

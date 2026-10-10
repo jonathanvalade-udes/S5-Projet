@@ -1,229 +1,56 @@
 extends Node3D
 
-const RAY_LENGTH = 1000
-const MAX_PROXIMITY_LENGHT = 0.1
+# Cinématique métrique unifiée S10 pour PiCar-S (Godot 4)
+# Empattement L = 0.14 m, angle de braquage max = 48°
 
-var ray = null
-var ray_collision_point = Vector3.ZERO
-var distance = 0.0
-var wall_avoidance = false
+var ray: RayCast3D = null
+var distance: float = 100.0
+var speed: float = 0.0
+var steer_dir: float = 0.0
 
+var lfs: Node = null
+var network: NetworkClient = null
 
-# Engine power
-var acceleration = 0.01
-var speed = 1
-# How quickly the car turns
-var rot_acceleration = 0.0075
-
-var lfs = 0
-var steer_dir = 0
-
-var nfsm = 0
-var lfs_simulated_ignored = false
-
-const max_speed = 0.2	# Speed is float from 0.0 to 1.0
-const mid_speed = 0.1	# Speed is float from 0.0 to 1.0
-const low_speed = 0.05	# Speed is float from 0.0 to 1.0
-
-# Called when the node enters the scene tree for the first time.
-func _ready():
+func _ready() -> void:
 	ray = get_node_or_null("RayCast3D")
 	var lfs_node = get_node_or_null("line_follower_sensor")
 	if lfs_node and lfs_node.get_child_count() > 0:
 		lfs = lfs_node.get_child(0)
-	nfsm = get_node_or_null("/root/Main/NetworkFSM")
+	network = get_node_or_null("/root/Main/NetworkClient")
 
+func _process(delta: float) -> void:
+	if network == null:
+		network = get_node_or_null("/root/Main/NetworkClient")
 
-
-# Called every frame. 'delta' is the elapsed time since the previous frame.
-func _process(delta):
 	# Si pas connecté au serveur WebSocket Python, la voiture RESTE STRICTEMENT IMMOBILE
-	if nfsm == null or nfsm.current_state != $"../NetworkFSM/NetworkProcessState":
+	if network == null or not network.is_connected:
 		speed = 0.0
 		steer_dir = 0.0
-		lfs_simulated_ignored = false
 		return
 
 	# Mode connecté : cinématique pilotée exclusivement par Python
-	var rx_speed = nfsm.data_received.get("velocity", 0.0)
-	var rx_steer = nfsm.data_received.get("direction", 0.0)
+	var rx_speed: float = float(network.data_received.get("velocity", 0.0))
+	var rx_steer: float = float(network.data_received.get("direction", 0.0))
 	
-	# Vraie cinématique métrique unifiée S10 (m/s et rad/s liés à delta)
-	# Empattement PiCar L ≈ 0.14 m, angle max roues ≈ 48° (R_min ≈ 126 mm, conforme S3)
-	var steer_rad = rx_steer * deg_to_rad(48.0)
-	var angular_velocity = (rx_speed / 0.14) * tan(steer_rad)
+	# Cinématique métrique d'Ackermann
+	var steer_rad: float = rx_steer * deg_to_rad(48.0)
+	var angular_velocity: float = (rx_speed / 0.14) * tan(steer_rad)
 	
 	translate(Vector3(-rx_speed * delta, 0, 0))
 	rotate_y(angular_velocity * delta)
 	
 	# Feedback télémesure vers Python
-	nfsm.data_to_send["velocity"] = rx_speed
-	if "direction" in nfsm.data_to_send:
-		nfsm.data_to_send.erase("direction")
-	lfs_simulated_ignored = true
+	network.data_to_send["velocity"] = rx_speed
+	if "direction" in network.data_to_send:
+		network.data_to_send.erase("direction")
 
-
-func _physics_process(delta):
-	#pass
-# Ray casting for distance
-	if !nfsm.current_state == $"../NetworkFSM/NetworkProcessState" :
-		if ray.is_colliding():
-			ray_collision_point = ray.get_collision_point()
-			distance = ray_collision_point.distance_to(position)
-			#print(ray_collision_point)
-			print(distance)
-			if distance < 0.3:
-				wall_avoidance = true	# Start the collision avoidance sequence
-		else:
-			pass
-
-
-const turn_angle_mid = 0.5
-const turn_angle_big = 1
-const turn_accel = 2
-var dir_buf = []
-func line_follower_car_angle(delta):
-	var temp_dir = steer_dir
-	# Should apply smoothing with delta for direction. 
-	# The same way/feeling that Trackmania does it
-	if lfs_simulated_ignored:
-		if nfsm.data_received['line_follower'][2]:
-			#print("Middle")
-			temp_dir = 0
-		elif nfsm.data_received['line_follower'][4]:
-			#print("Right")
-			if temp_dir > -turn_angle_big:
-				temp_dir += -delta * turn_accel
-			else:
-				temp_dir = -turn_angle_big
-		elif nfsm.data_received['line_follower'][0]:
-			#print("Left")
-			if temp_dir < turn_angle_big:
-				temp_dir += delta * turn_accel
-			else:
-				temp_dir = turn_angle_big
-		elif nfsm.data_received['line_follower'][1]:
-			#print("Middle Left")
-			if temp_dir < turn_angle_mid:
-				temp_dir += delta * turn_accel
-			else:
-				temp_dir = turn_angle_mid
-			speed = low_speed
-		elif nfsm.data_received['line_follower'][3]:
-			#print("Middle Right")
-			if temp_dir > -turn_angle_mid:
-				temp_dir += -delta * turn_accel
-			else:
-				temp_dir = -turn_angle_mid
-			speed = low_speed
-		else:
-			# NEVER COMES HERE. THATS THE PROBLEM
-			speed = low_speed
-			temp_dir = 0
+func _physics_process(_delta: float) -> void:
+	if ray and ray.is_colliding():
+		var col_pt = ray.get_collision_point()
+		distance = col_pt.distance_to(position)
 	else:
-		if lfs.line_follower_array[2]:
-			#print("Middle")
-			temp_dir = 0
-		elif lfs.line_follower_array[4]:
-			#print("Right")
-			if temp_dir > -turn_angle_big:
-				temp_dir += -delta * turn_accel
-			else:
-				temp_dir = -turn_angle_big
-		elif lfs.line_follower_array[0]:
-			#print("Left")
-			if temp_dir < turn_angle_big:
-				temp_dir += delta * turn_accel
-			else:
-				temp_dir = turn_angle_big
-		elif lfs.line_follower_array[1]:
-			#print("Middle Left")
-			if temp_dir < turn_angle_mid:
-				temp_dir += delta * turn_accel
-			else:
-				temp_dir = turn_angle_mid
-			speed = low_speed
-		elif lfs.line_follower_array[3]:
-			#print("Middle Right")
-			if temp_dir > -turn_angle_mid:
-				temp_dir += -delta * turn_accel
-			else:
-				temp_dir = -turn_angle_mid
-			speed = low_speed
-		else:
-			# NEVER COMES HERE. THATS THE PROBLEM
-			print("Oh it does come here")
-			var mean = average(dir_buf)
-			if mean > turn_angle_mid:
-				temp_dir = turn_angle_big
-			elif mean >= 0 && mean < turn_angle_mid:
-				temp_dir = turn_angle_mid
-				
-			speed = low_speed
-			#temp_dir = 0
-		
-	# All light sensor activated -> Need to stop
-	if (lfs.line_follower_array[0] || nfsm.data_received['line_follower'][0]) && (lfs.line_follower_array[4] || nfsm.data_received['line_follower'][4]) && (lfs.line_follower_array[3] || nfsm.data_received['line_follower'][3]) && (lfs.line_follower_array[1] || nfsm.data_received['line_follower'][1]) && (lfs.line_follower_array[2] || nfsm.data_received['line_follower'][2]):
-		speed = 0
-	
-	# Apply Steer dir
-	steer_dir = temp_dir
-	
-	
-	if len(dir_buf) > 15:
-		dir_buf.pop_front()
-		dir_buf.append(temp_dir)
-	else:
-		dir_buf.append(temp_dir)	
-	#print(steer_dir)
+		distance = 1.0  # 1.0 mètre
 
-
-func car_speed(delta):
-	var temp_speed = speed
-	if speed == 0:
-		temp_speed = 0
-	elif temp_speed < max_speed:
-		temp_speed += delta
-	else:
-		temp_speed = speed
-	speed = temp_speed
-
-var temp_time = 0.0
-const TEST = 0.0
-func wall_avoidance_loop(delta):
-# Ive should have put the sequence in a list and loop through the list
-# But im lazy and the code wont ever be used....
-
-	print("IN WALL AVOIDANCE LOOP")
-	if temp_time < 1.3 && temp_time >= 0.0:
-		steer_dir = turn_angle_big
-		speed = 0
-	elif temp_time < 2.0 && temp_time >= 1.3:
-		steer_dir = 0
-		speed = low_speed
-	elif temp_time < 4.5 && temp_time >= 2.0:
-		steer_dir = -turn_angle_big
-		speed = 0
-	elif temp_time < 5.0 && temp_time >= 4.5:
-		steer_dir = 0
-		speed = low_speed
-	elif temp_time < 7.5 && temp_time >= 5.0:
-		steer_dir = -turn_angle_big
-		speed = 0
-	elif temp_time < 8.2 && temp_time >= 7.5:
-		steer_dir = 0
-		speed = low_speed
-	elif temp_time < 9.5 && temp_time >= 8.2:
-		steer_dir = turn_angle_big
-		speed = 0
-	else:
-		wall_avoidance = false
-		temp_time = 0.0 
-	
-	temp_time += delta
-
-func average(numbers: PackedByteArray) -> float:
-	var sum := 0.0
-	for n in numbers:
-		sum += n
-	return sum / numbers.size()
+	if network and network.is_connected:
+		# Distance ultrason transmise en centimètres
+		network.data_to_send["distance"] = round(distance * 100.0)

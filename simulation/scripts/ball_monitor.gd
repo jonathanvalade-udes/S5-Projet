@@ -22,20 +22,20 @@ var has_last_speed: bool = false
 
 var fall_vel_y: float = 0.0            # Vitesse verticale de chute hors de la voiture
 
-var nfsm: Node = null
+var network: NetworkClient = null
 var sphere_mesh: Node3D = null
 
 signal ball_dropped_event(drop_position: Vector3)
 
 func _ready():
 	freeze = true  # Déplacement physique calculé dans le référentiel non-inertiel du véhicule
-	nfsm = get_node_or_null("/root/Main/NetworkFSM")
+	network = get_node_or_null("/root/Main/NetworkClient")
 	sphere_mesh = get_node_or_null("CSGSphere3D")
 	position = Vector3(0.0, REST_Y, 0.0)
 
 func _physics_process(delta: float):
-	if nfsm == null:
-		nfsm = get_node_or_null("/root/Main/NetworkFSM")
+	if network == null:
+		network = get_node_or_null("/root/Main/NetworkClient")
 	
 	if is_dropped:
 		# La bille est tombée : chute libre physique hors du véhicule vers le sol
@@ -43,15 +43,15 @@ func _physics_process(delta: float):
 		position.y += fall_vel_y * delta
 		position.x += ball_rel_vel.x * delta
 		position.z += ball_rel_vel.y * delta
-		_notify_fsm(true)
+		_notify_network(true)
 		return
 
 	# Lire la cinématique du PiCar depuis la télémesure
 	var rx_speed: float = 0.0
 	var rx_steer: float = 0.0
-	if nfsm and ("data_received" in nfsm):
-		rx_speed = nfsm.data_received.get("velocity", 0.0)
-		rx_steer = nfsm.data_received.get("direction", 0.0)
+	if network and network.is_connected:
+		rx_speed = network.data_received.get("velocity", 0.0)
+		rx_steer = network.data_received.get("direction", 0.0)
 
 	# 1. Calcul des accélérations du véhicule (référentiel non-inertiel)
 	if not has_last_speed:
@@ -102,7 +102,7 @@ func _physics_process(delta: float):
 		fall_vel_y = 0.0
 		emit_signal("ball_dropped_event", global_position)
 		print("[ALERTE FastDrink] La bille est tombée ! Déversement du breuvage à: ", global_position)
-		_notify_fsm(true)
+		_notify_network(true)
 		return
 
 	# 7. Mise à jour de la position 3D dans la cuvette
@@ -114,8 +114,8 @@ func _physics_process(delta: float):
 		sphere_mesh.rotate_z(-ball_rel_vel.x * dt / 0.0125)
 		sphere_mesh.rotate_x(ball_rel_vel.y * dt / 0.0125)
 
-	_notify_fsm(false)
+	_notify_network(false)
 
-func _notify_fsm(dropped_state: bool):
-	if nfsm and ("data_to_send" in nfsm):
-		nfsm.data_to_send["ball_dropped"] = dropped_state
+func _notify_network(dropped_state: bool):
+	if network and network.is_connected:
+		network.data_to_send["ball_dropped"] = dropped_state
