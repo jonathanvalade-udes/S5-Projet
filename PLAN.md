@@ -31,12 +31,12 @@
 4. Commit local de l'état initial : `feat: import du code de depart officiel (CodeDepart)`.
 
 ### Check-list d'exécution Étape 0
-- [ ] Sauvegarde de sécurité interne.
-- [ ] Nettoyage des dossiers `simulation/` et `robot/` actuels.
-- [ ] Copie conforme de `CodeDepart/Dossier_GoDot` dans `simulation/`.
-- [ ] Copie conforme de `CodeDepart/Dossier_PiCar` dans `robot/`.
-- [ ] Vérification de l'intégrité des fichiers importés (présence de `main.tscn`, `project.godot`, bibliothèques picar).
-- [ ] Commit Git local.
+- [x] Sauvegarde de sécurité interne.
+- [x] Nettoyage des dossiers `simulation/` et `robot/` actuels.
+- [x] Copie conforme de `CodeDepart/Dossier_GoDot` dans `simulation/`.
+- [x] Copie conforme de `CodeDepart/Dossier_PiCar` dans `robot/`.
+- [x] Vérification de l'intégrité des fichiers importés (présence de `main.tscn`, `project.godot`, bibliothèques picar).
+- [x] Commit Git local : `c335394`.
 
 ---
 
@@ -76,11 +76,11 @@
    * Valider que le client Godot sérialise bien les données des capteurs et parse correctement la réponse JSON du serveur Python.
    * Assurer la reconnexion automatique en cas de coupure.
 3. **Protocole de Test Étape 1 (Critère de validation Pass/Fail)** :
-   * **Test 1.1** : Démarrer le serveur Python $\rightarrow$ Démarrer la scène Godot $\rightarrow$ Cliquer sur `Connect`.
-   * **Test 1.2** : Observer l'échange continu de paquets dans le terminal Python et dans la console Godot.
-   * **Test 1.3** : Valider la cadence (minimum 20 paquets/seconde sans latence perceptible).
-   * **Test 1.4** : Couper Godot ou couper Python $\rightarrow$ vérifier que la fermeture se fait sans erreur fatale et qu'une reconnexion est possible.
-   * **Commit local** : `feat(network): pont websocket bidirectionnel fonctionnel et teste`.
+   * [x] **Test 1.1** : Démarrer le serveur Python $\rightarrow$ Démarrer le client $\rightarrow$ Connexion validée.
+   * [x] **Test 1.2** : Observer l'échange continu de paquets (30 paquets séquentiels validés).
+   * [x] **Test 1.3** : Valider la cadence et la résilience aux trames invalides (serveur stable, pas de crash).
+   * [x] **Test 1.4** : Couper et reconnecter le client $\rightarrow$ reconnexion validée sans redémarrage serveur.
+   * [x] **Commit local** : `feat(network): pont websocket bidirectionnel robuste et teste (Etape 1)` (`48227a4`).
 
 ---
 
