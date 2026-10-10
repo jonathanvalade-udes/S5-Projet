@@ -1,0 +1,6 @@
+[submodule "godot-finite-state-machine"]
+	path = godot-finite-state-machine
+	url = https://github.com/godot-addons/godot-finite-state-machine.git
+[submodule "submodules/godot-finite-state-machine"]
+	path = submodules/godot-finite-state-machine
+	url = https://github.com/godot-addons/godot-finite-state-machine.git

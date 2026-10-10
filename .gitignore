@@ -1,17 +1,76 @@
-# Godot 4+ specific ignores
-.godot/
-.nomedia
+# ==========================================
+# macOS
+# ==========================================
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
 
-# Godot-specific ignores
+# ==========================================
+# Godot 4+ (Simulation)
+# ==========================================
+.godot/
+**/.godot/
+*.translation
 .import/
+**/.import/
 export.cfg
 export_credentials.cfg
 *.tmp
-
-# Imported translations (automatically generated from CSV files)
-*.translation
-
-# Mono-specific ignores
+**/*.tmp
 .mono/
-data_*/
+**/data_*/
 mono_crash.*.json
+
+# ==========================================
+# Python (Robot)
+# ==========================================
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+**/.venv/
+
+# ==========================================
+# Large binaries & Executables
+# ==========================================
+*.arm32
+*.bin
+*.out
+*.app
+
+# ==========================================
+# IDEs & Editors
+# ==========================================
+.idea/
+.vscode/
+*.swp
+*~
+
+# ==========================================
+# School Documentation
+# ==========================================
+**/documentation/

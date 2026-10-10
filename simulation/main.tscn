@@ -1,0 +1,125 @@
+[gd_scene load_steps=14 format=3 uid="uid://bk5l7umgip4v5"]
+
+[ext_resource type="Script" uid="uid://tq58jihq45r4" path="res://scripts/main.gd" id="1_eka3w"]
+[ext_resource type="Script" uid="uid://xfwg5cs2hgt0" path="res://addons/finite_state_machine/scripts/finite_state_machine.gd" id="2_wl1fq"]
+[ext_resource type="Script" uid="uid://xo6c22v7fla4" path="res://scripts/fsm/NetworkInitState.gd" id="3_lglb8"]
+[ext_resource type="Script" uid="uid://ohex7sfx3l0p" path="res://scripts/fsm/NetworkWaitingState.gd" id="4_s7v0d"]
+[ext_resource type="Script" uid="uid://bxh02m00uaty3" path="res://scripts/fsm/NetworkConnectingState.gd" id="5_itktg"]
+[ext_resource type="Script" uid="uid://bc4g0fv1b3qge" path="res://scripts/fsm/NetworkProcessState.gd" id="6_017ts"]
+[ext_resource type="PackedScene" uid="uid://xroxh5wjbwp6" path="res://line_follower_sensor.tscn" id="9_a0528"]
+
+[sub_resource type="GDScript" id="GDScript_d2gei"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_y2p80"]
+albedo_color = Color(1, 0, 1, 1)
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_jv41d"]
+sky_top_color = Color(0.635294, 0.756863, 0.901961, 1)
+sky_horizon_color = Color(0.839216, 0.890196, 0.929412, 1)
+ground_bottom_color = Color(0.580392, 0.737255, 0.796078, 1)
+ground_horizon_color = Color(0.686275, 0.815686, 0.890196, 1)
+
+[sub_resource type="Sky" id="Sky_nfout"]
+sky_material = SubResource("ProceduralSkyMaterial_jv41d")
+
+[sub_resource type="Environment" id="Environment_c8ocf"]
+background_mode = 2
+sky = SubResource("Sky_nfout")
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_iys2i"]
+
+[node name="Main" type="Node3D"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0100098, 0.0284071, -0.0135775)
+script = ExtResource("1_eka3w")
+
+[node name="NetworkFSM" type="Node" parent="." node_paths=PackedStringArray("current_state")]
+script = ExtResource("2_wl1fq")
+current_state = NodePath("NetworkWaitingState")
+
+[node name="NetworkInitState" type="Node" parent="NetworkFSM"]
+script = ExtResource("3_lglb8")
+
+[node name="NetworkWaitingState" type="Node" parent="NetworkFSM"]
+script = ExtResource("4_s7v0d")
+
+[node name="NetworkConnectingState" type="Node" parent="NetworkFSM"]
+script = ExtResource("5_itktg")
+
+[node name="NetworkProcessState" type="Node" parent="NetworkFSM"]
+script = ExtResource("6_017ts")
+
+[node name="NetworkDisconnectingState" type="Node" parent="NetworkFSM"]
+script = SubResource("GDScript_d2gei")
+
+[node name="Floor" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.053, -0.25, -0.027)
+size = Vector3(5, 0.5, 5)
+material = SubResource("StandardMaterial3D_y2p80")
+
+[node name="PiCar#RayCast3D" type="RayCast3D" parent="."]
+transform = Transform3D(-7.39508e-06, 1, 0, -1, -7.39508e-06, 0, 0, 0, 1, 0, 0.048, 0)
+target_position = Vector3(0, -0.8, 0)
+hit_from_inside = true
+
+[node name="PiCar#Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(-4.37114e-08, -0.258819, 0.965926, 0, 0.965926, 0.258819, -1, 1.13133e-08, -4.2222e-08, 2, 1, 0)
+current = true
+
+[node name="PiCar#line_follower_sensor" parent="." instance=ExtResource("9_a0528")]
+transform = Transform3D(-4.37114e-08, 0, -1, 0, 1, 0, 1, 0, -4.37114e-08, -0.166544, 0.0646156, 0.00079032)
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_c8ocf")
+
+[node name="GridContainer" type="GridContainer" parent="."]
+offset_left = 3.0
+offset_right = 320.0
+offset_bottom = 89.0
+columns = 2
+
+[node name="CheckBox" type="CheckBox" parent="GridContainer"]
+layout_mode = 2
+text = "Localhost"
+
+[node name="lb_ConnectionStatusPackets" type="Label" parent="GridContainer"]
+layout_mode = 2
+text = "Disconnected"
+
+[node name="le_IpAdress" type="LineEdit" parent="GridContainer"]
+layout_mode = 2
+text = "127.0.0.1"
+placeholder_text = "192.168.13.XX"
+expand_to_text_length = true
+context_menu_enabled = false
+virtual_keyboard_enabled = false
+clear_button_enabled = true
+middle_mouse_paste_enabled = false
+
+[node name="btn_Connect" type="Button" parent="GridContainer"]
+layout_mode = 2
+text = "Connect"
+
+[node name="btn_Quit" type="Button" parent="GridContainer"]
+layout_mode = 2
+text = "Quit"
+
+[node name="CSGBox3D" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.33023, 0.0713751, 0.100219)
+size = Vector3(0.1, 0.1, 0.1)
+
+[node name="Bille" type="RigidBody3D" parent="."]
+transform = Transform3D(1, 0, -4.47035e-08, 0, 1, 0, 4.47035e-08, 0, 1, 1.99787, 0.205514, -0.300465)
+mass = 0.1
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Bille"]
+transform = Transform3D(0.1, 0, 0, 0, 0.1, 0, 0, 0, 0.1, 0, 0, 0)
+shape = SubResource("SphereShape3D_iys2i")
+
+[node name="CSGSphere3D" type="CSGSphere3D" parent="Bille"]
+transform = Transform3D(0.1, 0, 0, 0, 0.1, 0, 0, 0, 0.1, 0, -0.0329106, 0)
+radial_segments = 32
+rings = 32
+
+[connection signal="toggled" from="GridContainer/CheckBox" to="." method="_on_check_box_toggled"]
+[connection signal="pressed" from="GridContainer/btn_Connect" to="." method="_on_connect_pressed"]
+[connection signal="pressed" from="GridContainer/btn_Quit" to="." method="_on_quit_pressed"]

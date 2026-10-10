@@ -1,0 +1,39 @@
+[gd_scene load_steps=3 format=3 uid="uid://xroxh5wjbwp6"]
+
+[ext_resource type="Script" uid="uid://da4g0s4hk1egm" path="res://scripts/line_follower_raycast.gd" id="1_4errl"]
+
+[sub_resource type="SeparationRayShape3D" id="SeparationRayShape3D_chp8o"]
+length = 0.775414
+
+[node name="Node3D" type="Node3D"]
+
+[node name="sensor_array" type="Area3D" parent="."]
+collision_layer = 2
+collision_mask = 2
+script = ExtResource("1_4errl")
+
+[node name="line_follower_sensor_l" type="CollisionShape3D" parent="sensor_array"]
+transform = Transform3D(1, 0, 0, 0, 0.00254817, -0.999997, 0, 0.999997, 0.00254817, -0.038, 0, 0)
+shape = SubResource("SeparationRayShape3D_chp8o")
+
+[node name="line_follower_sensor_ml" type="CollisionShape3D" parent="sensor_array"]
+transform = Transform3D(1, 0, 0, 0, 0.00254817, -0.999997, 0, 0.999997, 0.00254817, -0.019, 0, 0)
+shape = SubResource("SeparationRayShape3D_chp8o")
+
+[node name="line_follower_sensor_m" type="CollisionShape3D" parent="sensor_array"]
+transform = Transform3D(1, 0, 0, 0, 0.00254817, -0.999997, 0, 0.999997, 0.00254817, 0, 0, 0)
+shape = SubResource("SeparationRayShape3D_chp8o")
+
+[node name="line_follower_sensor_mr" type="CollisionShape3D" parent="sensor_array"]
+transform = Transform3D(1, 0, 0, 0, 0.00254817, -0.999997, 0, 0.999997, 0.00254817, 0.019, 0, 0)
+shape = SubResource("SeparationRayShape3D_chp8o")
+
+[node name="line_follower_sensor_r" type="CollisionShape3D" parent="sensor_array"]
+transform = Transform3D(1, 0, 0, 0, 0.00254817, -0.999997, 0, 0.999997, 0.00254817, 0.038, 0, 0)
+shape = SubResource("SeparationRayShape3D_chp8o")
+
+[connection signal="area_exited" from="sensor_array" to="sensor_array" method="_on_area_exited"]
+[connection signal="area_shape_entered" from="sensor_array" to="sensor_array" method="_on_area_shape_entered"]
+[connection signal="body_entered" from="sensor_array" to="sensor_array" method="_on_body_entered"]
+[connection signal="body_shape_entered" from="sensor_array" to="sensor_array" method="_on_body_shape_entered"]
+[connection signal="body_shape_exited" from="sensor_array" to="sensor_array" method="_on_body_shape_exited"]
