@@ -1,104 +1,58 @@
 #!/usr/bin/env python3
 """
-Suivi de ligne temps réel sur le Raspberry Pi.
+Suivi de ligne sur le Raspberry Pi.
 
-Lit les 5 capteurs I2C, calcule le braquage avec LineFollowerController,
-puis commande le servo de direction et les roues arrière via la librairie picar.
+smbus lit les 5 capteurs. picar commande le servo et les roues arrière.
+LineFollowerController décide du braquage et de la vitesse.
 """
 
-import sys
 import time
+
+import picar
+import smbus
+from picar import back_wheels, front_wheels
 
 from line_follower import LineFollowerController
 
+I2C_BUS = 1
 I2C_ADDRESS = 0x11
-# 90° = droit. En dessous on tourne à droite, au-dessus à gauche.
 STRAIGHT_ANGLE = 90
 TURNING_MAX = 25
-# Vitesse picar de 0 à 100. Le plancher évite de ramper dès qu'un capteur bouge.
 MAX_PWM = 58
 MIN_PWM = 48
 MAX_ANGLE_STEP = 8
 
 
-class LineSensor:
-    """Même lecture I2C que SunFounder_Line_Follower, adresse 0x11."""
-
-    def __init__(self, address=I2C_ADDRESS):
-        try:
-            import smbus
-        except ImportError:
-            try:
-                import smbus2 as smbus
-            except ImportError:
-                sys.exit("Module smbus introuvable. Sur le Pi : sudo apt install python3-smbus")
-        try:
-            self.bus = smbus.SMBus(1)
-        except FileNotFoundError:
-            sys.exit("I2C absent. Active-le : sudo raspi-config → Interface Options → I2C.")
-        except PermissionError:
-            sys.exit("Accès /dev/i2c-1 refusé. Ajoute l'utilisateur au groupe i2c, puis reconnecte-toi.")
-        self.address = address
-
-    def read_analog(self):
-        last_error = None
-        for _ in range(5):
-            try:
-                raw = self.bus.read_i2c_block_data(self.address, 0, 10)
-            except OSError as err:
-                last_error = err
-                continue
-            values = [(raw[index * 2] << 8) + raw[index * 2 + 1] for index in range(5)]
-            # Index 0 du module est le capteur de droite. Le contrôleur attend la gauche en premier.
-            return list(reversed(values))
-        raise OSError(f"Lecture I2C impossible à l'adresse {self.address:#x} : {last_error}")
-
-    def read(self):
-        """1 = ruban. Le noir reflète peu, donc sa valeur est bien plus basse que le blanc voisin."""
-        analog = self.read_analog()
-        if any(value > 1000 for value in analog):
-            return analog, None
-        brightest = max(analog)
-        darkest = min(analog)
-        if brightest < 45:
-            return analog, [1, 1, 1, 1, 1]
-        contrast = brightest - darkest
-        if contrast < 15:
-            return analog, [0, 0, 0, 0, 0]
-        # Seuls les capteurs vraiment proches du plus sombre comptent comme ruban.
-        cutoff = darkest + contrast * 0.28
-        digital = [1 if value <= cutoff else 0 for value in analog]
-        return analog, digital
+def read_analog(bus):
+    """Cinq valeurs analogiques, gauche vers droite. Le module envoie la droite en premier."""
+    raw = bus.read_i2c_block_data(I2C_ADDRESS, 0, 10)
+    values = [(raw[index * 2] << 8) + raw[index * 2 + 1] for index in range(5)]
+    return list(reversed(values))
 
 
-def open_wheels():
-    try:
-        import picar
-        from picar import back_wheels, front_wheels
-    except ImportError:
-        sys.path.append("/home/pi/SunFounder_PiCar")
-        try:
-            import picar
-            from picar import back_wheels, front_wheels
-        except ImportError as err:
-            sys.exit(
-                "Librairie picar introuvable.\n"
-                "Elle se trouve en général dans /home/pi/SunFounder_PiCar.\n"
-                f"Détail : {err}"
-            )
-    picar.setup()
-    front = front_wheels.Front_Wheels()
-    rear = back_wheels.Back_Wheels()
-    front.turning_max = TURNING_MAX
-    front.turn(STRAIGHT_ANGLE)
-    rear.speed = 0
-    rear.stop()
-    return front, rear
+def to_bits(analog):
+    """1 = ruban noir. None si la trame I2C est invalide."""
+    if any(value > 1000 for value in analog):
+        return None
+
+    brightest = max(analog)
+    darkest = min(analog)
+    if brightest < 45:
+        return [1, 1, 1, 1, 1]
+
+    contrast = brightest - darkest
+    if contrast < 15:
+        return [0, 0, 0, 0, 0]
+
+    cutoff = darkest + contrast * 0.28
+    return [1 if value <= cutoff else 0 for value in analog]
 
 
 def steer_to_angle(steer):
     angle = int(round(STRAIGHT_ANGLE - steer * TURNING_MAX))
-    return max(STRAIGHT_ANGLE - TURNING_MAX, min(STRAIGHT_ANGLE + TURNING_MAX, angle))
+    low = STRAIGHT_ANGLE - TURNING_MAX
+    high = STRAIGHT_ANGLE + TURNING_MAX
+    return max(low, min(high, angle))
 
 
 def speed_to_pwm(speed_m_s):
@@ -108,13 +62,21 @@ def speed_to_pwm(speed_m_s):
     return int(round(MIN_PWM + ratio * (MAX_PWM - MIN_PWM)))
 
 
-def main() -> None:
-    sensor = LineSensor()
-    # kd à 0 : le terme dérivé envoyait le servo à fond à chaque petit changement de capteur.
+def main():
+    bus = smbus.SMBus(I2C_BUS)
+    picar.setup()
+
+    front = front_wheels.Front_Wheels()
+    rear = back_wheels.Back_Wheels()
+    front.turning_max = TURNING_MAX
+    front.ready()
+    rear.ready()
+
+    # kd à 0 : le terme dérivé envoyait le servo à fond à chaque petit changement.
     controller = LineFollowerController(kp=0.45, kd=0.0)
-    front, rear = open_wheels()
-    period_s = 0.05
     applied_angle = STRAIGHT_ANGLE
+    period_s = 0.05
+    previous = time.perf_counter()
 
     print("Suivi de ligne. Le robot va avancer.")
     print("Pose-le sur le ruban. Ctrl+C pour arrêter.")
@@ -122,26 +84,31 @@ def main() -> None:
         print(second, flush=True)
         time.sleep(1)
 
-    previous = time.perf_counter()
     try:
         while True:
             loop_start = time.perf_counter()
             dt = loop_start - previous
             previous = loop_start
 
-            analog, sensors = sensor.read()
+            try:
+                analog = read_analog(bus)
+            except OSError:
+                time.sleep(period_s)
+                continue
+
+            sensors = to_bits(analog)
             if sensors is None:
                 time.sleep(period_s)
                 continue
+
             steer, speed = controller.update(sensors, dt=dt)
             target_angle = steer_to_angle(steer)
-            applied_angle += max(-MAX_ANGLE_STEP, min(MAX_ANGLE_STEP, target_angle - applied_angle))
-            angle = applied_angle
+            step = max(-MAX_ANGLE_STEP, min(MAX_ANGLE_STEP, target_angle - applied_angle))
+            applied_angle += step
             pwm = speed_to_pwm(speed)
 
-            front.turn(angle)
+            front.turn(applied_angle)
             if pwm == 0:
-                rear.speed = 0
                 rear.stop()
             else:
                 rear.speed = pwm
@@ -150,7 +117,7 @@ def main() -> None:
             view = " ".join("#" if bit else "." for bit in sensors)
             print(
                 f"{view}   bits {sensors}   analog {analog}   "
-                f"braquage {steer:+.2f}   angle {angle}°   pwm {pwm}",
+                f"braquage {steer:+.2f}   angle {applied_angle}°   pwm {pwm}",
                 flush=True,
             )
 
@@ -160,9 +127,8 @@ def main() -> None:
     except KeyboardInterrupt:
         print("\narrêt")
     finally:
-        rear.speed = 0
         rear.stop()
-        front.turn(STRAIGHT_ANGLE)
+        front.turn_straight()
 
 
 if __name__ == "__main__":
