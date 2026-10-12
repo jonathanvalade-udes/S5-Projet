@@ -23,10 +23,15 @@ def open_sensor():
 
 def main():
     sensor = open_sensor()
-    print("Lecture SunFounder. Ctrl+C pour arrêter.")
+    # Le défaut SunFounder est 300. Nos lectures restent sous 140, donc tout serait 1.
+    # 1 = en dessous du seuil (noir), 0 = au-dessus (blanc).
+    sensor.references = [50, 50, 50, 50, 50]
+    print("Lecture SunFounder. 1 = noir, 0 = blanc. Ctrl+C pour arrêter.")
     try:
         while True:
-            print(sensor.read_analog(), flush=True)
+            analog = sensor.read_analog()
+            digital = sensor.read_digital()
+            print(f"{digital}   analog {analog}", flush=True)
             time.sleep(0.1)
     except KeyboardInterrupt:
         print("\narrêt")
