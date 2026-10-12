@@ -14,9 +14,11 @@ from line_follower import LineFollowerController
 I2C_ADDRESS = 0x11
 # 90° = droit. En dessous on tourne à droite, au-dessus à gauche.
 STRAIGHT_ANGLE = 90
-TURNING_MAX = 35
-# Vitesse picar de 0 à 100. 30 reste lent pour un premier essai.
-MAX_PWM = 30
+TURNING_MAX = 25
+# Vitesse picar de 0 à 100. Le plancher évite de ramper dès qu'un capteur bouge.
+MAX_PWM = 58
+MIN_PWM = 48
+MAX_ANGLE_STEP = 8
 
 
 class LineSensor:
@@ -54,11 +56,18 @@ class LineSensor:
     def read(self):
         """1 = ruban. Le noir reflète peu, donc sa valeur est bien plus basse que le blanc voisin."""
         analog = self.read_analog()
+        if any(value > 1000 for value in analog):
+            return analog, None
         brightest = max(analog)
+        darkest = min(analog)
         if brightest < 45:
             return analog, [1, 1, 1, 1, 1]
-        limit = brightest * 0.60
-        digital = [1 if value < limit else 0 for value in analog]
+        contrast = brightest - darkest
+        if contrast < 15:
+            return analog, [0, 0, 0, 0, 0]
+        # Seuls les capteurs vraiment proches du plus sombre comptent comme ruban.
+        cutoff = darkest + contrast * 0.28
+        digital = [1 if value <= cutoff else 0 for value in analog]
         return analog, digital
 
 
@@ -95,15 +104,17 @@ def steer_to_angle(steer):
 def speed_to_pwm(speed_m_s):
     if speed_m_s <= 0:
         return 0
-    pwm = int(round(speed_m_s / LineFollowerController.CRUISE_SPEED * MAX_PWM))
-    return max(18, min(MAX_PWM, pwm))
+    ratio = min(1.0, speed_m_s / LineFollowerController.CRUISE_SPEED)
+    return int(round(MIN_PWM + ratio * (MAX_PWM - MIN_PWM)))
 
 
 def main() -> None:
     sensor = LineSensor()
-    controller = LineFollowerController()
+    # kd à 0 : le terme dérivé envoyait le servo à fond à chaque petit changement de capteur.
+    controller = LineFollowerController(kp=0.45, kd=0.0)
     front, rear = open_wheels()
     period_s = 0.05
+    applied_angle = STRAIGHT_ANGLE
 
     print("Suivi de ligne. Le robot va avancer.")
     print("Pose-le sur le ruban. Ctrl+C pour arrêter.")
@@ -119,8 +130,13 @@ def main() -> None:
             previous = loop_start
 
             analog, sensors = sensor.read()
+            if sensors is None:
+                time.sleep(period_s)
+                continue
             steer, speed = controller.update(sensors, dt=dt)
-            angle = steer_to_angle(steer)
+            target_angle = steer_to_angle(steer)
+            applied_angle += max(-MAX_ANGLE_STEP, min(MAX_ANGLE_STEP, target_angle - applied_angle))
+            angle = applied_angle
             pwm = speed_to_pwm(speed)
 
             front.turn(angle)
