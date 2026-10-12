@@ -1,27 +1,32 @@
 #!/usr/bin/env python3
-"""Lit les 5 capteurs du suiveur de ligne et affiche les valeurs analogiques."""
+"""Lit les 5 capteurs avec la librairie SunFounder_Line_Follower."""
 
+import sys
 import time
 
-import smbus
 
-I2C_BUS = 1
-I2C_ADDRESS = 0x11
-
-
-def read_analog(bus):
-    """Cinq valeurs, gauche vers droite. Le module envoie la droite en premier."""
-    raw = bus.read_i2c_block_data(I2C_ADDRESS, 0, 10)
-    values = [(raw[index * 2] << 8) + raw[index * 2 + 1] for index in range(5)]
-    return list(reversed(values))
+def open_sensor():
+    try:
+        from SunFounder_Line_Follower import Line_Follower
+    except ImportError:
+        sys.path.append("/home/pi/SunFounder_PiCar-S/example")
+        try:
+            from SunFounder_Line_Follower import Line_Follower
+        except ImportError as err:
+            sys.exit(
+                "Librairie SunFounder_Line_Follower introuvable.\n"
+                "Elle est d'habitude dans /home/pi/SunFounder_PiCar-S/example.\n"
+                f"Détail : {err}"
+            )
+    return Line_Follower.Line_Follower()
 
 
 def main():
-    bus = smbus.SMBus(I2C_BUS)
-    print("Lecture des capteurs. G2 G1 C D1 D2. Ctrl+C pour arrêter.")
+    sensor = open_sensor()
+    print("Lecture SunFounder. Ctrl+C pour arrêter.")
     try:
         while True:
-            print(read_analog(bus), flush=True)
+            print(sensor.read_analog(), flush=True)
             time.sleep(0.1)
     except KeyboardInterrupt:
         print("\narrêt")
