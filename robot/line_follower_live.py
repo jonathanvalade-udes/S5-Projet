@@ -7,17 +7,15 @@ LineFollowerController décide du braquage et de la vitesse.
 """
 
 import time
-
 import picar
 import smbus
 from picar import back_wheels, front_wheels
-
 from line_follower import LineFollowerController
 
 I2C_BUS = 1
 I2C_ADDRESS = 0x11
 STRAIGHT_ANGLE = 90
-TURNING_MAX = 25
+TURNING_MAX = 40
 MAX_PWM = 58
 MIN_PWM = 48
 MAX_ANGLE_STEP = 8
@@ -49,7 +47,9 @@ def to_bits(analog):
 
 
 def steer_to_angle(steer):
-    angle = int(round(STRAIGHT_ANGLE - steer * TURNING_MAX))
+    """Un petit écart reste presque droit. Seul un gros écart prend l'angle max."""
+    softened = steer * abs(steer)
+    angle = int(round(STRAIGHT_ANGLE - softened * TURNING_MAX))
     low = STRAIGHT_ANGLE - TURNING_MAX
     high = STRAIGHT_ANGLE + TURNING_MAX
     return max(low, min(high, angle))
@@ -72,8 +72,8 @@ def main():
     front.ready()
     rear.ready()
 
-    # kd à 0 : le terme dérivé envoyait le servo à fond à chaque petit changement.
-    controller = LineFollowerController(kp=0.45, kd=0.0)
+    # Kp bas et Kd nul : 0.65 / 0.20 braquent trop fort et font zigzager en ligne droite.
+    controller = LineFollowerController(kp=0.50, kd=0.0)
     applied_angle = STRAIGHT_ANGLE
     period_s = 0.05
     previous = time.perf_counter()
