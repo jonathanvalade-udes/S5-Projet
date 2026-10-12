@@ -134,3 +134,41 @@ class LineFollowerController:
             target_velocity = 0.0
 
         return steer, target_velocity
+
+
+def _parse_sensors(raw: str) -> List[int]:
+    """Accepte '0 0 1 0 0', '00100' ou '0,0,1,0,0'."""
+    cleaned = raw.replace(",", " ").strip()
+    if " " not in cleaned and len(cleaned) == 5 and set(cleaned) <= {"0", "1"}:
+        tokens = list(cleaned)
+    else:
+        tokens = cleaned.split()
+    if len(tokens) != 5 or any(token not in ("0", "1") for token in tokens):
+        raise ValueError("il faut exactement 5 bits 0 ou 1, ordre G2 G1 C D1 D2")
+    return [int(token) for token in tokens]
+
+
+if __name__ == "__main__":
+    controller = LineFollowerController()
+    print("Suiveur de ligne seul. Ordre des capteurs : G2 G1 C D1 D2")
+    print("Exemples : 0 0 1 0 0    00001    0,1,1,0,0")
+    print("q pour quitter, r pour réinitialiser le régulateur.")
+    while True:
+        try:
+            raw = input("capteurs> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            break
+        if raw.lower() in ("q", "quit", "exit"):
+            break
+        if raw.lower() == "r":
+            controller.reset()
+            print("régulateur réinitialisé")
+            continue
+        try:
+            sensors = _parse_sensors(raw)
+        except ValueError as err:
+            print(err)
+            continue
+        steer, speed = controller.update(sensors, dt=0.05)
+        print(f"  braquage = {steer:+.3f}    vitesse = {speed:.3f} m/s")

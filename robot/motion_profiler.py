@@ -22,7 +22,7 @@ class MotionProfiler:
     MIN_TURN_RADIUS: float = 0.12  # m
 
     # Vitesse maximale en ligne droite (m/s)
-    CRUISE_SPEED: float = 0.28  # m/s
+    CRUISE_SPEED: float = 5  # m/s
 
     def __init__(self, max_accel: float = MAX_ACCELERATION, max_speed: float = CRUISE_SPEED):
         self.max_accel = max_accel
