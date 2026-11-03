@@ -43,6 +43,12 @@ bool Motors::init() {
         std::cerr << "[Motors] Warning: MemoryShareComponentServer (Servo): " << e.what() << std::endl;
     }
 
+    try {
+        m_fsm_sub = std::make_unique<shared::services::memory::MemoryShareComponentSubscriber>("FSM");
+    } catch (const std::exception& e) {
+        std::cerr << "[Motors] Warning: MemoryShareComponentSubscriber (FSM): " << e.what() << std::endl;
+    }
+
     m_running.store(true);
     return true;
 }
@@ -135,9 +141,17 @@ void Motors::run() {
                       << " | Watchdog misses: " << watchdog_starvation_cycles << std::endl;
         }
 
-        auto elapsed = std::chrono::steady_clock::now() - start_time;
-        if (elapsed < period_ms) {
-            std::this_thread::sleep_for(period_ms - elapsed);
+        // Réception et synchronisation temps N sans délai artificiel
+        bool woke_by_shm = false;
+        if (m_fsm_sub && m_fsm_sub->isConnected()) {
+            woke_by_shm = m_fsm_sub->waitForUpdate(period_ms.count());
+        }
+
+        if (!woke_by_shm) {
+            auto elapsed = std::chrono::steady_clock::now() - start_time;
+            if (elapsed < period_ms) {
+                std::this_thread::sleep_for(period_ms - elapsed);
+            }
         }
     }
 

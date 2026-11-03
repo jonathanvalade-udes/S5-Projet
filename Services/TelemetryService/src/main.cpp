@@ -15,6 +15,7 @@ static void signal_handler(int sig) {
 int main(int argc, char* argv[]) {
     int hz = 20;
     bool enable_ui = true;
+    int tcp_port = 91;
     int udp_port = 9002;
 
     for (int i = 1; i < argc; ++i) {
@@ -23,7 +24,9 @@ int main(int argc, char* argv[]) {
             hz = std::stoi(argv[++i]);
         } else if (arg == "--no-ui") {
             enable_ui = false;
-        } else if (arg == "--port" && i + 1 < argc) {
+        } else if ((arg == "--port" || arg == "--tcp-port") && i + 1 < argc) {
+            tcp_port = std::stoi(argv[++i]);
+        } else if (arg == "--udp-port" && i + 1 < argc) {
             udp_port = std::stoi(argv[++i]);
         }
     }
@@ -31,7 +34,7 @@ int main(int argc, char* argv[]) {
     std::signal(SIGINT, signal_handler);
     std::signal(SIGTERM, signal_handler);
 
-    services::TelemetryService service(hz, enable_ui, udp_port);
+    services::TelemetryService service(hz, enable_ui, tcp_port, udp_port);
     g_service_instance = &service;
 
     if (!service.init()) {

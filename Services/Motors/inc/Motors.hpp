@@ -37,6 +37,7 @@ private:
 
     std::unique_ptr<shared::services::memory::MemoryShareComponentServer> m_mem_server;
     std::unique_ptr<shared::services::memory::MemoryShareComponentServer> m_servo_mem_server;
+    std::unique_ptr<shared::services::memory::MemoryShareComponentSubscriber> m_fsm_sub;
 };
 
 } // namespace services

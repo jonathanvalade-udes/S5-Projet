@@ -69,8 +69,22 @@ void FSM::run() {
         bool shm_emergency = false;
         bool sensors_alive = true; // false tant qu'aucun producteur de capteurs n'a écrit dans la SHM
 
-        // Lecture des capteurs via POSIX SHM ou fallback MemoryShare
-        if (m_telemetry) {
+        // Lecture immédiate des capteurs au temps N via MemoryShare ou fallback POSIX SHM
+        bool got_sensors = false;
+        if (m_sensor_sub && m_sensor_sub->isConnected()) {
+            shared::sensors::SensorsTelemetry s_telem{};
+            if (m_sensor_sub->read(s_telem)) {
+                current_dist_cm = s_telem.ultrasonicSensor.calculatedDistance;
+                for (int i = 0; i < 5; ++i) {
+                    line_sensors[i] = (s_telem.lineFollower.sensorsData[i].normalizedValue > 0.5f ||
+                                       s_telem.lineFollower.sensorsData[i].rawADCValue > 500) ? 1 : 0;
+                }
+                got_sensors = true;
+                sensors_alive = true;
+            }
+        }
+
+        if (!got_sensors && m_telemetry) {
             pthread_mutex_lock(&(m_telemetry->mtx));
             current_dist_cm = m_telemetry->filtered_dist;
             for (int i = 0; i < 5; ++i) {
@@ -79,14 +93,10 @@ void FSM::run() {
             shm_emergency = m_telemetry->emergency_stop;
             sensors_alive = (m_telemetry->heartbeat > 0);
             pthread_mutex_unlock(&(m_telemetry->mtx));
-        } else if (m_sensor_sub && m_sensor_sub->isConnected()) {
-            shared::sensors::SensorsTelemetry s_telem{};
-            if (m_sensor_sub->read(s_telem)) {
-                current_dist_cm = s_telem.ultrasonicSensor.calculatedDistance;
-                for (int i = 0; i < 5; ++i) {
-                    line_sensors[i] = (s_telem.lineFollower.sensorsData[i].normalizedValue > 0.5f) ? 1 : 0;
-                }
-            }
+        } else if (m_telemetry) {
+            pthread_mutex_lock(&(m_telemetry->mtx));
+            shm_emergency = m_telemetry->emergency_stop;
+            pthread_mutex_unlock(&(m_telemetry->mtx));
         }
 
         // 1. Détection arrêt d'urgence externe
@@ -348,9 +358,17 @@ void FSM::run() {
                       << " | State: " << static_cast<int>(m_current_state) << std::endl;
         }
 
-        auto elapsed = std::chrono::steady_clock::now() - start_time;
-        if (elapsed < period_ms) {
-            std::this_thread::sleep_for(period_ms - elapsed);
+        // Réception et synchronisation temps N sans délai artificiel
+        bool woke_by_shm = false;
+        if (m_sensor_sub && m_sensor_sub->isConnected()) {
+            woke_by_shm = m_sensor_sub->waitForUpdate(period_ms.count());
+        }
+
+        if (!woke_by_shm) {
+            auto elapsed = std::chrono::steady_clock::now() - start_time;
+            if (elapsed < period_ms) {
+                std::this_thread::sleep_for(period_ms - elapsed);
+            }
         }
     }
 
