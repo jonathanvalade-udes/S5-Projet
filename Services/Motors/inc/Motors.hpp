@@ -18,7 +18,7 @@ namespace services {
 
 class Motors {
 public:
-    explicit Motors(int hz = 50);
+    explicit Motors(int hz = 50, bool invert = false);
     ~Motors();
 
     bool init();
@@ -30,6 +30,7 @@ public:
 private:
     std::atomic<bool> m_running{false};
     int m_hz{50};
+    bool m_invert{false};
 
     std::unique_ptr<IMotorDriver> m_driver;
     std::unique_ptr<SharedMemoryManager> m_shm_mgr;

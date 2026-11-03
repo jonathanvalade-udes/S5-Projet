@@ -107,7 +107,6 @@ public:
             // Segment existant réouvert en mode superviseur : réinitialiser l'arrêt d'urgence
             pthread_mutex_lock(&(shm_ptr->mtx));
             shm_ptr->emergency_stop = false;
-            shm_ptr->state = 0;
             pthread_mutex_unlock(&(shm_ptr->mtx));
         }
 

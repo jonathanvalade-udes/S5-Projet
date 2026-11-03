@@ -6,7 +6,7 @@
 
 namespace services {
 
-Motors::Motors(int hz) : m_running(false), m_hz(hz) {}
+Motors::Motors(int hz, bool invert) : m_running(false), m_hz(hz), m_invert(invert) {}
 
 Motors::~Motors() {
     stop();
@@ -16,9 +16,9 @@ bool Motors::init() {
     std::cout << "[Motors] Initializing Actuator driver (Propulsion + Direction) at " << m_hz << " Hz..." << std::endl;
 
 #ifdef __linux__
-    m_driver = std::make_unique<PiCarHatsMotorDriver>();
+    m_driver = std::make_unique<PiCarHatsMotorDriver>(picar::i2c::ADDR_PCA9685, m_invert);
 #else
-    m_driver = std::make_unique<MockMotorDriver>(false);
+    m_driver = std::make_unique<MockMotorDriver>(m_invert);
 #endif
 
     m_driver->emergency_stop();
