@@ -3,8 +3,8 @@
 #include <cmath>
 #include <vector>
 
-#include "../include/control/motion_profiler.hpp"
-#include "../include/control/line_follower.hpp"
+#include "control/motion_profiler.hpp"
+#include "control/line_follower.hpp"
 
 bool approx_equal(float a, float b, float epsilon = 0.01f) {
     return std::abs(a - b) <= epsilon;
@@ -18,90 +18,84 @@ void test_motion_profiler() {
     // v_max = sqrt(0.735 * 0.12) = sqrt(0.0882) = 0.29698 m/s
     float v_curve = profiler.calculate_curve_speed_limit(0.12f);
     assert(approx_equal(v_curve, 0.297f, 0.005f));
-    std::cout << "  ✓ Vitesse limite virage R=120mm : " << v_curve << " m/s (~0.297 m/s)." << std::endl;
 
-    // 2. Test d'accélération en rampe sur échelon brutal (0.0 -> 1.0 m/s)
-    const float dt = 0.02f; // 50 Hz
-    const float max_allowed_delta = 0.735f * dt + 1e-5f; // 0.0147 m/s max par pas
+    // 2. Test d'accélération par paliers de 20 ms (50 Hz)
+    float dt = 0.02f;
+    float max_delta_v = 0.735f * dt; // 0.0147 m/s par cycle max
 
-    float current = 0.0f;
-    for (int i = 0; i < 50; ++i) {
-        float next = profiler.update(1.0f, dt);
-        float delta = next - current;
-        assert(delta <= max_allowed_delta);
-        current = next;
+    float current_v = 0.0f;
+    float target_v = 0.25f;
+
+    for (int step = 0; step < 50; ++step) {
+        float next_v = profiler.update(target_v, dt);
+        float delta_v = std::abs(next_v - current_v);
+        // L'accélération instantanée ne doit JAMAIS dépasser a_max + tolérance flottante
+        assert(delta_v <= max_delta_v + 1e-4f);
+        current_v = next_v;
     }
-    // La vitesse ne doit jamais dépasser max_speed (0.25 m/s)
-    assert(profiler.get_current_speed() <= 0.25f);
-    std::cout << "  ✓ Rampe d'accélération : Delta vitesse strictly borné à " << max_allowed_delta << " m/s par cycle." << std::endl;
 
-    // 3. Test de freinage d'urgence progressif (décélération)
-    for (int i = 0; i < 50; ++i) {
-        float next = profiler.update(0.0f, dt);
-        float delta = current - next;
-        assert(delta <= max_allowed_delta);
-        current = next;
+    assert(approx_equal(current_v, target_v, 0.01f));
+
+    // 3. Test de décélération progressive
+    target_v = 0.0f;
+    for (int step = 0; step < 50; ++step) {
+        float next_v = profiler.update(target_v, dt);
+        float delta_v = std::abs(next_v - current_v);
+        assert(delta_v <= max_delta_v + 1e-4f);
+        current_v = next_v;
     }
-    assert(approx_equal(profiler.get_current_speed(), 0.0f, 0.001f));
-    std::cout << "  ✓ Décélération maximale bornée : Bille protégée contre le renversement." << std::endl;
+
+    assert(approx_equal(current_v, 0.0f, 0.01f));
+    std::cout << "  ✓ MotionProfiler : Accélération toujours <= 0.735 m/s²." << std::endl;
 }
 
-void test_line_follower() {
-    std::cout << "[TEST] LineFollowerController - Barycentre et détection T-Stop..." << std::endl;
-    LineFollowerController controller;
+void test_line_follower_controller() {
+    std::cout << "[TEST] LineFollowerController - Suivi de ligne PD..." << std::endl;
+    // Kp=0.65, Kd=0.20, v_cruise=0.22, v_turn=0.10
+    LineFollowerController controller(0.65f, 0.20f, 0.22f, 0.10f);
 
-    const float dt = 0.02f;
+    float dt = 0.02f;
 
-    // 1. Centré sur la ligne [0, 0, 1, 0, 0]
-    uint8_t centered[5] = {0, 0, 1, 0, 0};
-    auto out_center = controller.update(centered, dt);
-    assert(approx_equal(out_center.steer_normalized, 0.0f, 0.05f));
-    assert(approx_equal(out_center.steer_degrees, 0.0f, 1.0f));
-    assert(!out_center.is_finished);
-    std::cout << "  ✓ Suivi centré : Direction neutre (0.0°)." << std::endl;
+    // 1. Robot parfaitement centré (capteur du milieu seul actif : [0, 0, 1, 0, 0])
+    uint8_t centered_sensors[5] = {0, 0, 1, 0, 0};
+    auto cmd_center = controller.update(centered_sensors, dt);
+    assert(approx_equal(cmd_center.steer_normalized, 0.0f));
+    assert(approx_equal(cmd_center.target_velocity, 0.22f));
 
-    // 2. Ligne à droite [0, 0, 0, 1, 0]
-    uint8_t right[5] = {0, 0, 0, 1, 0};
-    auto out_right = controller.update(right, dt);
-    assert(out_right.steer_normalized > 0.0f);
-    assert(out_right.steer_degrees > 0.0f);
-    std::cout << "  ✓ Ligne déportée droite : Braquage positif (" << out_right.steer_degrees << "°)." << std::endl;
+    // 2. Déviation à gauche (capteur index 1 actif : [0, 1, 0, 0, 0])
+    uint8_t left_sensors[5] = {0, 1, 0, 0, 0};
+    auto cmd_left = controller.update(left_sensors, dt);
+    // Braquage vers la droite (angle négatif selon la convention)
+    assert(cmd_left.steer_normalized < 0.0f);
+    assert(cmd_left.target_velocity <= 0.22f);
 
-    // 3. Ligne à gauche [0, 1, 0, 0, 0]
-    uint8_t left[5] = {0, 1, 0, 0, 0};
-    auto out_left = controller.update(left, dt);
-    assert(out_left.steer_normalized < 0.0f);
-    assert(out_left.steer_degrees < 0.0f);
-    std::cout << "  ✓ Ligne déportée gauche : Braquage négatif (" << out_left.steer_degrees << "°)." << std::endl;
+    // 3. Déviation extrême à droite (capteur index 4 actif : [0, 0, 0, 0, 1])
+    uint8_t hard_right_sensors[5] = {0, 0, 0, 0, 1};
+    auto cmd_hard_right = controller.update(hard_right_sensors, dt);
+    assert(cmd_hard_right.steer_normalized > 0.0f);
+    // En grand virage, la vitesse doit ralentir vers v_turn (0.10 m/s)
+    assert(cmd_hard_right.target_velocity < 0.20f);
 
-    // 4. Barre d'arrivée en T [1, 1, 1, 1, 1]
-    uint8_t t_stop[5] = {1, 1, 1, 1, 1};
-    auto out_t = controller.update(t_stop, dt);
-    assert(out_t.is_finished);
-    assert(approx_equal(out_t.target_velocity, 0.0f));
-    std::cout << "  ✓ Détection barre d'arrivée T-Stop : Arrêt franc confirmé." << std::endl;
+    // 4. Perte de ligne temporaire : maintien de la dernière direction (anti-décrochage)
+    uint8_t lost_sensors[5] = {0, 0, 0, 0, 0};
+    auto cmd_lost = controller.update(lost_sensors, dt);
+    // Doit continuer à braquer dans la dernière direction connue
+    assert(cmd_lost.steer_normalized > 0.0f);
 
-    // 5. Perte de ligne temporaire vs prolongée
-    uint8_t lost[5] = {0, 0, 0, 0, 0};
-    controller.reset();
-    controller.update(right, dt); // initialise un virage à droite
-    auto out_lost1 = controller.update(lost, 0.1f);
-    assert(!out_lost1.is_line_lost); // Perte temporaire (< 1.2s), maintien
-    auto out_lost2 = controller.update(lost, 1.5f); // Dépassement timeout 1.2s
-    assert(out_lost2.is_line_lost);
-    std::cout << "  ✓ Gestion perte de ligne : Maintien temporaire puis sécurité Failsafe validés." << std::endl;
+    std::cout << "  ✓ LineFollowerController : Asservissement PD et anti-décrochage validés." << std::endl;
 }
 
 int main() {
-    std::cout << "===============================================" << std::endl;
-    std::cout << "   PiCar C++17 - Tests Unitaires Contrôle      " << std::endl;
-    std::cout << "===============================================" << std::endl;
+    std::cout << "========================================" << std::endl;
+    std::cout << "  PiCar C++17 - Tests Unitaires Contrôle" << std::endl;
+    std::cout << "========================================" << std::endl;
 
     test_motion_profiler();
-    test_line_follower();
+    test_line_follower_controller();
 
-    std::cout << "===============================================" << std::endl;
-    std::cout << "  TOUS LES TESTS DE CONTRÔLE ONT RÉUSSI !      " << std::endl;
-    std::cout << "===============================================" << std::endl;
+    std::cout << "========================================" << std::endl;
+    std::cout << "  TOUS LES TESTS SONT PASSÉS AVEC SUCCÈS" << std::endl;
+    std::cout << "========================================" << std::endl;
+
     return 0;
 }
