@@ -3,7 +3,7 @@
 /**
  * @brief Filtre Passe-Bas Exponentiel (EMA - Exponential Moving Average).
  * Conforme à la Section 7 du PiCar Master Architecture & Engineering Manual.
- * Lisse les vibrations mécaniques du châssis sur les signaux odométriques et de vitesse
+ * Lisse les vibrations mécaniques et le bruit haute fréquence
  * sans consommer d'allocation mémoire dynamique.
  */
 class LowPassEMA {
@@ -26,9 +26,14 @@ public:
         return current_val;
     }
 
-    void reset() {
-        initialized = false;
-        current_val = 0.0f;
+    void reset(float initial_value = 0.0f) {
+        if (initial_value != 0.0f) {
+            current_val = initial_value;
+            initialized = true;
+        } else {
+            initialized = false;
+            current_val = 0.0f;
+        }
     }
 
     float get_value() const {

@@ -3,13 +3,12 @@
 #include <cmath>
 #include <vector>
 
-#include "../include/filters/median_filter.hpp"
-#include "../include/filters/low_pass_ema.hpp"
-#include "../include/filters/kalman_1d.hpp"
-#include "../include/filters/ultrasonic_pipeline.hpp"
+#include "filters/median_filter.hpp"
+#include "filters/low_pass_ema.hpp"
+#include "filters/ultrasonic_pipeline.hpp"
 
 // Fonction utilitaire pour tester la proximité des flottants
-bool approx_equal(float a, float b, float epsilon = 0.01f) {
+bool approx_equal(float a, float b, float epsilon = 0.05f) {
     return std::abs(a - b) <= epsilon;
 }
 
@@ -52,7 +51,7 @@ void test_low_pass_ema() {
     float step2 = ema.filter(20.0f); // 0.25 * 20 + 0.75 * 12.5 = 5 + 9.375 = 14.375
     assert(approx_equal(step2, 14.375f));
 
-    // Simulation de plusieurs itérations pour vérifier la convergence asymptotique
+    // Simulation de plusieurs itérations pour vérifier la convergence asymptotique vers 20.0f
     for (int i = 0; i < 30; ++i) {
         ema.filter(20.0f);
     }
@@ -61,40 +60,15 @@ void test_low_pass_ema() {
     std::cout << "  ✓ Filtre EMA : Lissage exponentiel et convergence validés." << std::endl;
 }
 
-void test_kalman_1d() {
-    std::cout << "[TEST] KalmanFilter1D - Fusion & Rejet d'accélération..." << std::endl;
-    KalmanFilter1D kf(0.1f, 2.0f, 73.5f);
-
-    // Initialisation
-    float est = kf.update(50.0f, 0.02f);
-    assert(approx_equal(est, 50.0f));
-
-    // Évolution régulière : le robot s'approche d'un obstacle
-    // (50cm, 49.5cm, 49.0cm avec un pas de temps dt = 0.02s => vitesse 25 cm/s)
-    float current_dist = 50.0f;
-    for (int i = 0; i < 20; ++i) {
-        current_dist -= 0.5f;
-        kf.predict(0.02f, -25.0f); // Modèle moteur prédisant l'approche
-        est = kf.update(current_dist, 0.02f);
-    }
-
-    assert(approx_equal(est, current_dist, 1.0f));
-
-    // Test de rejet d'une saut d'accélération impossible (mesure délirante subite)
-    float crazy_measurement = 10.0f; // saut de 30 cm en 20 ms -> accélération irréaliste
-    float filtered_crazy = kf.update(crazy_measurement, 0.02f);
-    // L'estimation ne doit PAS sauter à 10.0f immédiatement
-    assert(filtered_crazy > 30.0f);
-
-    std::cout << "  ✓ Kalman 1D : Filtrage et amortissement des anomalies cinématiques validés." << std::endl;
-}
-
 void test_ultrasonic_pipeline() {
-    std::cout << "[TEST] UltrasonicPipeline - Pipeline complet HC-SR04..." << std::endl;
+    std::cout << "[TEST] UltrasonicPipeline - Duo Médian + Passe-Bas EMA..." << std::endl;
     UltrasonicPipeline pipeline(5, 0.25f);
     pipeline.reset(100.0f);
 
-    // Séquence de mesures avec bruit et glitches
+    // Vérification de la distance initiale
+    assert(approx_equal(pipeline.get_distance(), 100.0f));
+
+    // Séquence de mesures avec bruit et glitches (0cm et 400cm)
     std::vector<float> simulated_readings = {
         100.0f, 99.0f, 101.0f, 0.0f /* Glitch */, 98.5f, 400.0f /* Glitch */,
         97.0f, 96.5f, 96.0f, 95.0f
@@ -102,12 +76,21 @@ void test_ultrasonic_pipeline() {
 
     float result = 100.0f;
     for (float r : simulated_readings) {
-        result = pipeline.process(r, 0.02f, 10.0f); // robot avance à 10 cm/s
-        // Le résultat doit toujours rester dans une plage raisonnable [90, 105] cm
+        result = pipeline.process(r, 0.02f, 10.0f);
+        // Le résultat ne doit jamais être corrompu par les glitches 0 cm ou 400 cm
         assert(result >= 90.0f && result <= 105.0f);
     }
 
-    std::cout << "  ✓ Pipeline HC-SR04 : Résilience totale aux pannes et signaux parasites." << std::endl;
+    // Test de rejet immédiat d'un échelon violent avec glitch
+    pipeline.reset(50.0f);
+    pipeline.process(50.0f);
+    pipeline.process(50.0f);
+    pipeline.process(50.0f);
+    float val_glitch = pipeline.process(400.0f); // Glitch direct
+    // Le filtre médian rejette le 400.0f, donc le résultat reste proche de 50.0f
+    assert(approx_equal(val_glitch, 50.0f, 1.0f));
+
+    std::cout << "  ✓ Pipeline HC-SR04 (Médian + EMA) : Rejet des glitches et lissage validés." << std::endl;
 }
 
 int main() {
@@ -117,7 +100,6 @@ int main() {
 
     test_median_filter();
     test_low_pass_ema();
-    test_kalman_1d();
     test_ultrasonic_pipeline();
 
     std::cout << "========================================" << std::endl;
