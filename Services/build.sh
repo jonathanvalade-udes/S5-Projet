@@ -71,10 +71,13 @@ if [[ "${EMBEDDED_MODE}" == true ]]; then
         if command -v docker &>/dev/null && docker info &>/dev/null; then
             echo "==> macOS detected without aarch64 cross-toolchain."
             echo "==> Using Docker (native aarch64 Linux container) to build static ARM64 binaries..."
-            docker run --rm --dns 8.8.8.8 -v "${SCRIPT_DIR}":/workspace -w /workspace alpine sh -c \
-                "apk add --no-cache build-base cmake linux-headers >/dev/null && \
-                 cmake -B /workspace/build-embedded -S /workspace -DSTATIC=${STATIC_FLAG} && \
-                 cmake --build /workspace/build-embedded --target ${TARGET}"
+            IMAGE_NAME="alpine"
+            CMD="apk add --no-cache build-base cmake linux-headers >/dev/null && cmake -B /workspace/build-embedded -S /workspace -DSTATIC=${STATIC_FLAG} && cmake --build /workspace/build-embedded --target ${TARGET}"
+            if docker image inspect alpine-picar-builder &>/dev/null; then
+                IMAGE_NAME="alpine-picar-builder"
+                CMD="cmake -B /workspace/build-embedded -S /workspace -DSTATIC=${STATIC_FLAG} && cmake --build /workspace/build-embedded --target ${TARGET}"
+            fi
+            docker run --rm --dns 8.8.8.8 -v "${SCRIPT_DIR}":/workspace -w /workspace "${IMAGE_NAME}" sh -c "${CMD}"
             echo ""
             echo "==> SUCCESS! Binaries generated in Services/build-embedded/:"
             file "${BUILD_DIR}/ServiceManager/init" "${BUILD_DIR}/FSM/FSM" "${BUILD_DIR}/Sensors/Sensors" "${BUILD_DIR}/Motors/Motors" "${BUILD_DIR}/TelemetryService/TelemetryService"

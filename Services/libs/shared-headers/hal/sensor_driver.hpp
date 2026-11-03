@@ -7,12 +7,14 @@
 #include <chrono>
 #include <cstring>
 #include <cstdio>
+#include <cstdlib>
 #include "picar_i2c_registers.hpp"
 #include "i2c_device.hpp"
 
 #ifdef __linux__
 #include <fcntl.h>
 #include <unistd.h>
+#include <dirent.h>
 #endif
 
 /**
@@ -82,6 +84,8 @@ class PiCarHatsSensorDriver : public ISensorDriver {
 private:
     int trig_pin = 12;
     int echo_pin = 16;
+    int actual_trig = 12;
+    int actual_echo = 16;
     picar::hal::I2CDevice m_line_device;
     uint16_t m_thresholds[5] = {picar::i2c::line_follower::DEFAULT_THRESHOLD,
                                 picar::i2c::line_follower::DEFAULT_THRESHOLD,
@@ -90,12 +94,57 @@ private:
                                 picar::i2c::line_follower::DEFAULT_THRESHOLD};
     uint8_t m_last_sensors[5] = {0, 0, 1, 0, 0};
 
+    static int detect_gpio_base() {
+#ifdef __linux__
+        DIR* dir = opendir("/sys/class/gpio");
+        if (!dir) return 0;
+        struct dirent* entry;
+        int found_base = 0;
+        while ((entry = readdir(dir)) != nullptr) {
+            if (strncmp(entry->d_name, "gpiochip", 8) == 0) {
+                char label_path[256];
+                snprintf(label_path, sizeof(label_path), "/sys/class/gpio/%s/label", entry->d_name);
+                int lfd = open(label_path, O_RDONLY);
+                if (lfd >= 0) {
+                    char label[64] = {0};
+                    ssize_t n = read(lfd, label, sizeof(label) - 1);
+                    close(lfd);
+                    if (n > 0 && (strstr(label, "bcm2835") || strstr(label, "3f200000.gpio") || strstr(label, "fe200000.gpio"))) {
+                        char base_path[256];
+                        snprintf(base_path, sizeof(base_path), "/sys/class/gpio/%s/base", entry->d_name);
+                        int bfd = open(base_path, O_RDONLY);
+                        if (bfd >= 0) {
+                            char base_str[32] = {0};
+                            ssize_t bn = read(bfd, base_str, sizeof(base_str) - 1);
+                            close(bfd);
+                            if (bn > 0) {
+                                found_base = std::atoi(base_str);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        closedir(dir);
+        return found_base;
+#else
+        return 0;
+#endif
+    }
+
 public:
     PiCarHatsSensorDriver(int trig = 12, int echo = 16) 
         : trig_pin(trig), 
           echo_pin(echo),
+          actual_trig(trig),
+          actual_echo(echo),
           m_line_device(picar::i2c::ADDR_LINE_FOLLOWER, picar::i2c::ADDR_LINE_FOLLOWER_ALT) {
 #ifdef __linux__
+        int base = detect_gpio_base();
+        actual_trig = base + trig_pin;
+        actual_echo = base + echo_pin;
+
         if (m_line_device.is_connected()) {
             std::cout << "[INFO] Suiveur de ligne PiCar-S connecté sur l'adresse I2C 0x" 
                       << std::hex << static_cast<int>(m_line_device.get_active_address()) << std::dec << std::endl;
@@ -107,9 +156,9 @@ public:
         int export_fd = open("/sys/class/gpio/export", O_WRONLY);
         if (export_fd >= 0) {
             char buf[16];
-            snprintf(buf, sizeof(buf), "%d", trig_pin);
+            snprintf(buf, sizeof(buf), "%d", actual_trig);
             write(export_fd, buf, strlen(buf));
-            snprintf(buf, sizeof(buf), "%d", echo_pin);
+            snprintf(buf, sizeof(buf), "%d", actual_echo);
             write(export_fd, buf, strlen(buf));
             close(export_fd);
         }
@@ -118,29 +167,46 @@ public:
 
         // Configuration explicite des directions
         char dir_path[64];
-        snprintf(dir_path, sizeof(dir_path), "/sys/class/gpio/gpio%d/direction", trig_pin);
+        snprintf(dir_path, sizeof(dir_path), "/sys/class/gpio/gpio%d/direction", actual_trig);
         int d_fd = open(dir_path, O_WRONLY);
         if (d_fd >= 0) {
             write(d_fd, "out", 3);
             close(d_fd);
         } else {
-            std::cerr << "[WARN] Impossible de configurer Trig GPIO" << trig_pin << " en OUT" << std::endl;
+            std::cerr << "[WARN] Impossible de configurer Trig GPIO" << actual_trig << " (BCM " << trig_pin << ") en OUT" << std::endl;
         }
 
-        snprintf(dir_path, sizeof(dir_path), "/sys/class/gpio/gpio%d/direction", echo_pin);
+        snprintf(dir_path, sizeof(dir_path), "/sys/class/gpio/gpio%d/direction", actual_echo);
         d_fd = open(dir_path, O_WRONLY);
         if (d_fd >= 0) {
             write(d_fd, "in", 2);
             close(d_fd);
         } else {
-            std::cerr << "[WARN] Impossible de configurer Echo GPIO" << echo_pin << " en IN" << std::endl;
+            std::cerr << "[WARN] Impossible de configurer Echo GPIO" << actual_echo << " (BCM " << echo_pin << ") en IN" << std::endl;
         }
 
-        std::cout << "[INFO] HC-SR04 configuré sur Trig=GPIO" << trig_pin << ", Echo=GPIO" << echo_pin << std::endl;
+        std::cout << "[INFO] HC-SR04 configuré sur Trig=GPIO" << actual_trig << " (BCM " << trig_pin 
+                  << "), Echo=GPIO" << actual_echo << " (BCM " << echo_pin << ")" << std::endl;
 #else
         (void)trig_pin;
         (void)echo_pin;
+        (void)actual_trig;
+        (void)actual_echo;
         std::cout << "[INFO] PiCarHatsSensorDriver initialisé en mode compatibilité (Non-Linux)." << std::endl;
+#endif
+    }
+
+    ~PiCarHatsSensorDriver() override {
+#ifdef __linux__
+        int unexport_fd = open("/sys/class/gpio/unexport", O_WRONLY);
+        if (unexport_fd >= 0) {
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%d", actual_trig);
+            write(unexport_fd, buf, strlen(buf));
+            snprintf(buf, sizeof(buf), "%d", actual_echo);
+            write(unexport_fd, buf, strlen(buf));
+            close(unexport_fd);
+        }
 #endif
     }
 
@@ -152,8 +218,8 @@ public:
 #ifdef __linux__
         char trig_path[64];
         char echo_path[64];
-        snprintf(trig_path, sizeof(trig_path), "/sys/class/gpio/gpio%d/value", trig_pin);
-        snprintf(echo_path, sizeof(echo_path), "/sys/class/gpio/gpio%d/value", echo_pin);
+        snprintf(trig_path, sizeof(trig_path), "/sys/class/gpio/gpio%d/value", actual_trig);
+        snprintf(echo_path, sizeof(echo_path), "/sys/class/gpio/gpio%d/value", actual_echo);
 
         int t_fd = open(trig_path, O_WRONLY);
         int e_fd = open(echo_path, O_RDONLY);

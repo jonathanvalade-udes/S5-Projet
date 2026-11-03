@@ -49,7 +49,7 @@ int main(int argc, char* argv[])
         log_msg(1, "[INIT] Running in non-PID-1 user mode (PID: %d)\n", getpid());
     }
 
-    setenv("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root:.", 1);
+    setenv("PATH", "/root:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:.", 1);
 
     log_msg(1, "[INIT] STARTING THE SYSTEM...\n");
 
@@ -72,7 +72,7 @@ int main(int argc, char* argv[])
     std::vector<MonitoredService> monitored_services = {
         {
             "FSM",
-            {"FSM", "fsm", "/root/FSM", "/root/fsm", "/usr/local/bin/FSM", "/usr/local/bin/fsm"},
+            {"/root/FSM", "/root/fsm", "FSM", "fsm", "/usr/local/bin/FSM", "/usr/local/bin/fsm", "/usr/sbin/FSM"},
             {},
             -1,
             0,
@@ -81,7 +81,7 @@ int main(int argc, char* argv[])
         },
         {
             "Sensors",
-            {"Sensors", "sensors", "/root/Sensors", "/root/sensors", "/usr/local/bin/Sensors", "/usr/local/bin/sensors"},
+            {"/root/Sensors", "/root/sensors", "Sensors", "sensors", "/usr/local/bin/Sensors", "/usr/local/bin/sensors", "/usr/sbin/Sensors"},
             {},
             -1,
             0,
@@ -90,7 +90,7 @@ int main(int argc, char* argv[])
         },
         {
             "Motors",
-            {"Motors", "motors", "/root/Motors", "/root/motors", "/usr/local/bin/Motors", "/usr/local/bin/motors"},
+            {"/root/Motors", "/root/motors", "Motors", "motors", "/usr/local/bin/Motors", "/usr/local/bin/motors", "/usr/sbin/Motors"},
             {},
             -1,
             0,
@@ -99,7 +99,7 @@ int main(int argc, char* argv[])
         },
         {
             "TelemetryService",
-            {"TelemetryService", "telemetry", "/root/TelemetryService", "/root/telemetry", "/usr/local/bin/TelemetryService", "/usr/local/bin/telemetry"},
+            {"/root/TelemetryService", "/root/telemetry", "TelemetryService", "telemetry", "/usr/local/bin/TelemetryService", "/usr/local/bin/telemetry", "/usr/sbin/TelemetryService"},
             {},
             -1,
             0,
