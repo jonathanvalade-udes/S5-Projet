@@ -60,3 +60,11 @@ target_link_libraries(test_telemetry PRIVATE
     shared_headers
 )
 add_test(NAME test_telemetry COMMAND test_telemetry)
+
+add_executable(test_live_motor test_live_motor.cpp)
+target_include_directories(test_live_motor PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/.. 
+    ${CMAKE_CURRENT_SOURCE_DIR}/../libs/shared-headers
+)
+target_link_libraries(test_live_motor PRIVATE Threads::Threads)
+
