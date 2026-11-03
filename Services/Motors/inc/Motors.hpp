@@ -8,6 +8,7 @@
 #include "header/header.hpp"
 #include "services/services_telemetry.hpp"
 #include "motors/motors_component.hpp"
+#include "servo/servo_telemetry.hpp"
 #include "hal/motor_driver.hpp"
 #include "ipc/shared_memory.hpp"
 #include "shared-services/memory/subscriber.hpp"
@@ -35,6 +36,7 @@ private:
     RobotTelemetry* m_telemetry{nullptr};
 
     std::unique_ptr<shared::services::memory::MemoryShareComponentServer> m_mem_server;
+    std::unique_ptr<shared::services::memory::MemoryShareComponentServer> m_servo_mem_server;
 };
 
 } // namespace services
