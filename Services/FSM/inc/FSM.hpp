@@ -27,10 +27,14 @@ public:
     void stop();
 
     bool is_running() const { return m_running.load(); }
+    shared::fsm::MachineStates get_current_state() const { return m_current_state; }
+    void set_state(shared::fsm::MachineStates state) { m_current_state = state; m_state_timer = 0.0f; }
 
 private:
     std::atomic<bool> m_running{false};
     int m_hz{50};
+    shared::fsm::MachineStates m_current_state{shared::fsm::MachineStates::LineFollowingForward};
+    float m_state_timer{0.0f};
 
     std::unique_ptr<LineFollowerController> m_line_controller;
     std::unique_ptr<MotionProfiler> m_motion_profiler;

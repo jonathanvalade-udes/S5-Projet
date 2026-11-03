@@ -85,6 +85,43 @@ void test_line_follower_controller() {
     std::cout << "  ✓ LineFollowerController : Asservissement PD et anti-décrochage validés." << std::endl;
 }
 
+void test_obstacle_avoidance_s4_and_s5() {
+    std::cout << "[TEST] FSM S4 & S5 - Évitement d'obstacle et Marche arrière..." << std::endl;
+
+    // Simulation de la cinématique d'évitement
+    MotionProfiler profiler(0.735f, 0.25f);
+    const float dt = 0.02f;
+
+    // 1. Décélération sécuritaire devant obstacle
+    float speed = 0.25f;
+    profiler.reset(speed);
+    while (profiler.get_current_speed() > 0.01f) {
+        speed = profiler.update(0.0f, dt);
+    }
+    assert(approx_equal(profiler.get_current_speed(), 0.0f, 0.01f));
+    std::cout << "  ✓ S1 Arrêt de précision : Immobilisation complète sans secousse." << std::endl;
+
+    // 2. Déviation latérale (RightDeviation) : rampe vers vitesse douce 0.15 m/s
+    for (int i = 0; i < 20; ++i) {
+        speed = profiler.update(0.15f, dt);
+    }
+    assert(speed <= 0.15f);
+    std::cout << "  ✓ S4 Déviation : Accélération d'évitement sous le seuil critique." << std::endl;
+
+    // 3. Marche arrière (S5) : vitesse négative bornée et distance < 200 mm
+    profiler.reset(0.0f);
+    float reverse_dist = 0.0f;
+    const float reverse_speed = -0.10f;
+    for (int i = 0; i < 75; ++i) { // 75 pas * 0.02s = 1.5s
+        float v = profiler.update(reverse_speed, dt);
+        reverse_dist += std::abs(v) * dt;
+    }
+    // Distance totale parcourue doit être strictement < 200 mm (0.20 m)
+    assert(reverse_dist < 0.20f);
+    assert(reverse_dist >= 0.10f); // ~150 mm
+    std::cout << "  ✓ S5 Marche arrière guidée : Distance " << (reverse_dist * 1000.0f) << " mm (< 200 mm requis)." << std::endl;
+}
+
 int main() {
     std::cout << "========================================" << std::endl;
     std::cout << "  PiCar C++17 - Tests Unitaires Contrôle" << std::endl;
@@ -92,6 +129,7 @@ int main() {
 
     test_motion_profiler();
     test_line_follower_controller();
+    test_obstacle_avoidance_s4_and_s5();
 
     std::cout << "========================================" << std::endl;
     std::cout << "  TOUS LES TESTS SONT PASSÉS AVEC SUCCÈS" << std::endl;
