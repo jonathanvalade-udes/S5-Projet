@@ -75,7 +75,8 @@
 ## 🎯 Prochaines Actions : Jalon 6 (Qualification & Déploiement Réel)
 
 1. **Validation dynamique en simulation Godot 4 :**
-   * Lancer `SimBridge` et exécuter le parcours complet avec obstacle pour observer l'enchaînement en direct.
+   * [x] Pile C++ lançable sous WSL2 via `Services/run_sim.ps1` (SimBridge + FSM ; Sensors/Motors volontairement non lancés en simulation). Test de fumée avec faux client Godot validé (croisière, déviation, obstacle S4, arrêt balle).
+   * [ ] Exécuter le parcours complet avec obstacle dans Godot (« Localhost » → Connect) et comparer au comportement Python (tour ≈ 23 s).
 2. **Essais physiques sur le robot réel (PiCar-S) :**
    * Compilation ARM64 via `./build.sh --embedded`.
    * Déploiement des binaires sur le Raspberry Pi (`/root/picar_brain`, `/root/picar_motor`, `/root/picar_sensors`).

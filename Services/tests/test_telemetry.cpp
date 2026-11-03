@@ -4,7 +4,7 @@
 #include <thread>
 #include <chrono>
 
-#include "../include/ipc/shared_memory.hpp"
+#include "ipc/shared_memory.hpp"
 #include "../TelemetryService/inc/TelemetryService.hpp"
 
 static bool approx_equal(float a, float b, float eps = 0.02f) {

@@ -4,9 +4,9 @@
 #include <chrono>
 #include <cmath>
 
-#include "../include/ipc/shared_memory.hpp"
-#include "../include/hal/motor_driver.hpp"
-#include "../include/filters/ultrasonic_pipeline.hpp"
+#include "ipc/shared_memory.hpp"
+#include "hal/motor_driver.hpp"
+#include "filters/ultrasonic_pipeline.hpp"
 
 void test_ipc_communication_and_failsafe() {
     std::cout << "[TEST] Démarrage du test d'intégration IPC & Failsafe..." << std::endl;
