@@ -103,6 +103,12 @@ public:
             shm_ptr->state = 0;
             shm_ptr->emergency_stop = false;
             shm_ptr->heartbeat = 0;
+        } else if (create_if_missing) {
+            // Segment existant réouvert en mode superviseur : réinitialiser l'arrêt d'urgence
+            pthread_mutex_lock(&(shm_ptr->mtx));
+            shm_ptr->emergency_stop = false;
+            shm_ptr->state = 0;
+            pthread_mutex_unlock(&(shm_ptr->mtx));
         }
 
         return shm_ptr;

@@ -34,6 +34,12 @@ bool FSM::init() {
     try {
         m_shm_mgr = std::make_unique<SharedMemoryManager>();
         m_telemetry = m_shm_mgr->open_shm(true);
+        if (m_telemetry) {
+            pthread_mutex_lock(&(m_telemetry->mtx));
+            m_telemetry->emergency_stop = false;
+            m_telemetry->state = static_cast<int>(shared::fsm::MachineStates::Init);
+            pthread_mutex_unlock(&(m_telemetry->mtx));
+        }
     } catch (const std::exception& e) {
         std::cerr << "[FSM] Warning: Failed to open POSIX SHM: " << e.what() << std::endl;
         m_telemetry = nullptr;

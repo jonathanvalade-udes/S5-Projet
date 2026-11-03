@@ -51,6 +51,10 @@ int main(int argc, char* argv[])
 
     setenv("PATH", "/root:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:.", 1);
 
+    // Nettoyage préventif des anciens segments SHM pour démarrer propre
+    unlink("/dev/shm/picar_shm");
+    system("rm -f /dev/shm/car/* 2>/dev/null");
+
     log_msg(1, "[INIT] STARTING THE SYSTEM...\n");
 
     if (is_pid_1) {
