@@ -69,7 +69,7 @@ void mount_essential_fs(const char* source, const char* target, const char* type
     }
 }
 
-void interface_admin_up(const char* iface) {
+void  interface_admin_up(const char* iface) {
     int sock = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock < 0) return;
 
@@ -208,9 +208,58 @@ void setup_console() {
     }
 }
 
+pid_t spawn_daemon(const char* name, const std::vector<const char*>& args) {
+    pid_t pid = fork();
+    if (pid < 0) {
+        log_msg(2, "[DAEMON] Failed to fork %s: %s\n", name, std::strerror(errno));
+        return -1;
+    }
+    if (pid == 0) {
+        std::vector<char*> argv;
+        for (const auto arg : args) {
+            argv.push_back(const_cast<char*>(arg));
+        }
+        argv.push_back(nullptr);
+
+        execvp(argv[0], argv.data());
+        log_msg(2, "[DAEMON] Failed to exec %s (%s): %s\n", name, argv[0], std::strerror(errno));
+        _exit(127);
+    }
+    log_msg(1, "[DAEMON] Started %s (PID: %d)\n", name, pid);
+    return pid;
+}
+
+pid_t spawn_dropbear(){
+    // Ignore EEXIST errors if directories are already present
+    mkdir("/etc/dropbear", 0755);
+    mkdir("/var/log", 0755);
+    mkdir("/var/run", 0755);
+    mkdir("/root", 0700);
+
+    // Only generate the host key if it doesn't already exist
+    if (access("/etc/key", F_OK) != 0) {
+        system("dropbearkey -t ed25519 -f /etc/key");
+    }
+
+    std::vector<const char*> args = {
+        "dropbear",
+        "-F",
+        "-E",
+        "-r",
+        "/etc/key",
+        "-B"
+    };
+    return spawn_daemon("dropbear", args);
+}
+
 int main()
 {
     umask(0);
+    if (mount(nullptr, "/", nullptr, MS_REMOUNT, nullptr) == -1) {
+        log_msg(2, "[INIT] Failed to remount rootfs as read-write: %s\n", std::strerror(errno));
+    } else {
+        log_msg(1, "[INIT] Successfully remounted rootfs as read-write.\n");
+    }
     setup_console();
 
     mount_essential_fs("devtmpfs", "/dev", "devtmpfs", MS_NOSUID);
@@ -238,6 +287,10 @@ int main()
     const char* eth0_ip = "192.168.0.100";
     bool eth_configured = false;
     pid_t pid_dropbear = -1;
+    pid_t pid_fsm = -1;
+    pid_t pid_sensors = -1;
+    pid_t pid_motors = -1;
+    pid_t pid_telemetry = -1;
     
     log_msg(1, "[INIT] MONITORING SERVICES..\n");
     while(true){
@@ -249,6 +302,22 @@ int main()
             } else if (WIFSIGNALED(status)) {
                 log_msg(1, "[SUPERVISOR] Process %d killed by signal %d\n", dead_pid, WTERMSIG(status));
             }
+        }
+
+        if(pid_fsm <=0){
+            pid_fsm = spawn_daemon("fsm", {"fsm"});
+        }
+
+        if(pid_sensors <=0){
+            pid_sensors = spawn_daemon("sensors", {"sensors"});
+        }
+
+        if(pid_motors <=0){
+            pid_motors = spawn_daemon("motors", {"motors"});
+        }
+
+        if(pid_telemetry <=0){
+            pid_telemetry = spawn_daemon("telemetry", {"telemetry"});
         }
 
         
@@ -264,10 +333,10 @@ int main()
                 eth_configured = true;
 
                 // Execute dropbear once eth0 is detected and configured
-                //if (pid_dropbear <= 0) {
-                    //log_msg(1, "[INIT] Executing Dropbear SSH on %s:22...\n", eth0_ip);
-                    //pid_dropbear = start_dropbear(eth0_ip);
-                //}
+                if (pid_dropbear <= 0) {
+                    log_msg(1, "[INIT] Executing Dropbear SSH on %s:22...\n", eth0_ip);
+                    pid_dropbear = spawn_dropbear();
+                }
             } else if (!link_is_up && eth_configured) {
                 log_msg(1, "[NET] Interface %s link DOWN (cable unplugged).\n", iface.c_str());
                 eth_configured = false;
