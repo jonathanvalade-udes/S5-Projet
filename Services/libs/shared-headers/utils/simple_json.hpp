@@ -15,9 +15,12 @@ struct GodotTelemetryIn {
 };
 
 struct GodotCommandOut {
-    float velocity = 0.0f;  // m/s [-0.30, +0.30]
+    float velocity = 0.0f;  // m/s [-0.32, +0.32]
     float direction = 0.0f; // [-1.0, +1.0] (direction normalisée pour Godot)
     bool brake = false;
+    float distance = -1.0f;
+    uint8_t line_sensors[5] = {0, 0, 0, 0, 0};
+    bool has_sensors = false;
 };
 
 /**
@@ -92,8 +95,17 @@ public:
         oss << std::fixed << std::setprecision(4);
         oss << "{\"velocity\":" << cmd.velocity
             << ",\"direction\":" << cmd.direction
-            << ",\"brake\":" << (cmd.brake ? "true" : "false")
-            << "}\n";
+            << ",\"brake\":" << (cmd.brake ? "true" : "false");
+        if (cmd.has_sensors) {
+            oss << ",\"distance\":" << std::setprecision(1) << cmd.distance;
+            oss << ",\"line_follower\":["
+                << static_cast<int>(cmd.line_sensors[0]) << ","
+                << static_cast<int>(cmd.line_sensors[1]) << ","
+                << static_cast<int>(cmd.line_sensors[2]) << ","
+                << static_cast<int>(cmd.line_sensors[3]) << ","
+                << static_cast<int>(cmd.line_sensors[4]) << "]";
+        }
+        oss << "}\n";
         return oss.str();
     }
 };

@@ -4,6 +4,7 @@
 #include <vector>
 #include <chrono>
 #include <thread>
+#include <algorithm>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
@@ -14,14 +15,16 @@
 
 namespace services {
 
-SimBridge::SimBridge(int port) : m_running(false), m_port(port) {}
+SimBridge::SimBridge(int port, bool sim_mode) 
+    : m_running(false), m_port(port), m_sim_mode(sim_mode) {}
 
 SimBridge::~SimBridge() {
     stop();
 }
 
 bool SimBridge::init() {
-    std::cout << "[SimBridge] Initializing TCP Simulator Bridge on port " << m_port << "..." << std::endl;
+    std::cout << "[SimBridge] Initializing TCP Bridge on port " << m_port 
+              << " (" << (m_sim_mode ? "SIMULATION MODE (Godot)" : "VEHICLE MONITOR MODE (Real car)") << ")..." << std::endl;
 
     try {
         m_shm_mgr = std::make_unique<SharedMemoryManager>();
@@ -67,7 +70,7 @@ bool SimBridge::init() {
 }
 
 void SimBridge::run() {
-    std::cout << "[SimBridge] Waiting for Godot / Webots simulator connections..." << std::endl;
+    std::cout << "[SimBridge] Waiting for TCP connections on port " << m_port << "..." << std::endl;
 
     int client_fd = -1;
     std::string rx_buffer;
@@ -104,7 +107,7 @@ void SimBridge::run() {
             setsockopt(client_fd, SOL_SOCKET, SO_NOSIGPIPE, &nosigpipe, sizeof(nosigpipe));
 #endif
 
-            std::cout << "[SimBridge] Simulator connected from " 
+            std::cout << "[SimBridge] Client connected from " 
                       << inet_ntoa(client_addr.sin_addr) << ":" << ntohs(client_addr.sin_port) << std::endl;
             rx_buffer.clear();
         }
@@ -123,7 +126,7 @@ void SimBridge::run() {
         }
 
         if (bytes_read == 0) {
-            std::cout << "[SimBridge] Simulator disconnected (EOF)." << std::endl;
+            std::cout << "[SimBridge] Client disconnected (EOF)." << std::endl;
             close(client_fd);
             client_fd = -1;
             continue;
@@ -145,24 +148,47 @@ void SimBridge::run() {
             if (SimpleJson::parse_godot_telemetry(line, telem_in)) {
                 if (m_telemetry) {
                     pthread_mutex_lock(&(m_telemetry->mtx));
-                    m_telemetry->filtered_dist = telem_in.distance;
-                    for (int i = 0; i < 5; ++i) {
-                        m_telemetry->line_sensors[i] = telem_in.line_sensors[i];
+
+                    if (m_sim_mode) {
+                        // Mode simulation Godot : injection des capteurs virtuels dans la mémoire partagée
+                        m_telemetry->filtered_dist = telem_in.distance;
+                        for (int i = 0; i < 5; ++i) {
+                            m_telemetry->line_sensors[i] = telem_in.line_sensors[i];
+                        }
+                        if (telem_in.ball_dropped) {
+                            m_telemetry->emergency_stop = true;
+                        }
                     }
-                    if (telem_in.ball_dropped) {
-                        m_telemetry->emergency_stop = true;
-                    }
+                    // Mode véhicule réel : NE PAS écraser les capteurs physiques (HC-SR04 et I2C) gérés par Sensors!
+
                     m_telemetry->heartbeat++;
 
                     float target_spd = m_telemetry->target_speed;
                     float target_steer = m_telemetry->target_steering;
                     bool emergency = m_telemetry->emergency_stop;
+                    float current_dist = m_telemetry->filtered_dist;
+                    uint8_t current_lines[5];
+                    for (int i = 0; i < 5; ++i) {
+                        current_lines[i] = m_telemetry->line_sensors[i];
+                    }
                     pthread_mutex_unlock(&(m_telemetry->mtx));
 
                     GodotCommandOut cmd_out;
-                    cmd_out.velocity = (target_spd / 50.0f) * 0.25f;
-                    cmd_out.direction = target_steer / 45.0f;
+                    // Harmonisation stricte avec FSM::STRAIGHT_CRUISE_SPEED = 0.32 m/s :
+                    // (target_spd / 50.0f) * 0.32f produit exactement la vitesse physique en m/s
+                    cmd_out.velocity = (target_spd / 50.0f) * 0.32f;
+                    // Normalisation de l'angle de braquage [-1.0, 1.0] pour l'épure d'Ackermann de Godot (+-48°)
+                    cmd_out.direction = std::clamp(target_steer / 45.0f, -1.0f, 1.0f);
                     cmd_out.brake = emergency;
+
+                    if (!m_sim_mode) {
+                        // En mode véhicule réel, transmettre aussi les valeurs des capteurs réels vers le client/dashboard
+                        cmd_out.distance = current_dist;
+                        for (int i = 0; i < 5; ++i) {
+                            cmd_out.line_sensors[i] = current_lines[i];
+                        }
+                        cmd_out.has_sensors = true;
+                    }
 
                     std::string response = SimpleJson::serialize_command(cmd_out);
                     ssize_t sent = send(client_fd, response.c_str(), response.size(), 0);
@@ -174,8 +200,8 @@ void SimBridge::run() {
                     }
 
                     if (packet_count % 50 == 0) {
-                        std::cout << "[SimBridge 50Hz] Packets: " << packet_count
-                                  << " | Dist: " << telem_in.distance << " cm"
+                        std::cout << "[SimBridge 50Hz] [" << (m_sim_mode ? "SIM" : "VEHICLE") << "] Packets: " << packet_count
+                                  << " | Dist: " << current_dist << " cm"
                                   << " | Vel: " << cmd_out.velocity << " m/s"
                                   << " | Steer: " << cmd_out.direction << std::endl;
                     }

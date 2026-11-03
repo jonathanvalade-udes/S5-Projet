@@ -8,8 +8,8 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 
-#include "../include/utils/simple_json.hpp"
-#include "../include/ipc/shared_memory.hpp"
+#include "utils/simple_json.hpp"
+#include "ipc/shared_memory.hpp"
 
 void test_json_parsing() {
     std::cout << "[TEST] SimpleJson - Parsing et Sérialisation Godot..." << std::endl;
@@ -34,6 +34,14 @@ void test_json_parsing() {
     std::string serialized = SimpleJson::serialize_command(cmd);
     assert(serialized.find("\"velocity\":0.22") != std::string::npos);
     assert(serialized.find("\"direction\":-0.5") != std::string::npos);
+
+    // Test avec télémesure capteurs activée (mode véhicule)
+    cmd.has_sensors = true;
+    cmd.distance = 28.5f;
+    cmd.line_sensors[2] = 1;
+    std::string serialized_sensors = SimpleJson::serialize_command(cmd);
+    assert(serialized_sensors.find("\"distance\":28.5") != std::string::npos);
+    assert(serialized_sensors.find("\"line_follower\":[0,0,1,0,0]") != std::string::npos);
 
     std::cout << "  ✓ Sérialisation & Dé-sérialisation JSON validées." << std::endl;
 }
@@ -109,10 +117,10 @@ void test_tcp_sim_roundtrip() {
     telem->filtered_dist = in.distance;
     assert(std::abs(telem->filtered_dist - 33.5f) < 0.1f);
 
-    // Envoi de la réponse vers le client Godot
+    // Envoi de la réponse vers le client Godot (avec vitesse normalisée à 0.32 m/s)
     GodotCommandOut cmd;
-    cmd.velocity = 0.20f;
-    cmd.direction = 0.33f;
+    cmd.velocity = (telem->target_speed / 50.0f) * 0.32f;
+    cmd.direction = telem->target_steering / 45.0f;
     std::string out_str = SimpleJson::serialize_command(cmd);
     send(client_fd, out_str.c_str(), out_str.size(), 0);
 
