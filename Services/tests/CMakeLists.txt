@@ -37,3 +37,11 @@ target_include_directories(test_sim_bridge PRIVATE
 )
 target_link_libraries(test_sim_bridge PRIVATE Threads::Threads)
 add_test(NAME test_sim_bridge COMMAND test_sim_bridge)
+
+add_executable(test_i2c test_i2c.cpp)
+target_include_directories(test_i2c PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/.. 
+    ${CMAKE_CURRENT_SOURCE_DIR}/../libs/shared-headers
+)
+target_link_libraries(test_i2c PRIVATE Threads::Threads)
+add_test(NAME test_i2c COMMAND test_i2c)

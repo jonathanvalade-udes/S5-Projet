@@ -3,13 +3,11 @@
 #include <iostream>
 #include <algorithm>
 #include <cmath>
+#include <thread>
+#include <chrono>
 
-#ifdef __linux__
-#include <fcntl.h>
-#include <unistd.h>
-#include <sys/ioctl.h>
-#include <linux/i2c-dev.h>
-#endif
+#include "picar_i2c_registers.hpp"
+#include "i2c_device.hpp"
 
 /**
  * @brief Interface d'abstraction matérielle (HAL) pour le contrôle des moteurs et de la direction.
@@ -82,75 +80,75 @@ public:
  */
 class PiCarHatsMotorDriver : public IMotorDriver {
 private:
-#ifdef __linux__
-    int i2c_fd = -1;
-    uint8_t i2c_addr = 0x40; // PCA9685 I2C default address
-#else
-    [[maybe_unused]] int i2c_fd = -1;
-    [[maybe_unused]] uint8_t i2c_addr = 0x40;
-#endif
+    picar::hal::I2CDevice m_i2c;
+
+    void write_channel_pwm(uint8_t channel, uint16_t on_ticks, uint16_t off_ticks) {
+        uint8_t base_reg = picar::i2c::pca9685::channel_base_reg(channel);
+        uint8_t data[4] = {
+            static_cast<uint8_t>(on_ticks & 0xFF),
+            static_cast<uint8_t>((on_ticks >> 8) & 0x0F),
+            static_cast<uint8_t>(off_ticks & 0xFF),
+            static_cast<uint8_t>((off_ticks >> 8) & 0x0F)
+        };
+        m_i2c.write_block_data(base_reg, data, 4);
+    }
 
 public:
-    explicit PiCarHatsMotorDriver(uint8_t addr = 0x40) : i2c_addr(addr) {
+    explicit PiCarHatsMotorDriver(uint8_t addr = picar::i2c::ADDR_PCA9685) 
+        : m_i2c(addr) {
 #ifdef __linux__
-        i2c_fd = open("/dev/i2c-1", O_RDWR);
-        if (i2c_fd >= 0) {
-            ioctl(i2c_fd, I2C_SLAVE, i2c_addr);
-            // Initialisation de base du contrôleur PCA9685 (Mode 1, auto-increment)
-            uint8_t init_cmd[2] = {0x00, 0x20};
-            write(i2c_fd, init_cmd, 2);
+        if (m_i2c.is_connected()) {
+            // 1. Mise en veille pour autoriser la configuration du prescaler
+            m_i2c.write_byte_data(picar::i2c::pca9685::MODE1, picar::i2c::pca9685::SLEEP);
+            
+            // 2. Réglage de la fréquence à 50 Hz pour les servomoteurs RC
+            uint8_t prescale = picar::i2c::pca9685::calculate_prescale(50.0f);
+            m_i2c.write_byte_data(picar::i2c::pca9685::PRESCALE, prescale);
+
+            // 3. Réactivation avec auto-incrémentation d'adresses de registres
+            m_i2c.write_byte_data(picar::i2c::pca9685::MODE1, picar::i2c::pca9685::AUTO_INC);
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+
+            // 4. Sorties en Totem-Pole (Push-Pull)
+            m_i2c.write_byte_data(picar::i2c::pca9685::MODE2, picar::i2c::pca9685::OUTDRV);
+
+            // 5. Positionnement par défaut : direction centrée (0° = 1.5ms)
+            set_steering(0.0f);
+
+            std::cout << "[INFO] PCA9685 configuré avec succès à 50 Hz sur I2C 0x" 
+                      << std::hex << (int)addr << std::dec << std::endl;
         } else {
-            std::cerr << "[WARN] Impossible d'ouvrir /dev/i2c-1. Fallback passif." << std::endl;
+            std::cerr << "[WARN] PiCarHatsMotorDriver : PCA9685 non détecté sur le bus I2C." << std::endl;
         }
 #else
+        (void)addr;
         std::cout << "[INFO] PiCarHatsMotorDriver initialisé en mode compatibilité (Non-Linux)." << std::endl;
 #endif
     }
 
     ~PiCarHatsMotorDriver() override {
         emergency_stop();
-#ifdef __linux__
-        if (i2c_fd >= 0) {
-            close(i2c_fd);
-        }
-#endif
     }
 
     void set_speed(float speed_percent) override {
         float clamped = std::clamp(speed_percent, -100.0f, 100.0f);
-        (void)clamped;
-#ifdef __linux__
-        if (i2c_fd >= 0) {
-            // Mapping du pourcentage vers registre PWM PCA9685 (0 - 4095)
-            uint16_t pwm_val = static_cast<uint16_t>(std::abs(clamped) * 40.95f);
-            uint8_t reg_data[5] = {0x06, 0x00, 0x00, static_cast<uint8_t>(pwm_val & 0xFF), static_cast<uint8_t>((pwm_val >> 8) & 0x0F)};
-            write(i2c_fd, reg_data, 5);
-        }
-#endif
+        uint16_t pwm_ticks = picar::i2c::pca9685::speed_percent_to_pwm(clamped);
+
+        // Pilotage simultané des deux roues motrices arrière (Canaux 4 et 5)
+        write_channel_pwm(picar::i2c::pca9685::CH_MOTOR_L_PWM, 0, pwm_ticks);
+        write_channel_pwm(picar::i2c::pca9685::CH_MOTOR_R_PWM, 0, pwm_ticks);
     }
 
     void set_steering(float angle_degrees) override {
-        float clamped = std::clamp(angle_degrees, -45.0f, 45.0f);
-        (void)clamped;
-#ifdef __linux__
-        if (i2c_fd >= 0) {
-            // Impulsion servo RC : ~1.5ms centre (307 ticks à 50Hz), 1.0ms (-45°) = 205 ticks, 2.0ms (+45°) = 410 ticks
-            float pulse = 307.0f + (clamped / 45.0f) * 102.0f;
-            uint16_t pwm_val = static_cast<uint16_t>(std::clamp(pulse, 205.0f, 410.0f));
-            uint8_t reg_data[5] = {0x0A, 0x00, 0x00, static_cast<uint8_t>(pwm_val & 0xFF), static_cast<uint8_t>((pwm_val >> 8) & 0x0F)};
-            write(i2c_fd, reg_data, 5);
-        }
-#endif
+        uint16_t pwm_ticks = picar::i2c::pca9685::steering_angle_to_pwm(angle_degrees);
+
+        // Pilotage du servo de direction (Canal 0)
+        write_channel_pwm(picar::i2c::pca9685::CH_STEERING_SERVO, 0, pwm_ticks);
     }
 
     void emergency_stop() override {
-#ifdef __linux__
-        if (i2c_fd >= 0) {
-            // Tous les PWM à 0 (ALL_LED_OFF = registre 0xFD)
-            uint8_t all_off[2] = {0xFD, 0x10};
-            write(i2c_fd, all_off, 2);
-        }
-#endif
+        // Arrêt d'urgence matériel : forcer ALL_LED_OFF à 1
+        m_i2c.write_byte_data(picar::i2c::pca9685::ALL_LED_OFF_H, 0x10);
         std::cout << "[FAILSAFE] PiCarHats : Moteurs et PWM coupés à 0 V." << std::endl;
     }
 };

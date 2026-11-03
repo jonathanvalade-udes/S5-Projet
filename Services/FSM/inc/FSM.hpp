@@ -28,13 +28,20 @@ public:
 
     bool is_running() const { return m_running.load(); }
     shared::fsm::MachineStates get_current_state() const { return m_current_state; }
-    void set_state(shared::fsm::MachineStates state) { m_current_state = state; m_state_timer = 0.0f; }
+    void set_state(shared::fsm::MachineStates state) { transition_to(state); }
 
 private:
+    void transition_to(shared::fsm::MachineStates new_state);
+
     std::atomic<bool> m_running{false};
     int m_hz{50};
-    shared::fsm::MachineStates m_current_state{shared::fsm::MachineStates::LineFollowingForward};
+    shared::fsm::MachineStates m_current_state{shared::fsm::MachineStates::Init};
     float m_state_timer{0.0f};
+    float m_state_distance{0.0f};
+
+    static constexpr float STRAIGHT_CRUISE_SPEED = 0.32f; // m/s en ligne droite
+    static constexpr float MIN_CURVE_SPEED = 0.14f;       // m/s en virage serré
+    static constexpr float MAX_ACCELERATION = 0.735f;     // m/s² (seuil critique FastDrink)
 
     std::unique_ptr<LineFollowerController> m_line_controller;
     std::unique_ptr<MotionProfiler> m_motion_profiler;
