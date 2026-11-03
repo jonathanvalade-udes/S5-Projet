@@ -18,7 +18,7 @@ import optuna
 WEBOTS_BINARY = "/Applications/Webots.app/Contents/MacOS/webots"
 WORLD_FILE = "/Users/jonathanvalade/Documents/Github/S5-Projet/webots_sim/worlds/fastdrink_track.wbt"
 RESULT_FILE = "/tmp/optuna_result.txt"
-EXPORT_HEADER = "/Users/jonathanvalade/Documents/Github/S5-Projet/firmware/include/control/optimized_params.hpp"
+EXPORT_HEADER = "/Users/jonathanvalade/Documents/Github/S5-Projet/Services/libs/shared-headers/control/optimized_params.hpp"
 
 optuna.logging.set_verbosity(optuna.logging.INFO)
 

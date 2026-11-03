@@ -24,12 +24,12 @@ webots_sim/
 1. **Capteurs Physiques Réels :**
    * **1x `DistanceSensor` (sonar)** modélisant fidèlement le cône acoustique du capteur ultrason HC-SR04.
    * **5x `DistanceSensor` (infrarouges)** orientés vers le sol et espacés de 20 mm pour détecter le ruban noir.
-2. **Couplage Direct avec le Firmware C++ :**
-   * Le contrôleur Webots inclut directement les headers de notre firmware C++ :
-     * `firmware/include/filters/ultrasonic_pipeline.hpp` (Filtre Médian + Kalman 1D)
-     * `firmware/include/control/motion_profiler.hpp` ($a \le 0{,}735\text{ m/s}^2$)
-     * `firmware/include/control/line_follower.hpp` (Asservissement PD)
-     * `firmware/include/control/optimized_params.hpp` (**Paramètres calculés par Optuna !**)
+2. **Couplage Direct avec les Services C++ :**
+   * Le contrôleur Webots inclut directement les headers partagés :
+     * `Services/libs/shared-headers/filters/ultrasonic_pipeline.hpp` (Filtre Médian + Kalman 1D)
+     * `Services/libs/shared-headers/control/motion_profiler.hpp` ($a \le 0{,}735\text{ m/s}^2$)
+     * `Services/libs/shared-headers/control/line_follower.hpp` (Asservissement PD)
+     * `Services/libs/shared-headers/control/optimized_params.hpp` (**Paramètres calculés par Optuna !**)
 3. **Synchronisation IPC :**
    * Le contrôleur met également à jour la mémoire partagée `/dev/shm/picar_shm` pour permettre une supervision externe en temps réel.
 

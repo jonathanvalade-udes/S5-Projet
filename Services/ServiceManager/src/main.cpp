@@ -7,7 +7,20 @@
 #include <cerrno>
 #include <sys/stat.h>
 #include <sys/ioctl.h>
+#if defined(__linux__)
 #include <sys/sysmacros.h>
+#else
+#include <sys/types.h>
+#ifndef MS_NOSUID
+#define MS_NOSUID 0
+#endif
+#ifndef MS_NODEV
+#define MS_NODEV 0
+#endif
+#ifndef MS_NOEXEC
+#define MS_NOEXEC 0
+#endif
+#endif
 #include <termios.h>
 #include <net/if.h>
 #include <arpa/inet.h>
@@ -58,6 +71,7 @@ void log_msg(int fd, const char* format, ...) {
 }
 
 void mount_essential_fs(const char* source, const char* target, const char* type, unsigned long flags) {
+#if defined(__linux__)
     if (mount(source, target, type, flags, nullptr) == 0) {
         log_msg(1, "[INIT] Mounted %s onto %s\n", type, target);
     } else {
@@ -67,6 +81,10 @@ void mount_essential_fs(const char* source, const char* target, const char* type
             log_msg(2, "[INIT] Failed to mount %s: %s\n", target, std::strerror(errno));
         }
     }
+#else
+    (void)source; (void)target; (void)type; (void)flags;
+    log_msg(1, "[INIT] (Host non-Linux mock) Skip mounting %s onto %s\n", type, target);
+#endif
 }
 
 void interface_admin_up(const char* iface) {

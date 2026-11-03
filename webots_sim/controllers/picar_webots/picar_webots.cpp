@@ -19,12 +19,12 @@
 #include <webots/Node.hpp>
 #include <webots/Field.hpp>
 
-// Intégration directe des headers de notre firmware C++
-#include "../../../firmware/include/filters/ultrasonic_pipeline.hpp"
-#include "../../../firmware/include/control/motion_profiler.hpp"
-#include "../../../firmware/include/control/line_follower.hpp"
-#include "../../../firmware/include/control/optimized_params.hpp"
-#include "../../../firmware/include/ipc/shared_memory.hpp"
+// Intégration directe des headers de nos services C++
+#include "../../../Services/libs/shared-headers/filters/ultrasonic_pipeline.hpp"
+#include "../../../Services/libs/shared-headers/control/motion_profiler.hpp"
+#include "../../../Services/libs/shared-headers/control/line_follower.hpp"
+#include "../../../Services/libs/shared-headers/control/optimized_params.hpp"
+#include "../../../Services/libs/shared-headers/ipc/shared_memory.hpp"
 
 using namespace webots;
 

@@ -199,8 +199,8 @@ def run_optimization(n_trials: int = 500):
     print(f"  • Facteur de ralentissement    : {best['slowdown_gain']:.4f}")
     print("=" * 65)
 
-    # Export automatique vers un header C++ pour picar_brain
-    header_path = "firmware/include/control/optimized_params.hpp"
+    # Export automatique vers un header C++ pour FSM
+    header_path = "Services/libs/shared-headers/control/optimized_params.hpp"
     os.makedirs(os.path.dirname(header_path), exist_ok=True)
     with open(header_path, "w") as f:
         f.write("// Généré automatiquement par tools/optimizer/optimize_params.py via Optuna\n")

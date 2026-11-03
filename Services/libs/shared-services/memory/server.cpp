@@ -114,7 +114,9 @@ bool MemoryShareComponentServer::initShm(size_t max_buffer_size) {
     pthread_mutexattr_t mattr;
     pthread_mutexattr_init(&mattr);
     pthread_mutexattr_setpshared(&mattr, PTHREAD_PROCESS_SHARED);
+#ifdef PTHREAD_MUTEX_ROBUST
     pthread_mutexattr_setrobust(&mattr, PTHREAD_MUTEX_ROBUST);
+#endif
     pthread_mutex_init(&header->notify_mutex, &mattr);
     pthread_mutexattr_destroy(&mattr);
 
@@ -122,7 +124,9 @@ bool MemoryShareComponentServer::initShm(size_t max_buffer_size) {
     pthread_condattr_t cattr;
     pthread_condattr_init(&cattr);
     pthread_condattr_setpshared(&cattr, PTHREAD_PROCESS_SHARED);
+#if defined(__linux__)
     pthread_condattr_setclock(&cattr, CLOCK_MONOTONIC);
+#endif
     pthread_cond_init(&header->notify_cond, &cattr);
     pthread_condattr_destroy(&cattr);
 

@@ -30,7 +30,7 @@ target_include_directories(shared_services PUBLIC
 target_link_libraries(shared_services PUBLIC
     Threads::Threads
     ${CMAKE_DL_LIBS}
-    rt
+    $<$<PLATFORM_ID:Linux>:rt>
 )
 
 # Namespace alias for shared_services

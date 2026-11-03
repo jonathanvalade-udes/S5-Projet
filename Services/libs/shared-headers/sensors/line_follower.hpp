@@ -3,7 +3,8 @@
 
 namespace shared::sensors::lineFollower{
     
-    constexpr inline uint8_t NUMBER_OF_SENSORS = 4;
+    constexpr inline uint8_t NUMBER_OF_SENSORS = 5;
+    constexpr inline float SENSOR_WEIGHTS[NUMBER_OF_SENSORS] = {-2.0f, -1.0f, 0.0f, 1.0f, 2.0f};
 
 
     struct LineSensor{

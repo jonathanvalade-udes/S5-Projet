@@ -1,17 +1,21 @@
 #pragma once
 
 #include <atomic>
+#include <memory>
 #include <string>
 
 // Shared headers from libs
 #include "header/header.hpp"
 #include "services/services_telemetry.hpp"
+#include "servo/servo_telemetry.hpp"
+#include "ipc/shared_memory.hpp"
+#include "shared-services/memory/server.hpp"
 
 namespace services {
 
 class Servo {
 public:
-    Servo();
+    explicit Servo(int hz = 50);
     ~Servo();
 
     bool init();
@@ -22,6 +26,11 @@ public:
 
 private:
     std::atomic<bool> m_running{false};
+    int m_hz{50};
+
+    std::unique_ptr<SharedMemoryManager> m_shm_mgr;
+    RobotTelemetry* m_telemetry{nullptr};
+    std::unique_ptr<shared::services::memory::MemoryShareComponentServer> m_mem_server;
 };
 
 } // namespace services

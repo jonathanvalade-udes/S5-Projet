@@ -200,9 +200,14 @@ bool MemoryShareComponentSubscriber::waitForUpdate(uint32_t timeout_ms) {
     }
 
     int rc = pthread_mutex_lock(&header->notify_mutex);
+#ifdef EOWNERDEAD
     if (rc == EOWNERDEAD) {
+#ifdef PTHREAD_MUTEX_ROBUST
         pthread_mutex_consistent(&header->notify_mutex);
-    } else if (rc != 0) {
+#endif
+    } else
+#endif
+    if (rc != 0) {
         return false;
     }
 

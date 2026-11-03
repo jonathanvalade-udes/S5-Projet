@@ -9,7 +9,7 @@ CXX ?= clang++
 CXXFLAGS = -std=c++17 -O2 \
   -I$(WEBOTS_HOME)/include/controller/cpp \
   -I$(WEBOTS_HOME)/include/controller/c \
-  -I../../../firmware/include
+  -I../../../Services/libs/shared-headers
 
 LDFLAGS = -L$(WEBOTS_HOME)/lib/controller \
   -lCppController -lController \
