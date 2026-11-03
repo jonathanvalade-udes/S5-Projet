@@ -45,3 +45,18 @@ target_include_directories(test_i2c PRIVATE
 )
 target_link_libraries(test_i2c PRIVATE Threads::Threads)
 add_test(NAME test_i2c COMMAND test_i2c)
+
+add_executable(test_telemetry 
+    test_telemetry.cpp 
+    ${CMAKE_CURRENT_SOURCE_DIR}/../TelemetryService/src/TelemetryService.cpp
+)
+target_include_directories(test_telemetry PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/.. 
+    ${CMAKE_CURRENT_SOURCE_DIR}/../libs/shared-headers
+    ${CMAKE_CURRENT_SOURCE_DIR}/../TelemetryService/inc
+)
+target_link_libraries(test_telemetry PRIVATE 
+    Threads::Threads 
+    shared_headers
+)
+add_test(NAME test_telemetry COMMAND test_telemetry)

@@ -63,6 +63,13 @@
   * **`Reverse` (S5)** : Marche arrière autonome guidée sur ruban noir mesurée à **$144\text{ mm}$** ($< 200\text{ mm}$ requis).
 * [x] Tests unitaires FSM validés à 100 % (`test_control.cpp`).
 
+### Jalon 5.1 : Hub de Télémétrie & Supervision (`TelemetryService`)
+* [x] Service [`TelemetryService`](file:///Users/jonathanvalade/Documents/Github/S5-Projet/Services/TelemetryService) agrégeant la SHM POSIX et publiant `shared::car::CarTelemetry`.
+* [x] Calcul en direct de l'accélération réelle ($a = \Delta v / \Delta t$) avec alerte de violation FastDrink ($a > 0{,}735\text{ m/s}^2$).
+* [x] Intégration odométrique continue ($d = \int |v| \, dt$) et Watchdog anti-blocage (détection de gel heartbeat $> 500\text{ ms}$).
+* [x] Dashboard console dynamique (5 Hz) et diffusion réseau UDP broadcast (port 9002).
+* [x] Tests unitaires de télémétrie validés à 100 % (`test_telemetry.cpp`).
+
 ---
 
 ## 🎯 Prochaines Actions : Jalon 6 (Qualification & Déploiement Réel)

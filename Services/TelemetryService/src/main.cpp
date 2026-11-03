@@ -1,67 +1,45 @@
 #include "TelemetryService.hpp"
 #include <csignal>
 #include <iostream>
-#include <cstdarg>
-#include <cstdio>
-#include <unistd.h>
-#include <fcntl.h>
-
-// Shared libraries headers included from libs/shared-headers
-#include "header/header.hpp"
-#include "services/services_telemetry.hpp"
+#include <string>
 
 static services::TelemetryService* g_service_instance = nullptr;
 
-static void log_msg(int fd, const char* format, ...) {
-    char buffer[1024];
-    va_list args;
-    va_start(args, format);
-    int len = vsnprintf(buffer, sizeof(buffer), format, args);
-    va_end(args);
-
-    if (len <= 0) return;
-
-    ssize_t written = -1;
-    if (fd >= 0) {
-        written = write(fd, buffer, len);
-    }
-    if (written < 0) {
-        int cfd = open("/dev/console", O_WRONLY | O_NOCTTY);
-        if (cfd >= 0) {
-            ssize_t ret = write(cfd, buffer, len);
-            (void)ret;
-            close(cfd);
-        }
-    }
-}
-
 static void signal_handler(int sig) {
-    log_msg(1, "[TelemetryService] Received signal %d, initiating shutdown...\n", sig);
+    std::cout << "\n[TelemetryService] Signal " << sig << " received, stopping..." << std::endl;
     if (g_service_instance) {
         g_service_instance->stop();
     }
 }
 
 int main(int argc, char* argv[]) {
-    (void)argc;
-    (void)argv;
+    int hz = 20;
+    bool enable_ui = true;
+    int udp_port = 9002;
 
-    log_msg(1, "[TelemetryService] Starting up...\n");
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--hz" && i + 1 < argc) {
+            hz = std::stoi(argv[++i]);
+        } else if (arg == "--no-ui") {
+            enable_ui = false;
+        } else if (arg == "--port" && i + 1 < argc) {
+            udp_port = std::stoi(argv[++i]);
+        }
+    }
 
-    // Register POSIX signal handlers
     std::signal(SIGINT, signal_handler);
     std::signal(SIGTERM, signal_handler);
 
-    services::TelemetryService service;
+    services::TelemetryService service(hz, enable_ui, udp_port);
     g_service_instance = &service;
 
     if (!service.init()) {
-        log_msg(2, "[TelemetryService] Failed to initialize service!\n");
+        std::cerr << "[TelemetryService] Failed to initialize!" << std::endl;
         return 1;
     }
 
     service.run();
-
-    log_msg(1, "[TelemetryService] Exited cleanly.\n");
+    std::cout << "[TelemetryService] Exited cleanly." << std::endl;
     return 0;
 }

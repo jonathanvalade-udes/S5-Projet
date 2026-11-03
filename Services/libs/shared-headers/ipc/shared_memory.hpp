@@ -56,17 +56,23 @@ public:
      * @param create_if_missing Si true, initialise la structure et le mutex partagé.
      */
     RobotTelemetry* open_shm(bool create_if_missing = true) {
-        int flags = O_RDWR;
+        bool newly_created = false;
         if (create_if_missing) {
-            flags |= O_CREAT;
+            shm_fd = shm_open(PICAR_SHM_NAME, O_RDWR | O_CREAT | O_EXCL, 0666);
+            if (shm_fd >= 0) {
+                newly_created = true;
+            } else if (errno == EEXIST) {
+                shm_fd = shm_open(PICAR_SHM_NAME, O_RDWR, 0666);
+            }
+        } else {
+            shm_fd = shm_open(PICAR_SHM_NAME, O_RDWR, 0666);
         }
 
-        shm_fd = shm_open(PICAR_SHM_NAME, flags, 0666);
         if (shm_fd < 0) {
             throw std::runtime_error("Échec de shm_open sur " PICAR_SHM_NAME);
         }
 
-        if (create_if_missing) {
+        if (newly_created) {
             if (ftruncate(shm_fd, sizeof(RobotTelemetry)) != 0) {
                 // Erreur ftruncate
             }
@@ -79,7 +85,7 @@ public:
 
         shm_ptr = static_cast<RobotTelemetry*>(addr);
 
-        if (create_if_missing) {
+        if (newly_created) {
             is_creator = true;
             // Configuration du mutex pour partage inter-processus
             pthread_mutexattr_t attr;
