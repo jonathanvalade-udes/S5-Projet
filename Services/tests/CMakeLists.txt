@@ -6,6 +6,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 enable_testing()
 
+option(STATIC "Build with static linking (-static)" OFF)
+option(STATIC_BUILD "Build with static linking (-static)" OFF)
+
+if(STATIC OR STATIC_BUILD)
+    link_libraries(-static)
+endif()
+
+
 add_executable(test_filters test_filters.cpp)
 target_include_directories(test_filters PRIVATE 
     ${CMAKE_CURRENT_SOURCE_DIR}/.. 
@@ -67,4 +75,15 @@ target_include_directories(test_live_motor PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../libs/shared-headers
 )
 target_link_libraries(test_live_motor PRIVATE Threads::Threads)
+
+add_executable(test_service_manager 
+    test_service_manager.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../ServiceManager/src/ServiceManager.cpp
+)
+target_include_directories(test_service_manager PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/.. 
+    ${CMAKE_CURRENT_SOURCE_DIR}/../ServiceManager/inc
+)
+target_link_libraries(test_service_manager PRIVATE Threads::Threads)
+add_test(NAME test_service_manager COMMAND test_service_manager)
 

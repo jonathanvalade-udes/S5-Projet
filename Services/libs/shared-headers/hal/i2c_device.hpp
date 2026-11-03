@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <sys/ioctl.h>
 #include <linux/i2c-dev.h>
+#include <linux/i2c.h>
 #endif
 
 namespace picar::hal {
@@ -138,9 +139,29 @@ public:
     bool read_block_data(uint8_t reg, uint8_t* buffer, size_t length) {
 #ifdef __linux__
         if (!m_connected || m_fd < 0 || !buffer) return false;
-        // Positionnement sur le registre
+
+        // Repeated Start via I2C_RDWR (conforme protocole SMBus bloc)
+        struct i2c_msg msgs[2];
+        msgs[0].addr = m_active_addr;
+        msgs[0].flags = 0;
+        msgs[0].len = 1;
+        msgs[0].buf = &reg;
+
+        msgs[1].addr = m_active_addr;
+        msgs[1].flags = I2C_M_RD;
+        msgs[1].len = static_cast<__u16>(length);
+        msgs[1].buf = buffer;
+
+        struct i2c_rdwr_ioctl_data rdwr;
+        rdwr.msgs = msgs;
+        rdwr.nmsgs = 2;
+
+        if (ioctl(m_fd, I2C_RDWR, &rdwr) >= 0) {
+            return true;
+        }
+
+        // Fallback standard write + read
         if (write(m_fd, &reg, 1) != 1) return false;
-        // Lecture en continu
         return (read(m_fd, buffer, length) == static_cast<ssize_t>(length));
 #else
         (void)reg; (void)buffer; (void)length;

@@ -98,7 +98,7 @@ namespace picar::i2c {
     namespace line_follower {
         inline constexpr uint8_t REG_START              = 0x00; // Registre de lecture continue
         inline constexpr size_t  RAW_BUFFER_SIZE        = 10;   // 5 canaux x 2 octets (ADC 10 bits)
-        inline constexpr uint16_t DEFAULT_THRESHOLD     = 300;  // Seuil noir/blanc par défaut
+        inline constexpr uint16_t DEFAULT_THRESHOLD     = 60;   // Seuil noir/blanc calibré PiCar-S (noir < 50-60, blanc > 70-140)
 
         /**
          * @brief Parse les 10 octets bruts I2C en 5 valeurs ADC 10 bits (0-1023).

@@ -124,8 +124,12 @@ void Sensors::run() {
         loop_count++;
         if (loop_count % m_hz == 0) {
             std::cout << "[Sensors] Distance: " << filtered_dist 
-                      << " cm (raw: " << raw_dist 
-                      << " cm) | Line error: " << line_error 
+                      << " cm | Line: [" 
+                      << (int)line_sensors[0] << " "
+                      << (int)line_sensors[1] << " "
+                      << (int)line_sensors[2] << " "
+                      << (int)line_sensors[3] << " "
+                      << (int)line_sensors[4] << "] (err: " << line_error << ")"
                       << (has_line ? "" : " [PERTE DE LIGNE]") << std::endl;
         }
 
