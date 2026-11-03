@@ -6,6 +6,7 @@
 #include <memory>
 #include <chrono>
 #include <cstring>
+#include <cstdio>
 #include "picar_i2c_registers.hpp"
 #include "i2c_device.hpp"
 
