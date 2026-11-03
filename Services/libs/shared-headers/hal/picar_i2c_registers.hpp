@@ -68,7 +68,7 @@ namespace picar::i2c {
          * @brief Calcule la valeur du prescaler pour une fréquence désirée (en Hz).
          * Horloge interne PCA9685 standard : 25 MHz, résolution 4096 pas.
          */
-        constexpr uint8_t calculate_prescale(float freq_hz, float osc_clock_hz = 25000000.0f) {
+        inline uint8_t calculate_prescale(float freq_hz, float osc_clock_hz = 25000000.0f) {
             float val = std::round(osc_clock_hz / (4096.0f * freq_hz)) - 1.0f;
             return static_cast<uint8_t>(std::clamp(val, 3.0f, 255.0f));
         }

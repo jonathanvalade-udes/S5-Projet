@@ -6,7 +6,7 @@
 
 namespace services {
 
-float Sensors::compute_line_error(const uint8_t sensors[5]) {
+float Sensors::compute_line_error(const uint8_t sensors[5], float fallback_error) {
     constexpr float weights[5] = {-2.0f, -1.0f, 0.0f, 1.0f, 2.0f};
     float weighted_sum = 0.0f;
     int active_count = 0;
@@ -18,13 +18,15 @@ float Sensors::compute_line_error(const uint8_t sensors[5]) {
         }
     }
 
+    // Anti-décrochage : si aucun capteur ne voit la ligne, conserver la dernière erreur
+    // au lieu de renvoyer 0.0f (qui ferait faussement croire que le robot est au centre !)
     if (active_count == 0) {
-        return 0.0f;
+        return fallback_error;
     }
     return (weighted_sum / (2.0f * active_count));
 }
 
-Sensors::Sensors(int hz) : m_running(false), m_hz(hz) {}
+Sensors::Sensors(int hz) : m_running(false), m_hz(hz), m_last_line_error(0.0f) {}
 
 Sensors::~Sensors() {
     stop();
@@ -76,6 +78,11 @@ void Sensors::run() {
             m_driver->read_line_sensors(line_sensors);
         }
 
+        bool has_line = false;
+        for (int i = 0; i < 5; ++i) {
+            if (line_sensors[i] != 0) has_line = true;
+        }
+
         float current_speed = 0.0f;
         if (m_telemetry) {
             pthread_mutex_lock(&(m_telemetry->mtx));
@@ -84,7 +91,8 @@ void Sensors::run() {
         }
 
         float filtered_dist = m_pipeline ? m_pipeline->process(raw_dist, dt, current_speed) : raw_dist;
-        float line_error = compute_line_error(line_sensors);
+        m_last_line_error = compute_line_error(line_sensors, m_last_line_error);
+        float line_error = m_last_line_error;
 
         // Update legacy / fast SHM
         if (m_telemetry) {
@@ -101,11 +109,14 @@ void Sensors::run() {
         // Update decoupled Pub/Sub SHM
         if (m_mem_server && m_mem_server->isValid()) {
             shared::sensors::SensorsTelemetry telem{};
+            telem.ultrasonicSensor.rawDistanceCm = raw_dist;
             telem.ultrasonicSensor.calculatedDistance = filtered_dist;
             for (int i = 0; i < 5; ++i) {
                 telem.lineFollower.sensorsData[i].rawADCValue = line_sensors[i] ? 1023 : 0;
                 telem.lineFollower.sensorsData[i].normalizedValue = line_sensors[i] ? 1.0f : 0.0f;
             }
+            telem.lineFollower.flags = has_line ? shared::sensors::lineFollower::flags::LINE_FOLLOWED
+                                                : shared::sensors::lineFollower::flags::LINE_LOST;
             telem.flags = shared::sensors::flags::DISCOVERABLE;
             m_mem_server->publish(telem);
         }
@@ -114,7 +125,8 @@ void Sensors::run() {
         if (loop_count % m_hz == 0) {
             std::cout << "[Sensors] Distance: " << filtered_dist 
                       << " cm (raw: " << raw_dist 
-                      << " cm) | Line error: " << line_error << std::endl;
+                      << " cm) | Line error: " << line_error 
+                      << (has_line ? "" : " [PERTE DE LIGNE]") << std::endl;
         }
 
         auto elapsed = std::chrono::steady_clock::now() - start_time;

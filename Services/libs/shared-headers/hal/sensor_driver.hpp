@@ -4,8 +4,15 @@
 #include <cstdint>
 #include <cmath>
 #include <memory>
+#include <chrono>
+#include <cstring>
 #include "picar_i2c_registers.hpp"
 #include "i2c_device.hpp"
+
+#ifdef __linux__
+#include <fcntl.h>
+#include <unistd.h>
+#endif
 
 /**
  * @brief Interface d'abstraction matérielle (HAL) pour les capteurs du robot.
@@ -28,7 +35,7 @@ public:
 };
 
 /**
- * @brief Pilote Mock pour les capteurs sur macOS / environnement de test.
+ * @brief Pilote Mock pour les capteurs sur macOS / Windows / environnement de test.
  */
 class MockSensorDriver : public ISensorDriver {
 private:
@@ -66,7 +73,9 @@ public:
 };
 
 /**
- * @brief Pilote capteurs pour SunFounder PiCar-S sous Linux (GPIO HC-SR04 + Suiveur de ligne I2C).
+ * @brief Pilote capteurs pour SunFounder PiCar-S sous Linux :
+ * - Bus I2C pour le suiveur de ligne 5 voies (TCRT5000 via I2CDevice)
+ * - GPIO Trigger/Echo pour le sonar ultrason HC-SR04 avec timeout non-bloquant
  */
 class PiCarHatsSensorDriver : public ISensorDriver {
 private:
@@ -81,16 +90,27 @@ public:
         : trig_pin(trig), 
           echo_pin(echo),
           m_line_device(picar::i2c::ADDR_LINE_FOLLOWER, picar::i2c::ADDR_LINE_FOLLOWER_ALT) {
-        (void)trig_pin;
-        (void)echo_pin;
 #ifdef __linux__
         if (m_line_device.is_connected()) {
             std::cout << "[INFO] Suiveur de ligne PiCar-S connecté sur l'adresse I2C 0x" 
-                      << std::hex << (int)m_line_device.get_active_address() << std::dec << std::endl;
+                      << std::hex << static_cast<int>(m_line_device.get_active_address()) << std::dec << std::endl;
         } else {
-            std::cerr << "[WARN] Suiveur de ligne PiCar-S non détecté sur le bus I2C." << std::endl;
+            std::cerr << "[WARN] Suiveur de ligne PiCar-S non détecté sur le bus I2C (mode fallback actif)." << std::endl;
+        }
+
+        // Préparation des GPIO pour HC-SR04 via sysfs
+        int export_fd = open("/sys/class/gpio/export", O_WRONLY);
+        if (export_fd >= 0) {
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%d", trig_pin);
+            write(export_fd, buf, strlen(buf));
+            snprintf(buf, sizeof(buf), "%d", echo_pin);
+            write(export_fd, buf, strlen(buf));
+            close(export_fd);
         }
 #else
+        (void)trig_pin;
+        (void)echo_pin;
         std::cout << "[INFO] PiCarHatsSensorDriver initialisé en mode compatibilité (Non-Linux)." << std::endl;
 #endif
     }
@@ -101,8 +121,55 @@ public:
 
     float read_raw_ultrasonic_cm() override {
 #ifdef __linux__
-        // Émission impulsion Trig 10µs et mesure durée Echo
-        return 35.0f; // Valeur par défaut si non câblé
+        char trig_path[64];
+        char echo_path[64];
+        snprintf(trig_path, sizeof(trig_path), "/sys/class/gpio/gpio%d/value", trig_pin);
+        snprintf(echo_path, sizeof(echo_path), "/sys/class/gpio/gpio%d/value", echo_pin);
+
+        int t_fd = open(trig_path, O_WRONLY);
+        int e_fd = open(echo_path, O_RDONLY);
+
+        if (t_fd >= 0 && e_fd >= 0) {
+            // Impulsion Trigger de 10 microsecondes
+            write(t_fd, "0", 1);
+            usleep(2);
+            write(t_fd, "1", 1);
+            usleep(10);
+            write(t_fd, "0", 1);
+            close(t_fd);
+
+            // Attente du front montant (Echo haut) avec timeout de sécurité de 5 ms
+            auto start_wait = std::chrono::steady_clock::now();
+            char val = '0';
+            while (val == '0') {
+                lseek(e_fd, 0, SEEK_SET);
+                read(e_fd, &val, 1);
+                if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_wait).count() > 5) {
+                    close(e_fd);
+                    return -1.0f; // Timeout / pas d'écho
+                }
+            }
+
+            // Mesure de la durée de l'Echo
+            auto pulse_start = std::chrono::steady_clock::now();
+            while (val == '1') {
+                lseek(e_fd, 0, SEEK_SET);
+                read(e_fd, &val, 1);
+                if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - pulse_start).count() > 25) {
+                    break; // Timeout de distance maximale (~400 cm)
+                }
+            }
+            auto pulse_end = std::chrono::steady_clock::now();
+            close(e_fd);
+
+            float duration_us = static_cast<float>(std::chrono::duration_cast<std::chrono::microseconds>(pulse_end - pulse_start).count());
+            float distance_cm = duration_us / 58.0f; // Formule acoustique : distance = temps / 58
+            return distance_cm;
+        }
+
+        if (t_fd >= 0) close(t_fd);
+        if (e_fd >= 0) close(e_fd);
+        return 35.0f; // Repli par défaut si GPIO non câblés
 #else
         return 35.0f;
 #endif

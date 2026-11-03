@@ -26,7 +26,7 @@ public:
 
     bool is_running() const { return m_running.load(); }
 
-    static float compute_line_error(const uint8_t sensors[5]);
+    static float compute_line_error(const uint8_t sensors[5], float fallback_error = 0.0f);
 
 private:
     std::atomic<bool> m_running{false};
@@ -37,6 +37,8 @@ private:
     std::unique_ptr<SharedMemoryManager> m_shm_mgr;
     RobotTelemetry* m_telemetry{nullptr};
     std::unique_ptr<shared::services::memory::MemoryShareComponentServer> m_mem_server;
+
+    float m_last_line_error{0.0f};
 };
 
 } // namespace services
