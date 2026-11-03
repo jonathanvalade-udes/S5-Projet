@@ -43,16 +43,28 @@ static void signal_handler(int sig) {
 }
 
 int main(int argc, char* argv[]) {
-    (void)argc;
-    (void)argv;
+    int hz = 50;
+    int trig = 12;
+    int echo = 16;
 
-    log_msg(1, "[Sensors] Starting up...\n");
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--hz" && i + 1 < argc) {
+            hz = std::stoi(argv[++i]);
+        } else if (arg == "--trig" && i + 1 < argc) {
+            trig = std::stoi(argv[++i]);
+        } else if (arg == "--echo" && i + 1 < argc) {
+            echo = std::stoi(argv[++i]);
+        }
+    }
+
+    log_msg(1, "[Sensors] Starting up (Hz=%d, Trig=%d, Echo=%d)...\n", hz, trig, echo);
 
     // Register POSIX signal handlers
     std::signal(SIGINT, signal_handler);
     std::signal(SIGTERM, signal_handler);
 
-    services::Sensors service;
+    services::Sensors service(hz, trig, echo);
     g_service_instance = &service;
 
     if (!service.init()) {

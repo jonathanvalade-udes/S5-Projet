@@ -17,7 +17,7 @@ namespace services {
 
 class Sensors {
 public:
-    explicit Sensors(int hz = 50);
+    explicit Sensors(int hz = 50, int trig = 12, int echo = 16);
     ~Sensors();
 
     bool init();
@@ -31,6 +31,8 @@ public:
 private:
     std::atomic<bool> m_running{false};
     int m_hz{50};
+    int m_trig_pin{12};
+    int m_echo_pin{16};
 
     std::unique_ptr<ISensorDriver> m_driver;
     std::unique_ptr<UltrasonicPipeline> m_pipeline;

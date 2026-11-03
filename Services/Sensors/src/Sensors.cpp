@@ -26,17 +26,18 @@ float Sensors::compute_line_error(const uint8_t sensors[5], float fallback_error
     return (weighted_sum / (2.0f * active_count));
 }
 
-Sensors::Sensors(int hz) : m_running(false), m_hz(hz), m_last_line_error(0.0f) {}
+Sensors::Sensors(int hz, int trig, int echo) 
+    : m_running(false), m_hz(hz), m_trig_pin(trig), m_echo_pin(echo), m_last_line_error(0.0f) {}
 
 Sensors::~Sensors() {
     stop();
 }
 
 bool Sensors::init() {
-    std::cout << "[Sensors] Initializing service at " << m_hz << " Hz..." << std::endl;
+    std::cout << "[Sensors] Initializing service at " << m_hz << " Hz (Trig=" << m_trig_pin << ", Echo=" << m_echo_pin << ")..." << std::endl;
 
 #ifdef __linux__
-    m_driver = std::make_unique<PiCarHatsSensorDriver>();
+    m_driver = std::make_unique<PiCarHatsSensorDriver>(m_trig_pin, m_echo_pin);
 #else
     m_driver = std::make_unique<MockSensorDriver>();
 #endif

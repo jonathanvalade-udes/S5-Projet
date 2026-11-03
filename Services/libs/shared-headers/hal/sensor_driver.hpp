@@ -80,8 +80,8 @@ public:
  */
 class PiCarHatsSensorDriver : public ISensorDriver {
 private:
-    int trig_pin = 17;
-    int echo_pin = 18;
+    int trig_pin = 12;
+    int echo_pin = 16;
     picar::hal::I2CDevice m_line_device;
     uint16_t m_thresholds[5] = {picar::i2c::line_follower::DEFAULT_THRESHOLD,
                                 picar::i2c::line_follower::DEFAULT_THRESHOLD,
@@ -91,7 +91,7 @@ private:
     uint8_t m_last_sensors[5] = {0, 0, 1, 0, 0};
 
 public:
-    PiCarHatsSensorDriver(int trig = 17, int echo = 18) 
+    PiCarHatsSensorDriver(int trig = 12, int echo = 16) 
         : trig_pin(trig), 
           echo_pin(echo),
           m_line_device(picar::i2c::ADDR_LINE_FOLLOWER, picar::i2c::ADDR_LINE_FOLLOWER_ALT) {
@@ -113,6 +113,30 @@ public:
             write(export_fd, buf, strlen(buf));
             close(export_fd);
         }
+
+        usleep(50000); // Laisser 50 ms pour la création des nœuds sysfs
+
+        // Configuration explicite des directions
+        char dir_path[64];
+        snprintf(dir_path, sizeof(dir_path), "/sys/class/gpio/gpio%d/direction", trig_pin);
+        int d_fd = open(dir_path, O_WRONLY);
+        if (d_fd >= 0) {
+            write(d_fd, "out", 3);
+            close(d_fd);
+        } else {
+            std::cerr << "[WARN] Impossible de configurer Trig GPIO" << trig_pin << " en OUT" << std::endl;
+        }
+
+        snprintf(dir_path, sizeof(dir_path), "/sys/class/gpio/gpio%d/direction", echo_pin);
+        d_fd = open(dir_path, O_WRONLY);
+        if (d_fd >= 0) {
+            write(d_fd, "in", 2);
+            close(d_fd);
+        } else {
+            std::cerr << "[WARN] Impossible de configurer Echo GPIO" << echo_pin << " en IN" << std::endl;
+        }
+
+        std::cout << "[INFO] HC-SR04 configuré sur Trig=GPIO" << trig_pin << ", Echo=GPIO" << echo_pin << std::endl;
 #else
         (void)trig_pin;
         (void)echo_pin;
