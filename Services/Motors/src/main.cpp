@@ -43,16 +43,25 @@ static void signal_handler(int sig) {
 }
 
 int main(int argc, char* argv[]) {
-    (void)argc;
-    (void)argv;
+    int hz = 50;
+    bool invert = false;
 
-    log_msg(1, "[Motors] Starting up...\n");
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--hz" && i + 1 < argc) {
+            hz = std::atoi(argv[++i]);
+        } else if (arg == "--invert" || arg == "--reverse") {
+            invert = true;
+        }
+    }
+
+    log_msg(1, "[Motors] Starting up (Hz=%d, Invert=%s)...\n", hz, invert ? "true" : "false");
 
     // Register POSIX signal handlers
     std::signal(SIGINT, signal_handler);
     std::signal(SIGTERM, signal_handler);
 
-    services::Motors service;
+    services::Motors service(hz, invert);
     g_service_instance = &service;
 
     if (!service.init()) {
