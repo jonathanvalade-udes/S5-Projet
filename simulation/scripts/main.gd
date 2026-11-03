@@ -7,7 +7,7 @@ var NetworkIPAddrRegex: RegEx = RegEx.new()
 @onready var le_ip: LineEdit = $GridContainer/le_IpAdress
 
 func _ready() -> void:
-	NetworkIPAddrRegex.compile(r'^((25[0-5]|(2[0-4]|1\d|[1-9]|)\d)(\.(?!$)|$)){4}(:\d+)?$')
+	NetworkIPAddrRegex.compile(r'^((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(:\d+)?$')
 	
 	# Connecter les signaux réseau de NetworkClient
 	if network_client:

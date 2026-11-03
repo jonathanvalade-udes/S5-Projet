@@ -1,24 +1,24 @@
 [gd_scene format=3 uid="uid://bk5l7umgip4v5"]
 
 [ext_resource type="Script" uid="uid://tq58jihq45r4" path="res://scripts/main.gd" id="1_eka3w"]
-[ext_resource type="Script" path="res://scripts/network_client.gd" id="2_net"]
+[ext_resource type="Script" uid="uid://cn01kvanb543w" path="res://scripts/network_client.gd" id="2_net"]
 [ext_resource type="Script" uid="uid://cp202pm1s1eic" path="res://scripts/picar_raycast.gd" id="7_picar"]
-[ext_resource type="PackedScene" uid="uid://byj45xn4tx86d" path="res://assets/Cybertruck.blend" id="8_cyber"]
+[ext_resource type="PackedScene" uid="uid://qg8kqiq61w7t" path="res://assets/robot.blend" id="8_cyber"]
 [ext_resource type="PackedScene" uid="uid://xroxh5wjbwp6" path="res://line_follower_sensor.tscn" id="9_a0528"]
 [ext_resource type="Script" uid="uid://yia7brf1mnk5" path="res://scripts/ball_monitor.gd" id="10_bmon"]
-[ext_resource type="PackedScene" uid="uid://d1snkvvda4vrh" path="res://assets/plaquette_blender_scale.blend" id="11_plaq"]
-[ext_resource type="PackedScene" uid="uid://difir3bb2pwv4" path="res://assets/parcours.blend" id="12_parcours"]
+[ext_resource type="PackedScene" uid="uid://bioewyx1e7nuh" path="res://assets/plaquette_blender_scale.blend" id="11_plaq"]
+[ext_resource type="PackedScene" uid="uid://ee2o3ok3vl56" path="res://assets/parcours.blend" id="12_parcours"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_floor"]
 albedo_color = Color(0.12, 0.12, 0.14, 1)
 
+[sub_resource type="SphereShape3D" id="SphereShape3D_iys2i"]
+
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ball"]
-albedo_color = Color(0.95, 0.75, 0.2, 1)
+albedo_color = Color(0.8651868, 0.30797586, 0.26265088, 1)
 metallic = 0.95
 roughness = 0.15
 clearcoat_enabled = true
-
-[sub_resource type="SphereShape3D" id="SphereShape3D_iys2i"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_jv41d"]
 sky_top_color = Color(0.635294, 0.756863, 0.901961, 1)
@@ -62,15 +62,16 @@ transform = Transform3D(-4.37114e-08, -0.42261797, 0.90630794, 0, 0.90630794, 0.
 current = true
 
 [node name="line_follower_sensor" parent="PiCar" unique_id=1091166352 instance=ExtResource("9_a0528")]
-transform = Transform3D(-4.37114e-08, 0, -1, 0, 1, 0, 1, 0, -4.37114e-08, -0.166544, 0.02, 0)
+transform = Transform3D(-4.37114e-08, 0, -1, 0, 1, 0, 1, 0, -4.37114e-08, -0.125, 0.02, 0)
 
-[node name="CybertruckModel" parent="PiCar" unique_id=826783087 instance=ExtResource("8_cyber")]
+[node name="RobotModel" parent="PiCar" unique_id=826783087 instance=ExtResource("8_cyber")]
+transform = Transform3D(0, 0, -0.055922873, 0, 0.07217001, 0, 0.07217001, 0, 0, 0.1547566, 0.052628856, -0.0017000437)
 
 [node name="PlaquetteSupport" parent="PiCar" unique_id=1599129438 instance=ExtResource("11_plaq")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.12, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.020602405, 0.074666634, 0)
 
 [node name="Bille" type="RigidBody3D" parent="PiCar" unique_id=1804454935]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.138, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.123, 0)
 mass = 0.065
 script = ExtResource("10_bmon")
 
@@ -79,10 +80,10 @@ transform = Transform3D(0.025, 0, 0, 0, 0.025, 0, 0, 0, 0.025, 0, 0, 0)
 shape = SubResource("SphereShape3D_iys2i")
 
 [node name="CSGSphere3D" type="CSGSphere3D" parent="PiCar/Bille" unique_id=112168558]
-transform = Transform3D(0.025, 0, 0, 0, 0.025, 0, 0, 0, 0.025, 0, 0, 0)
-material = SubResource("StandardMaterial3D_ball")
+transform = Transform3D(0.025, 0, 0, 0, 0.025, 0, 0, 0, 0.025, -0.020602405, -0.029416129, 0)
 radial_segments = 32
 rings = 32
+material = SubResource("StandardMaterial3D_ball")
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=1176366824]
 transform = Transform3D(0.866025, -0.353553, 0.353553, 0, 0.707107, 0.707107, -0.5, -0.612372, 0.612372, 0, 5, 0)
