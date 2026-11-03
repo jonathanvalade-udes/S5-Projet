@@ -13,6 +13,7 @@ from websockets.server import serve
 from websockets.exceptions import ConnectionClosed
 
 from motion_profiler import MotionProfiler
+from line_follower import LineFollowerController
 
 logging.basicConfig(
     level=logging.INFO,
@@ -35,12 +36,15 @@ class WebSocketBridge:
     def __init__(self):
         self.state = dict(DEFAULT_STATE)
         self.profiler = MotionProfiler(max_accel=0.735, max_speed=0.28)
+        self.line_follower = LineFollowerController()
         self.packet_count = 0
         self.active_clients = set()
 
     async def handle_client(self, websocket):
         client_address = websocket.remote_address
         self.active_clients.add(websocket)
+        self.line_follower.reset()
+        self.profiler.reset()
         logger.info(f"Nouveau client connecté : {client_address} (Total clients: {len(self.active_clients)})")
 
         packet_in_session = 0
@@ -79,6 +83,12 @@ class WebSocketBridge:
                         logger.warning("ALERTE : Déversement détecté ! La bille est tombée de la coupelle !")
                     self.state["ball_dropped"] = is_dropped
 
+                # Calcul autonome de direction et de vitesse de virage
+                computed_steer = None
+                computed_target_vel = None
+                if not self.state.get("ball_dropped", False) and "line_follower" in data:
+                    computed_steer, computed_target_vel = self.line_follower.update(self.state["line_follower"])
+
                 # Profilage de vitesse trapézoïdal (a <= 0.735 m/s²)
                 target_vel = 0.0
                 if not self.state.get("ball_dropped", False):
@@ -87,6 +97,8 @@ class WebSocketBridge:
                             target_vel = float(data["target_velocity"])
                         except (ValueError, TypeError):
                             target_vel = 0.0
+                    elif computed_target_vel is not None:
+                        target_vel = computed_target_vel
                     elif "velocity" in data:
                         try:
                             target_vel = float(data["velocity"])
@@ -100,11 +112,14 @@ class WebSocketBridge:
                 # Calcul de la vitesse réelle lissée selon a_max
                 self.state["velocity"] = round(self.profiler.update(target_vel), 4)
 
+                # Direction : priorité à la commande manuelle explicite si fournie, sinon calculée par le régulateur
                 if "direction" in data:
                     try:
                         self.state["direction"] = float(data["direction"])
                     except (ValueError, TypeError):
                         pass
+                elif computed_steer is not None:
+                    self.state["direction"] = round(computed_steer, 3)
 
                 # Préparation de la réponse garantie avec toutes les clés requises
                 response = {

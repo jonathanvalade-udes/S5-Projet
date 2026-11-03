@@ -7,7 +7,7 @@ var NetworkIPAddrRegex: RegEx = RegEx.new()
 @onready var le_ip: LineEdit = $GridContainer/le_IpAdress
 
 func _ready() -> void:
-	NetworkIPAddrRegex.compile(r'^((25[0-5]|(2[0-4]|1\d|[1-9]|)\d)(\.(?!$)|$)){4}$')
+	NetworkIPAddrRegex.compile(r'^((25[0-5]|(2[0-4]|1\d|[1-9]|)\d)(\.(?!$)|$)){4}(:\d+)?$')
 	
 	# Connecter les signaux réseau de NetworkClient
 	if network_client:
@@ -55,7 +55,13 @@ func _on_connect_pressed() -> void:
 		if NetworkIPAddrRegex.search(ip_str):
 			btn_connect.disabled = true
 			lb_status.text = "Connecting..."
-			network_client.connect_to_server(ip_str, 8765)
+			var target_port: int = 9000
+			var target_ip: String = ip_str
+			if ip_str.find(":") != -1:
+				var parts = ip_str.split(":")
+				target_ip = parts[0]
+				target_port = int(parts[1])
+			network_client.connect_to_server(target_ip, target_port)
 		else:
 			lb_status.text = "Wrong IP Address!"
 
