@@ -86,6 +86,106 @@ void test_line_follower_controller() {
     std::cout << "  ✓ LineFollowerController : Asservissement PD et anti-décrochage validés." << std::endl;
 }
 
+void test_line_follower_analog() {
+    std::cout << "[TEST] LineFollowerController - Lecture analogique (sans binarisation)..." << std::endl;
+
+    const float dt = 0.02f;
+
+    // 1. Ligne parfaitement centrée -> pas de braquage
+    {
+        LineFollowerController c(0.65f, 0.20f, 0.32f, 0.14f);
+        const float centered[5] = {0.0f, 0.0f, 1.0f, 0.0f, 0.0f};
+        LineFollowerOutput out = c.update_analog(centered, dt);
+        assert(std::abs(out.steer_normalized) < 1e-4f);
+        assert(!out.is_finished && !out.is_line_lost);
+    }
+
+    // 2. Ruban à cheval entre le centre et D1 -> erreur 0.5, braquage intermédiaire (pas de saut)
+    {
+        LineFollowerController c(0.65f, 0.20f, 0.32f, 0.14f);
+        const float between[5] = {0.0f, 0.0f, 0.5f, 0.5f, 0.0f};
+        LineFollowerOutput out = c.update_analog(between, dt);
+        assert(std::abs(out.steer_normalized - 0.65f * 0.5f) < 1e-3f);
+    }
+
+    // 3. Balayage continu du ruban sous les capteurs : le braquage doit évoluer sans à-coups.
+    //    (avec des capteurs binaires, l'erreur sauterait de 0.5 à 1.0 d'un coup)
+    {
+        LineFollowerController c(0.65f, 0.20f, 0.32f, 0.14f);
+        const float w[5] = {-2.0f, -1.0f, 0.0f, 1.0f, 2.0f};
+        float prev_steer = 0.0f;
+        float max_jump = 0.0f;
+        bool first = true;
+        for (float x = -1.5f; x <= 1.5f; x += 0.05f) {
+            float d[5];
+            for (int i = 0; i < 5; ++i) d[i] = std::max(0.0f, 1.0f - std::abs(x - w[i]));
+            LineFollowerOutput out = c.update_analog(d, dt);
+            if (!first) max_jump = std::max(max_jump, std::abs(out.steer_normalized - prev_steer));
+            prev_steer = out.steer_normalized;
+            first = false;
+        }
+        std::cout << "    plus grand saut de braquage sur le balayage : " << max_jump << std::endl;
+        assert(max_jump < 0.20f);
+    }
+
+    // 3b. Ligne droite avec bruit de mesure (quantification 1/7 + bruit de +-1 rayon) :
+    //     la direction ne doit pas trembler (régression : l'écart-type était 0.27 sans filtrage de l'erreur).
+    {
+        LineFollowerController c(0.65f, 0.20f, 0.32f, 0.14f);
+        const float w[5] = {-2.0f, -1.0f, 0.0f, 1.0f, 2.0f};
+        uint32_t rng = 12345u; // LCG déterministe (indépendant de la bibliothèque standard)
+        auto rnd = [&rng]() { rng = rng * 1664525u + 1013904223u; return static_cast<float>(rng >> 8) / 16777216.0f; };
+        double sum = 0.0, sum2 = 0.0;
+        int n = 0;
+        for (int k = 0; k < 1000; ++k) {
+            float d[5];
+            for (int i = 0; i < 5; ++i) {
+                float t = std::max(0.0f, 1.0f - std::abs(0.04f - w[i]));
+                float hits = std::round(t * 7.0f);
+                if (rnd() < 0.3f) hits += (rnd() < 0.5f) ? -1.0f : 1.0f;
+                d[i] = std::clamp(hits / 7.0f, 0.0f, 1.0f);
+            }
+            float s = c.update_analog(d, dt).steer_normalized;
+            if (k > 20) { sum += s; sum2 += static_cast<double>(s) * s; n++; }
+        }
+        double mean = sum / n;
+        double sd = std::sqrt(sum2 / n - mean * mean);
+        std::cout << "    écart-type du braquage en ligne droite bruitée : " << sd << std::endl;
+        assert(sd < 0.10);
+    }
+
+    // 3c. Réactivité : un vrai décalage (virage) doit être suivi en quelques trames malgré le filtrage
+    {
+        LineFollowerController c(0.65f, 0.20f, 0.32f, 0.14f);
+        const float centered[5] = {0.0f, 0.0f, 1.0f, 0.0f, 0.0f};
+        const float curve[5] = {0.0f, 0.0f, 0.0f, 1.0f, 0.5f}; // erreur ~ +1.33
+        for (int k = 0; k < 10; ++k) c.update_analog(centered, dt);
+        float s = 0.0f;
+        for (int k = 0; k < 5; ++k) s = c.update_analog(curve, dt).steer_normalized; // 100 ms
+        assert(s > 0.6f);
+    }
+
+    // 4. Barre d'arrivée : 4+ capteurs franchement noirs
+    {
+        LineFollowerController c(0.65f, 0.20f, 0.32f, 0.14f);
+        const float bar[5] = {0.9f, 0.9f, 0.9f, 0.9f, 0.9f};
+        assert(c.update_analog(bar, dt).is_finished);
+        const float faint[5] = {0.4f, 0.4f, 0.4f, 0.4f, 0.4f}; // gris : pas une barre
+        LineFollowerController c2(0.65f, 0.20f, 0.32f, 0.14f);
+        assert(!c2.update_analog(faint, dt).is_finished);
+    }
+
+    // 5. Presque rien de noir -> ligne perdue (maintien du braquage, pas d'arrêt immédiat)
+    {
+        LineFollowerController c(0.65f, 0.20f, 0.32f, 0.14f);
+        const float nothing[5] = {0.02f, 0.03f, 0.02f, 0.01f, 0.02f};
+        LineFollowerOutput out = c.update_analog(nothing, dt);
+        assert(!out.is_finished && !out.is_line_lost);
+    }
+
+    std::cout << "  ✓ LineFollowerController : lecture analogique (centre de gravité) validée." << std::endl;
+}
+
 void test_obstacle_avoidance_s4_and_s5() {
     std::cout << "[TEST] FSM S4 & S5 - Évitement d'obstacle et Marche arrière..." << std::endl;
 
@@ -133,6 +233,7 @@ int main() {
 
     test_motion_profiler();
     test_line_follower_controller();
+    test_line_follower_analog();
     test_obstacle_avoidance_s4_and_s5();
 
     std::cout << "========================================" << std::endl;

@@ -105,6 +105,34 @@ void test_line_follower_parsing() {
     std::cout << "  -> PASS: Décodage des 10 octets ADC et seuillage validés." << std::endl;
 }
 
+void test_adc_to_darkness() {
+    std::cout << "[TEST] 3a. Conversion ADC -> noirceur continue..." << std::endl;
+
+    using picar::i2c::line_follower::adc_to_darkness;
+
+    // Références par défaut : noir = 20, blanc = 100, milieu = 60 (= seuil historique)
+    assert(adc_to_darkness(20) == 1.0f);
+    assert(adc_to_darkness(100) == 0.0f);
+    assert(std::abs(adc_to_darkness(60) - 0.5f) < 1e-4f);
+
+    // Valeurs hors plage : bornées à [0, 1]
+    assert(adc_to_darkness(5) == 1.0f);
+    assert(adc_to_darkness(400) == 0.0f);
+
+    // Exemples réels : 55 (gris foncé), 92 (presque blanc), 25 (presque noir)
+    assert(std::abs(adc_to_darkness(55) - 0.5625f) < 1e-3f);
+    assert(std::abs(adc_to_darkness(92) - 0.10f) < 1e-3f);
+    assert(std::abs(adc_to_darkness(25) - 0.9375f) < 1e-3f);
+
+    // Plus c'est sombre (ADC bas), plus la noirceur est grande
+    assert(adc_to_darkness(30) > adc_to_darkness(50));
+
+    // Calibration personnalisée
+    assert(std::abs(adc_to_darkness(150, 100.0f, 200.0f) - 0.5f) < 1e-4f);
+
+    std::cout << "  -> PASS: Noirceur continue [0,1] calculée à partir de l'ADC brut." << std::endl;
+}
+
 void test_hal_driver_instantiation() {
     std::cout << "[TEST] 4. Instanciation des pilotes matériels PiCarHats..." << std::endl;
 
@@ -135,6 +163,7 @@ int main() {
     test_i2c_addresses_and_constants();
     test_pca9685_math_and_registers();
     test_line_follower_parsing();
+    test_adc_to_darkness();
     test_hal_driver_instantiation();
 
     std::cout << "\n>>> TOUS LES TESTS I2C ONT RÉUSSI AVEC SUCCÈS ! <<<\n" << std::endl;

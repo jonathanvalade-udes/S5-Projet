@@ -35,6 +35,17 @@ public:
      * @param out_sensors Tableau de 5 entiers (0 = blanc/fond, 1 = noir/ligne).
      */
     virtual void read_line_sensors(uint8_t out_sensors[5]) = 0;
+
+    /**
+     * @brief Lit la "noirceur" continue des 5 capteurs optiques (sans binarisation).
+     * @param out_darkness 5 valeurs dans [0.0, 1.0] (0 = blanc/fond, 1 = noir/ligne).
+     * Par défaut, dérivée de la lecture binaire (0 ou 1) : les pilotes qui lisent un ADC la surchargent.
+     */
+    virtual void read_line_darkness(float out_darkness[5]) {
+        uint8_t binary[5] = {0, 0, 0, 0, 0};
+        read_line_sensors(binary);
+        for (int i = 0; i < 5; ++i) out_darkness[i] = binary[i] ? 1.0f : 0.0f;
+    }
 };
 
 /**
@@ -93,6 +104,17 @@ private:
                                 picar::i2c::line_follower::DEFAULT_THRESHOLD,
                                 picar::i2c::line_follower::DEFAULT_THRESHOLD};
     uint8_t m_last_sensors[5] = {0, 0, 1, 0, 0};
+    float m_last_darkness[5] = {0.0f, 0.0f, 1.0f, 0.0f, 0.0f};
+
+    // Calibration de la lecture analogique : ADC sur le noir / sur le blanc.
+    // Réglable sans recompiler : PICAR_LINE_BLACK_ADC et PICAR_LINE_WHITE_ADC.
+    float m_black_adc = env_float("PICAR_LINE_BLACK_ADC", picar::i2c::line_follower::DEFAULT_BLACK_ADC);
+    float m_white_adc = env_float("PICAR_LINE_WHITE_ADC", picar::i2c::line_follower::DEFAULT_WHITE_ADC);
+
+    static float env_float(const char* name, float fallback) {
+        const char* v = std::getenv(name);
+        return (v && v[0] != '\0') ? static_cast<float>(std::atof(v)) : fallback;
+    }
 
     static int detect_gpio_base() {
 #ifdef __linux__
@@ -280,11 +302,23 @@ public:
                 uint16_t raw_adc[5];
                 picar::i2c::line_follower::parse_raw_adc(buffer, raw_adc);
                 picar::i2c::line_follower::binarize_sensors(raw_adc, m_thresholds, m_last_sensors);
+                for (int i = 0; i < 5; ++i) {
+                    m_last_darkness[i] = picar::i2c::line_follower::adc_to_darkness(raw_adc[i], m_black_adc, m_white_adc);
+                }
             }
         }
 #endif
         for (int i = 0; i < 5; ++i) {
             out_sensors[i] = m_last_sensors[i];
+        }
+    }
+
+    /// Lecture analogique : valeurs ADC brutes converties en noirceur continue [0, 1].
+    void read_line_darkness(float out_darkness[5]) override {
+        uint8_t unused[5];
+        read_line_sensors(unused); // rafraîchit m_last_darkness (garde la dernière valeur si l'I2C échoue)
+        for (int i = 0; i < 5; ++i) {
+            out_darkness[i] = m_last_darkness[i];
         }
     }
 };

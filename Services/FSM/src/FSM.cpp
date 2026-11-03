@@ -71,7 +71,8 @@ void FSM::run() {
         auto start_time = std::chrono::steady_clock::now();
 
         float current_dist_cm = 100.0f;
-        uint8_t line_sensors[5] = {0, 0, 1, 0, 0};
+        uint8_t line_sensors[5] = {0, 0, 1, 0, 0};          // vue binaire (noirceur > 0.5)
+        float line_darkness[5] = {0.0f, 0.0f, 1.0f, 0.0f, 0.0f}; // noirceur analogique [0,1]
         bool shm_emergency = false;
         bool sensors_alive = true; // false tant qu'aucun producteur de capteurs n'a écrit dans la SHM
 
@@ -82,8 +83,8 @@ void FSM::run() {
             if (m_sensor_sub->read(s_telem)) {
                 current_dist_cm = s_telem.ultrasonicSensor.calculatedDistance;
                 for (int i = 0; i < 5; ++i) {
-                    line_sensors[i] = (s_telem.lineFollower.sensorsData[i].normalizedValue > 0.5f ||
-                                       s_telem.lineFollower.sensorsData[i].rawADCValue > 500) ? 1 : 0;
+                    line_darkness[i] = std::clamp(s_telem.lineFollower.sensorsData[i].normalizedValue, 0.0f, 1.0f);
+                    line_sensors[i] = (line_darkness[i] > 0.5f) ? 1 : 0;
                 }
                 got_sensors = true;
                 sensors_alive = true;
@@ -95,6 +96,7 @@ void FSM::run() {
             current_dist_cm = m_telemetry->filtered_dist;
             for (int i = 0; i < 5; ++i) {
                 line_sensors[i] = m_telemetry->line_sensors[i];
+                line_darkness[i] = m_telemetry->line_darkness[i];
             }
             shm_emergency = m_telemetry->emergency_stop;
             sensors_alive = (m_telemetry->heartbeat > 0);
@@ -155,7 +157,7 @@ void FSM::run() {
             }
 
             case shared::fsm::MachineStates::LineFollowingForward: {
-                LineFollowerOutput line_out = m_line_controller ? m_line_controller->update(line_sensors, dt) 
+                LineFollowerOutput line_out = m_line_controller ? m_line_controller->update_analog(line_darkness, dt)
                                                                 : LineFollowerOutput{0.0f, 0.0f, STRAIGHT_CRUISE_SPEED, false, false};
                 desired_steering = line_out.steer_degrees;
 
@@ -297,7 +299,7 @@ void FSM::run() {
 
                 float err = 0.0f;
                 if (m_line_controller) {
-                    err = m_line_controller->update(line_sensors, dt).steer_degrees;
+                    err = m_line_controller->update_analog(line_darkness, dt).steer_degrees;
                 }
                 desired_steering = -err; // Inversion du braquage en marche arrière
 

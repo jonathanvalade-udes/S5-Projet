@@ -100,6 +100,23 @@ namespace picar::i2c {
         inline constexpr size_t  RAW_BUFFER_SIZE        = 10;   // 5 canaux x 2 octets (ADC 10 bits)
         inline constexpr uint16_t DEFAULT_THRESHOLD     = 60;   // Seuil noir/blanc calibré PiCar-S (noir < 50-60, blanc > 70-140)
 
+        // Références de calibration pour la lecture analogique (milieu = DEFAULT_THRESHOLD = 60)
+        inline constexpr float DEFAULT_BLACK_ADC        = 20.0f;  // Valeur ADC typique sur le ruban noir
+        inline constexpr float DEFAULT_WHITE_ADC        = 100.0f; // Valeur ADC typique sur le fond blanc
+
+        /**
+         * @brief Convertit une valeur ADC brute en "noirceur" continue [0.0 = blanc, 1.0 = noir].
+         * Les TCRT5000 renvoient une valeur BASSE sur le noir. Interpolation linéaire entre les
+         * références blanc/noir, bornée à [0, 1] : 55 -> 0.56, 92 -> 0.10, 25 -> 0.94 (avec 20/100).
+         */
+        inline float adc_to_darkness(uint16_t adc, float black_adc = DEFAULT_BLACK_ADC,
+                                     float white_adc = DEFAULT_WHITE_ADC) {
+            const float span = white_adc - black_adc;
+            if (span <= 1.0f) return (static_cast<float>(adc) < (black_adc + white_adc) * 0.5f) ? 1.0f : 0.0f;
+            const float d = (white_adc - static_cast<float>(adc)) / span;
+            return d < 0.0f ? 0.0f : (d > 1.0f ? 1.0f : d);
+        }
+
         /**
          * @brief Parse les 10 octets bruts I2C en 5 valeurs ADC 10 bits (0-1023).
          */

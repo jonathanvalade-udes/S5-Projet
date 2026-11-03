@@ -43,6 +43,28 @@ void test_json_parsing() {
     assert(serialized_sensors.find("\"distance\":28.5") != std::string::npos);
     assert(serialized_sensors.find("\"line_follower\":[0,0,1,0,0]") != std::string::npos);
 
+    // Trame sans "line_analog" : repli sur le binaire (0.0 / 1.0)
+    assert(!telem.has_analog);
+    assert(telem.line_darkness[1] == 1.0f && telem.line_darkness[2] == 0.0f);
+
+    // Trame avec "line_analog" : valeurs continues conservées (et bornées à [0,1])
+    std::string analog = "{\"distance\": 80.0, \"line_follower\": [0, 0, 1, 1, 0], "
+                         "\"line_analog\": [0.0, 0.1, 0.62, 0.38, 1.7], \"velocity\": 0.1, \"ball_dropped\": false}\n";
+    GodotTelemetryIn t2;
+    assert(SimpleJson::parse_godot_telemetry(analog, t2));
+    assert(t2.has_analog);
+    assert(std::abs(t2.line_darkness[1] - 0.1f) < 1e-4f);
+    assert(std::abs(t2.line_darkness[2] - 0.62f) < 1e-4f);
+    assert(std::abs(t2.line_darkness[3] - 0.38f) < 1e-4f);
+    assert(t2.line_darkness[4] == 1.0f); // 1.7 borné
+    assert(t2.line_sensors[3] == 1);     // le champ binaire reste lu tel quel
+
+    // Tableau analogique incomplet : ignoré (pas de valeurs à moitié lues)
+    GodotTelemetryIn t3;
+    assert(SimpleJson::parse_godot_telemetry("{\"line_follower\": [0,0,1,0,0], \"line_analog\": [0.2, 0.4]}\n", t3));
+    assert(!t3.has_analog);
+    assert(t3.line_darkness[2] == 1.0f);
+
     std::cout << "  ✓ Sérialisation & Dé-sérialisation JSON validées." << std::endl;
 }
 

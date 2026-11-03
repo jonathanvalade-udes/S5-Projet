@@ -20,7 +20,8 @@ struct RobotTelemetry {
     float filtered_dist;     // Distance ultrason HC-SR04 filtrée (cm)
     float speed;             // Vitesse actuelle estimée (cm/s ou m/s)
     float line_error;        // Erreur de suivi de ligne [-1.0, 1.0]
-    uint8_t line_sensors[5]; // État brut des 5 capteurs optiques TCRT5000
+    uint8_t line_sensors[5]; // État binaire (noirceur > 0.5) des 5 capteurs optiques TCRT5000
+    float line_darkness[5];  // Noirceur analogique des 5 capteurs [0.0 = blanc, 1.0 = noir]
 
     // Consignes de commande (écrites par la navigation, lues par les moteurs)
     float target_speed;      // Consigne de vitesse
@@ -98,6 +99,10 @@ public:
             shm_ptr->filtered_dist = 100.0f;
             shm_ptr->speed = 0.0f;
             shm_ptr->line_error = 0.0f;
+            for (int i = 0; i < 5; ++i) {
+                shm_ptr->line_sensors[i] = (i == 2) ? 1 : 0;
+                shm_ptr->line_darkness[i] = (i == 2) ? 1.0f : 0.0f; // ligne centrée par défaut
+            }
             shm_ptr->target_speed = 0.0f;
             shm_ptr->target_steering = 0.0f;
             shm_ptr->state = 0;

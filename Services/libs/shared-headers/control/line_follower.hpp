@@ -24,6 +24,10 @@ public:
     static constexpr float MIN_CURVE_SPEED = 0.10f;     // m/s en virage serré (R = 120 mm)
     static constexpr float SPEED_REDUCTION_GAIN = 0.08f;
     static constexpr float LINE_LOSS_TIMEOUT = 1.20f;   // Secondes avant arrêt d'urgence
+    static constexpr float ANALOG_DARK_THRESHOLD = 0.5f;       // Un capteur compte comme "noir" au-delà (barre d'arrivée)
+    static constexpr float ANALOG_ERROR_ALPHA = 0.4f;          // Filtre EMA de l'erreur analogique (1 = aucun filtre)
+    static constexpr float ANALOG_CENTER_KNEE = 0.30f;         // Erreur (en pas de capteur ~19 mm) sous laquelle on atténue
+    static constexpr float ANALOG_MIN_TOTAL_DARKNESS = 0.25f;  // Noirceur totale minimale pour dire "ligne vue"
 
 private:
     float kp;
@@ -36,6 +40,8 @@ private:
     float line_lost_elapsed;
     float filtered_d_error;
     bool has_previous_error;
+    float analog_error_filtered = 0.0f; // erreur analogique filtrée (EMA) avant le terme dérivé
+    bool has_analog_error = false;
 
     const float weights[5] = {-2.0f, -1.0f, 0.0f, 1.0f, 2.0f};
 
@@ -59,6 +65,8 @@ public:
         line_lost_elapsed = 0.0f;
         filtered_d_error = 0.0f;
         has_previous_error = false;
+        analog_error_filtered = 0.0f;
+        has_analog_error = false;
     }
 
     /**
@@ -167,6 +175,56 @@ public:
         }
 
         return out;
+    }
+
+    /**
+     * @brief Met à jour le régulateur à partir des valeurs ANALOGIQUES des capteurs (sans binarisation).
+     *
+     * L'erreur est le centre de gravité de la noirceur : sum(w_i * d_i) / sum(d_i). Quand le ruban passe
+     * entre deux capteurs, l'erreur varie continuellement au lieu de sauter de 0.5 ou 1.0 d'un coup, ce qui
+     * supprime les à-coups du braquage (plein débattement puis retour à 0).
+     *
+     * @param darkness 5 valeurs [0.0 = blanc, 1.0 = noir].
+     * @param dt Intervalle de temps écoulé (s).
+     */
+    LineFollowerOutput update_analog(const float darkness[5], float dt) {
+        float total = 0.0f;
+        float weighted = 0.0f;
+        int dark_count = 0;
+
+        for (int i = 0; i < 5; ++i) {
+            const float d = std::clamp(darkness[i], 0.0f, 1.0f);
+            total += d;
+            weighted += weights[i] * d;
+            if (d > ANALOG_DARK_THRESHOLD) dark_count++;
+        }
+
+        const bool is_t_stop = (dark_count >= 4);
+        const bool has_line = (total >= ANALOG_MIN_TOTAL_DARKNESS);
+        float error = has_line ? (weighted / total) : 0.0f;
+
+        // Filtrage passe-bas de l'erreur AVANT la dérivée : sans lui, le bruit de mesure (quantification,
+        // ADC) est multiplié par 1/dt dans le terme D et fait trembler la direction en ligne droite.
+        if (has_line) {
+            if (!has_analog_error) {
+                analog_error_filtered = error; // première mesure : pas de retard
+                has_analog_error = true;
+            } else {
+                analog_error_filtered += ANALOG_ERROR_ALPHA * (error - analog_error_filtered);
+            }
+            error = analog_error_filtered;
+
+            // Zone douce autour du centre : une petite erreur (quelques mm) est surtout du bruit, on l'atténue
+            // (gain ~|e|/knee, nul au centre) au lieu de la corriger ; continu, et inchangé au-delà du knee.
+            const float abs_e = std::abs(error);
+            if (abs_e < ANALOG_CENTER_KNEE) {
+                error *= abs_e / ANALOG_CENTER_KNEE;
+            }
+        } else {
+            has_analog_error = false; // ligne perdue : ré-initialise le filtre à la réacquisition
+        }
+
+        return update_continuous(error, has_line, is_t_stop, dt);
     }
 
     /**

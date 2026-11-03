@@ -22,6 +22,7 @@ var rx_buffer: String = ""
 var data_to_send: Dictionary = {
 	"velocity": 0.0,
 	"line_follower": [0, 0, 0, 0, 0],
+	"line_analog": [0.0, 0.0, 0.0, 0.0, 0.0],  # noirceur continue par capteur [0,1] (voir line_follower_raycast.gd)
 	"ball_dropped": false,
 	"distance": 100.0
 }

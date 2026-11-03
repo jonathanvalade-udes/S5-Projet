@@ -74,13 +74,16 @@ void Sensors::run() {
         auto start_time = std::chrono::steady_clock::now();
 
         float raw_dist = m_driver ? m_driver->read_raw_ultrasonic_cm() : 100.0f;
-        uint8_t line_sensors[5] = {0, 0, 1, 0, 0};
+        // Lecture analogique (noirceur continue [0,1]) ; le binaire n'en est qu'une vue dérivée
+        float line_darkness[5] = {0.0f, 0.0f, 1.0f, 0.0f, 0.0f};
         if (m_driver) {
-            m_driver->read_line_sensors(line_sensors);
+            m_driver->read_line_darkness(line_darkness);
         }
 
+        uint8_t line_sensors[5];
         bool has_line = false;
         for (int i = 0; i < 5; ++i) {
+            line_sensors[i] = (line_darkness[i] > 0.5f) ? 1 : 0;
             if (line_sensors[i] != 0) has_line = true;
         }
 
@@ -102,6 +105,7 @@ void Sensors::run() {
             m_telemetry->line_error = line_error;
             for (int i = 0; i < 5; ++i) {
                 m_telemetry->line_sensors[i] = line_sensors[i];
+                m_telemetry->line_darkness[i] = line_darkness[i];
             }
             m_telemetry->heartbeat++;
             pthread_mutex_unlock(&(m_telemetry->mtx));
@@ -113,8 +117,8 @@ void Sensors::run() {
             telem.ultrasonicSensor.rawDistanceCm = raw_dist;
             telem.ultrasonicSensor.calculatedDistance = filtered_dist;
             for (int i = 0; i < 5; ++i) {
-                telem.lineFollower.sensorsData[i].rawADCValue = line_sensors[i] ? 1023 : 0;
-                telem.lineFollower.sensorsData[i].normalizedValue = line_sensors[i] ? 1.0f : 0.0f;
+                telem.lineFollower.sensorsData[i].rawADCValue = static_cast<uint32_t>(line_darkness[i] * 1023.0f);
+                telem.lineFollower.sensorsData[i].normalizedValue = line_darkness[i]; // noirceur [0,1]
             }
             telem.lineFollower.flags = has_line ? shared::sensors::lineFollower::flags::LINE_FOLLOWED
                                                 : shared::sensors::lineFollower::flags::LINE_LOST;
@@ -130,7 +134,9 @@ void Sensors::run() {
                       << (int)line_sensors[1] << " "
                       << (int)line_sensors[2] << " "
                       << (int)line_sensors[3] << " "
-                      << (int)line_sensors[4] << "] (err: " << line_error << ")"
+                      << (int)line_sensors[4] << "] dark: ["
+                      << line_darkness[0] << " " << line_darkness[1] << " " << line_darkness[2] << " "
+                      << line_darkness[3] << " " << line_darkness[4] << "] (err: " << line_error << ")"
                       << (has_line ? "" : " [PERTE DE LIGNE]") << std::endl;
         }
 

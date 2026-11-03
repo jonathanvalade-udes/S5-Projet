@@ -29,6 +29,14 @@ Godot → bridge :
 ```
 `distance` en cm, `line_follower` = 5 capteurs [G2,G1,C,D1,D2] (1 = ruban noir).
 
+Champ optionnel `line_analog` : noirceur continue des 5 capteurs, `0.0` = blanc … `1.0` = noir
+(Godot lance 7 rayons par capteur et envoie la fraction qui touche le ruban) :
+```json
+{"...":"...","line_follower":[0,0,1,1,0],"line_analog":[0.0,0.0,0.62,0.38,0.0]}
+```
+Si `line_analog` est absent ou incomplet (≠ 5 valeurs), le pont retombe sur `line_follower` (0.0 / 1.0).
+Le FSM calcule alors l'erreur de ligne comme centre de gravité de la noirceur (braquage continu).
+
 Bridge → Godot (une réponse par trame) :
 ```json
 {"velocity":0.3200,"direction":0.0000,"brake":false}
