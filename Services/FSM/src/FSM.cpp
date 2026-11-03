@@ -67,6 +67,7 @@ void FSM::run() {
         float current_dist_cm = 100.0f;
         uint8_t line_sensors[5] = {0, 0, 1, 0, 0};
         bool shm_emergency = false;
+        bool sensors_alive = true; // false tant qu'aucun producteur de capteurs n'a écrit dans la SHM
 
         // Lecture des capteurs via POSIX SHM ou fallback MemoryShare
         if (m_telemetry) {
@@ -76,6 +77,7 @@ void FSM::run() {
                 line_sensors[i] = m_telemetry->line_sensors[i];
             }
             shm_emergency = m_telemetry->emergency_stop;
+            sensors_alive = (m_telemetry->heartbeat > 0);
             pthread_mutex_unlock(&(m_telemetry->mtx));
         } else if (m_sensor_sub && m_sensor_sub->isConnected()) {
             shared::sensors::SensorsTelemetry s_telem{};
@@ -101,7 +103,11 @@ void FSM::run() {
             case shared::fsm::MachineStates::Init: {
                 desired_velocity = 0.0f;
                 desired_steering = 0.0f;
-                m_state_timer += dt;
+                // Attend les premières données capteurs (ex. connexion de Godot) avant de démarrer,
+                // sinon la ligne serait vue "perdue" et le FSM tomberait en échec.
+                if (sensors_alive) {
+                    m_state_timer += dt;
+                }
                 // Transition automatique après validation des ressources
                 if (m_state_timer >= 0.1f) {
                     transition_to(shared::fsm::MachineStates::Unarmed);
@@ -144,6 +150,12 @@ void FSM::run() {
                 desired_velocity = adaptive_velocity;
 
                 if (line_out.is_finished) {
+                    // Arrivée : arrêt progressif (le MotionProfiler limite la décélération à a_max,
+                    // donc la bille ne tombe pas) puis maintien définitif à l'arrêt dans Stopped.
+                    std::cout << "[FSM] Barre d'arrivée détectée (capteurs "
+                              << int(line_sensors[0]) << int(line_sensors[1]) << int(line_sensors[2])
+                              << int(line_sensors[3]) << int(line_sensors[4]) << ") -> arrêt final." << std::endl;
+                    m_course_finished = true;
                     desired_velocity = 0.0f;
                     transition_to(shared::fsm::MachineStates::Stopped);
                 } else if (line_out.is_line_lost) {
@@ -177,6 +189,11 @@ void FSM::run() {
                 desired_velocity = 0.0f;
                 desired_steering = 0.0f;
                 m_state_timer += dt;
+
+                // Fin de parcours : on reste à l'arrêt, sans reprise du suivi de ligne
+                if (m_course_finished) {
+                    break;
+                }
 
                 // Confirmation rapide en 200 ms (sans latence superflue)
                 if (m_state_timer >= 0.2f) {

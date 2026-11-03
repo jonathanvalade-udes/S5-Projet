@@ -38,6 +38,7 @@ private:
     shared::fsm::MachineStates m_current_state{shared::fsm::MachineStates::Init};
     float m_state_timer{0.0f};
     float m_state_distance{0.0f};
+    bool m_course_finished{false}; // Barre d'arrivée vue : l'état Stopped devient terminal
 
     static constexpr float STRAIGHT_CRUISE_SPEED = 0.32f; // m/s en ligne droite
     static constexpr float MIN_CURVE_SPEED = 0.14f;       // m/s en virage serré
