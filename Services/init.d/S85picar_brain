@@ -1,0 +1,31 @@
+#!/bin/sh
+# /etc/init.d/S85picar_brain
+# Script de supervision SysVinit pour le service décisionnel autonome PiCar
+
+DAEMON="/root/picar_brain"
+NAME="picar_brain"
+PIDFILE="/var/run/${NAME}.pid"
+DAEMON_ARGS="--hz 100" # Cadence de décision (100 Hz = boucle 10 ms)
+
+case "$1" in
+    start)
+        echo "Démarrage du service $NAME..."
+        start-stop-daemon -S -b -m -p "$PIDFILE" -x "$DAEMON" -- $DAEMON_ARGS
+        ;;
+    stop)
+        echo "Arrêt du service $NAME..."
+        start-stop-daemon -K -p "$PIDFILE" -s SIGTERM
+        rm -f "$PIDFILE"
+        ;;
+    restart)
+        $0 stop
+        sleep 1
+        $0 start
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart}"
+        exit 1
+        ;;
+esac
+
+exit 0

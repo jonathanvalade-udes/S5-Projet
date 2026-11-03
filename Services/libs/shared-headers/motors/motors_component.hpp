@@ -2,7 +2,7 @@
 
 #include "motor_states.hpp"
 #include "motor_telemetry.hpp"
-
+#include "servo/servo_telemetry.hpp"
 
 namespace shared::motors{
 
@@ -20,6 +20,7 @@ namespace shared::motors{
         uint32_t errorCode;
         MotorTelemetry leftMotor;
         MotorTelemetry rightMotor;
+        servos::ServoTelemetry steeringServo; // Direction intégrée directement dans le composant Motors
         MotorStates state;
         uint16_t componentFlags;
     };

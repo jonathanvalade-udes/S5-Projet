@@ -1,0 +1,32 @@
+#!/bin/sh
+# /etc/init.d/S90picar_motor
+# Script de supervision SysVinit pour le service moteur & failsafe PiCar
+
+DAEMON="/root/picar_motor"
+NAME="picar_motor"
+PIDFILE="/var/run/${NAME}.pid"
+DAEMON_ARGS="--hz 100" # Cadence configurable (ex: 100 Hz pour réactivité maximale)
+
+case "$1" in
+    start)
+        echo "Démarrage du service $NAME..."
+        start-stop-daemon -S -b -m -p "$PIDFILE" -x "$DAEMON" -- $DAEMON_ARGS
+        ;;
+    stop)
+        echo "Arrêt propre (Failsafe) du service $NAME..."
+        # Utilisation de -K avec SIGTERM pour déclencher le sig_handler et couper les PWM à 0 V
+        start-stop-daemon -K -p "$PIDFILE" -s SIGTERM
+        rm -f "$PIDFILE"
+        ;;
+    restart)
+        $0 stop
+        sleep 1
+        $0 start
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart}"
+        exit 1
+        ;;
+esac
+
+exit 0

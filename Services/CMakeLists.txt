@@ -6,11 +6,19 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Compiler flags
-add_compile_options(-Wall -Wextra -O2)
+if(MSVC)
+    add_compile_options(/W3)
+else()
+    add_compile_options(-Wall -Wextra -O2)
+endif()
+
+find_package(Threads REQUIRED)
 
 # Global static linking option (OFF by default)
 option(STATIC "Build with static linking (-static)" OFF)
 option(STATIC_BUILD "Build with static linking (-static)" OFF)
+
+enable_testing()
 
 # Set global libs directory
 set(LIBS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/libs" CACHE PATH "Path to libs directory")

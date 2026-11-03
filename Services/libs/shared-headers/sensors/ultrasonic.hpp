@@ -9,8 +9,8 @@ namespace shared::sensors::ultrasonic{
         constexpr inline uint32_t ANOMALIES_DETECTED = 1 << 2;
     }
     struct UltrasonicTelemetry{
-        uint32_t rawADC;
-        float calculatedDistance;
+        float rawDistanceCm;        // Mesure brute avant filtrage (cm)
+        float calculatedDistance;   // Mesure filtrée après Médian + Passe-Bas EMA (cm)
         uint32_t flags;
         uint32_t errorCode;
     };
