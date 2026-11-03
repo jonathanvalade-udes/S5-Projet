@@ -71,7 +71,7 @@ transform = Transform3D(0, 0, -0.055922873, 0, 0.07217001, 0, 0.07217001, 0, 0, 
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.020602405, 0.074666634, 0)
 
 [node name="Bille" type="RigidBody3D" parent="PiCar" unique_id=1804454935]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.123, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.020383954, 0.09271516, 0)
 mass = 0.065
 script = ExtResource("10_bmon")
 
@@ -80,7 +80,7 @@ transform = Transform3D(0.025, 0, 0, 0, 0.025, 0, 0, 0, 0.025, 0, 0, 0)
 shape = SubResource("SphereShape3D_iys2i")
 
 [node name="CSGSphere3D" type="CSGSphere3D" parent="PiCar/Bille" unique_id=112168558]
-transform = Transform3D(0.025, 0, 0, 0, 0.025, 0, 0, 0, 0.025, -0.020602405, -0.029416129, 0)
+transform = Transform3D(0.025, 0, 0, 0, 0.025, 0, 0, 0, 0.025, 0, 0, 0)
 radial_segments = 32
 rings = 32
 material = SubResource("StandardMaterial3D_ball")

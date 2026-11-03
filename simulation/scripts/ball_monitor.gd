@@ -8,7 +8,6 @@ extends RigidBody3D
 const CUP_RADIUS: float = 0.020        # 20 mm
 const CUP_DEPTH: float = 0.0015        # 1.5 mm
 const SLOPE_TAN: float = 0.075         # h / R
-const REST_Y: float = 0.138            # Hauteur de repos au fond de la cuvette
 const G: float = 9.81
 const MASS: float = 0.065
 const DAMPING: float = 6.0             # Coefficient d'amortissement de roulement
@@ -22,6 +21,10 @@ var has_last_speed: bool = false
 
 var fall_vel_y: float = 0.0            # Vitesse verticale de chute hors de la voiture
 
+# Position de repos au fond de la cuvette = position placée dans l'éditeur (repère local du PiCar).
+# Ne PAS la coder en dur : elle doit suivre la plaquette telle que positionnée dans la scène.
+var rest_pos: Vector3 = Vector3.ZERO
+
 var network: NetworkClient = null
 var sphere_mesh: Node3D = null
 
@@ -31,7 +34,7 @@ func _ready():
 	freeze = true  # Déplacement physique calculé dans le référentiel non-inertiel du véhicule
 	network = get_node_or_null("/root/Main/NetworkClient")
 	sphere_mesh = get_node_or_null("CSGSphere3D")
-	position = Vector3(0.0, REST_Y, 0.0)
+	rest_pos = position  # position de l'éditeur : centre de la cuvette
 
 func _physics_process(delta: float):
 	if network == null:
@@ -106,8 +109,8 @@ func _physics_process(delta: float):
 		return
 
 	# 7. Mise à jour de la position 3D dans la cuvette
-	var height_y = REST_Y + (dist_center / CUP_RADIUS) * CUP_DEPTH
-	position = Vector3(ball_rel_pos.x, height_y, ball_rel_pos.y)
+	var height_y = (dist_center / CUP_RADIUS) * CUP_DEPTH
+	position = rest_pos + Vector3(ball_rel_pos.x, height_y, ball_rel_pos.y)
 
 	# 8. Animation de roulement de la bille sur elle-même
 	if sphere_mesh:
