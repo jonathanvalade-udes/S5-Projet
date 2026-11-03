@@ -16,10 +16,11 @@ usage() {
 Usage: $0 [options] [target]
 
 Options:
-  --static       Build executables with static linking (-static)
-  --embedded     Build for Linux ARM64 (aarch64). Uses Docker automatically on macOS.
-  --clean        Remove build directories (build and build-embedded) and exit
-  -h, --help     Show this help message
+  --static        Build executables with static linking (-static)
+  --embedded      Build for Linux ARM64 (aarch64). Uses Docker automatically on macOS.
+  --build-docker  Build or update the Docker builder image (alpine-picar-builder) and exit
+  --clean         Remove build directories (build and build-embedded) and exit
+  -h, --help      Show this help message
 
 Target:
   all            Build all services (default)
@@ -45,6 +46,12 @@ while [[ $# -gt 0 ]]; do
             EMBEDDED_MODE=true
             BUILD_DIR="${SCRIPT_DIR}/build-embedded"
             shift
+            ;;
+        --build-docker)
+            echo "==> Building Docker builder image 'alpine-picar-builder' from Dockerfile.builder..."
+            docker build -f "${SCRIPT_DIR}/Dockerfile.builder" -t alpine-picar-builder "${SCRIPT_DIR}"
+            echo "==> Image 'alpine-picar-builder' is ready for instant builds!"
+            exit 0
             ;;
         --clean)
             rm -rf "${SCRIPT_DIR}/build" "${SCRIPT_DIR}/build-embedded"

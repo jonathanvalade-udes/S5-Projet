@@ -1,0 +1,18 @@
+# ==============================================================================
+# Docker Compose pour l'environnement de build ARM64 du projet PiCar
+# ==============================================================================
+# Usage :
+#   docker compose -f Services/docker-compose.yml build
+#   docker compose -f Services/docker-compose.yml up
+# ==============================================================================
+services:
+  builder:
+    build:
+      context: .
+      dockerfile: Dockerfile.builder
+    image: alpine-picar-builder:latest
+    container_name: picar-builder
+    volumes:
+      - .:/workspace
+    working_dir: /workspace
+    command: sh -c "cmake -B build-embedded -S . -DSTATIC=ON && cmake --build build-embedded --parallel"
