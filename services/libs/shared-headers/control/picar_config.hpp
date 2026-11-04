@@ -24,7 +24,7 @@ struct PicarConfig {
     float line_kd               = picar::constants::DEFAULT_LINE_KD;
     float obstacle_stop_dist_cm = picar::constants::DEFAULT_OBSTACLE_STOP_DIST_CM;
     float reverse_speed         = picar::constants::DEFAULT_REVERSE_SPEED;
-    float auto_start_delay      = 2.0f;
+    float auto_start_delay      = 0.0f; // 0.0 = Désactivé (départ exclusivement sur bouton)
 
     static std::string resolve_config_path(const std::string& custom = "") {
         if (!custom.empty()) return custom;
