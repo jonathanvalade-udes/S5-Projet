@@ -17,7 +17,7 @@ public:
     // Empattement du véhicule PiCar-S (distance essieu avant - essieu arrière)
     static constexpr float WHEELBASE_M = 0.14f;              // m
     // Vitesse de croisière nominale en ligne droite (m/s)
-    static constexpr float DEFAULT_CRUISE_SPEED = 0.25f;     // m/s
+    static constexpr float DEFAULT_CRUISE_SPEED = 0.20f;     // m/s
 
 private:
     float max_accel;

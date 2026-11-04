@@ -56,9 +56,19 @@ Sensors::~Sensors() {
 bool Sensors::init() {
     std::cout << "[Sensors] Initializing service at " << m_hz << " Hz (Trig=" << m_trig_pin << ", Echo=" << m_echo_pin << ")..." << std::endl;
 
+    // Chargement de sensors.conf
+    if (m_config.load("sensors.conf")) {
+        std::cout << "[Sensors] Configuration chargée depuis " << m_config.get_active_filepath() << std::endl;
+        m_hz = static_cast<int>(m_config.get_float("HZ", static_cast<float>(m_hz)));
+        m_trig_pin = static_cast<int>(m_config.get_float("TRIG_PIN", static_cast<float>(m_trig_pin)));
+        m_echo_pin = static_cast<int>(m_config.get_float("ECHO_PIN", static_cast<float>(m_echo_pin)));
+        m_filter_alpha = m_config.get_float("FILTER_ALPHA", m_filter_alpha);
+        m_median_window = static_cast<size_t>(m_config.get_float("MEDIAN_WINDOW", static_cast<float>(m_median_window)));
+    }
+
     m_driver = std::make_unique<PiCarHatsSensorDriver>(m_trig_pin, m_echo_pin);
 
-    m_pipeline = std::make_unique<UltrasonicPipeline>(5, 0.25f);
+    m_pipeline = std::make_unique<UltrasonicPipeline>(m_median_window, m_filter_alpha);
     m_pipeline->reset(100.0f);
 
     try {
@@ -79,6 +89,15 @@ bool Sensors::init() {
         std::cerr << "[Sensors] Warning: Failed to init MemoryShareComponentServer: " << e.what() << std::endl;
     }
 
+    // Initialisation du serveur socket IPC (/tmp/sensors.sock)
+    if (!m_ipc_server.init(m_ipc_socket_path, shared::commands::ServiceID::SENSORS, [this](const std::string& k, float v) {
+        return this->apply_config_key(k, v);
+    })) {
+        std::cerr << "[Sensors] Warning: Failed to init IPC socket at " << m_ipc_socket_path << std::endl;
+    } else {
+        std::cout << "[Sensors] Serveur socket IPC en écoute sur " << m_ipc_socket_path << std::endl;
+    }
+
     m_running.store(true);
     return true;
 }
@@ -92,6 +111,9 @@ void Sensors::run() {
 
     while (m_running.load()) {
         auto start_time = std::chrono::steady_clock::now();
+
+        // Traitement des commandes IPC de configuration reçues sur /tmp/sensors.sock
+        m_ipc_server.process_pending_commands();
 
         float raw_dist = m_driver ? m_driver->read_raw_ultrasonic_cm() : 100.0f;
         static int consecutive_us_errors = 0;
@@ -188,6 +210,39 @@ void Sensors::stop() {
         std::cout << "[Sensors] Stopping service..." << std::endl;
         m_running.store(false);
     }
+    m_ipc_server.stop();
+}
+
+bool Sensors::apply_config_key(const std::string& key, float value) {
+    bool valid = false;
+    if (key == "FILTER_ALPHA" || key == "ALPHA") {
+        m_filter_alpha = std::clamp(value, 0.01f, 1.0f);
+        m_pipeline = std::make_unique<UltrasonicPipeline>(m_median_window, m_filter_alpha);
+        valid = true;
+    } else if (key == "MEDIAN_WINDOW" || key == "WINDOW") {
+        m_median_window = static_cast<size_t>(std::clamp(static_cast<int>(value), 1, 15));
+        m_pipeline = std::make_unique<UltrasonicPipeline>(m_median_window, m_filter_alpha);
+        valid = true;
+    } else if (key == "HZ") {
+        m_hz = std::clamp(static_cast<int>(value), 10, 200);
+        valid = true;
+    } else if (key == "TRIG_PIN") {
+        m_trig_pin = static_cast<int>(value);
+        valid = true;
+    } else if (key == "ECHO_PIN") {
+        m_echo_pin = static_cast<int>(value);
+        valid = true;
+    }
+
+    if (!valid) {
+        std::cerr << "[Sensors] SetConfigKey rejeté : clé inconnue '" << key << "'" << std::endl;
+        return false;
+    }
+
+    m_config.save_key(key, value);
+    std::cout << "[Sensors] Configuration mise à jour : " << key << " = " << value 
+              << " (sauvegardé dans " << m_config.get_active_filepath() << ")" << std::endl;
+    return true;
 }
 
 } // namespace services

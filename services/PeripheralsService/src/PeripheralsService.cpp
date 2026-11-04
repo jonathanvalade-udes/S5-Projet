@@ -382,11 +382,7 @@ static void cleanup_wifi_environment(pid_t& wifi_pid) {
         wifi_pid = -1;
     }
 
-    [[maybe_unused]] auto _k1 = system("killall -q -9 wpa_supplicant 2>/dev/null");
-    [[maybe_unused]] auto _k2 = system("killall -q -9 udhcpc 2>/dev/null");
-    [[maybe_unused]] auto _down = system("ip link set wlan0 down 2>/dev/null || ifconfig wlan0 down 2>/dev/null");
-
-    // Always clean up control socket files
+    // Always clean up control socket files (sans couper l'interface wlan0)
     unlink("/var/run/wpa_supplicant/wlan0");
     unlink("/run/wpa_supplicant/wlan0");
     unlink("/var/run/wpa_supplicant/global");

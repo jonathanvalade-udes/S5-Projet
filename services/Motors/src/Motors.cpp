@@ -32,6 +32,16 @@ float Motors::get_steering_offset() const {
 bool Motors::init() {
     std::cout << "[Motors] Initializing Actuator driver (Propulsion + Direction) at " << m_hz << " Hz..." << std::endl;
 
+    // Chargement de motors.conf
+    if (m_config.load("motors.conf")) {
+        std::cout << "[Motors] Configuration chargée depuis " << m_config.get_active_filepath() << std::endl;
+        if (!m_offset_specified) {
+            m_steering_offset = m_config.get_float("STEERING_OFFSET", m_steering_offset);
+        }
+        m_hz = static_cast<int>(m_config.get_float("HZ", static_cast<float>(m_hz)));
+        m_invert = (m_config.get_float("INVERT", m_invert ? 1.0f : 0.0f) != 0.0f);
+    }
+
     m_driver = std::make_unique<PiCarHatsMotorDriver>(picar::i2c::ADDR_PCA9685, m_invert);
 
     if (m_offset_specified) {
@@ -75,6 +85,15 @@ bool Motors::init() {
         std::cerr << "[Motors] Warning: MemoryShareComponentSubscriber (FSM): " << e.what() << std::endl;
     }
 
+    // Initialisation du serveur socket IPC (/tmp/motors.sock)
+    if (!m_ipc_server.init(m_ipc_socket_path, shared::commands::ServiceID::MOTORS, [this](const std::string& k, float v) {
+        return this->apply_config_key(k, v);
+    })) {
+        std::cerr << "[Motors] Warning: Failed to init IPC socket at " << m_ipc_socket_path << std::endl;
+    } else {
+        std::cout << "[Motors] Serveur socket IPC en écoute sur " << m_ipc_socket_path << std::endl;
+    }
+
     m_running.store(true);
     return true;
 }
@@ -90,6 +109,9 @@ void Motors::run() {
 
     while (m_running.load()) {
         auto start_time = std::chrono::steady_clock::now();
+
+        // Traitement des commandes IPC de configuration reçues sur /tmp/motors.sock
+        m_ipc_server.process_pending_commands();
 
         float target_speed = 0.0f;
         float target_steering = 0.0f;
@@ -127,6 +149,7 @@ void Motors::run() {
 
         if (emergency_stop_requested) {
             if (m_driver) m_driver->emergency_stop();
+            m_applied_steering = 0.0f;
             if (m_telemetry) {
                 pthread_mutex_lock(&(m_telemetry->mtx));
                 m_telemetry->speed = 0.0f;
@@ -135,8 +158,14 @@ void Motors::run() {
             }
         } else {
             if (m_driver) {
+                // Slew-rate limiter anti-saccades : max ~175°/s en ligne droite, ~300°/s en grand virage
+                // Élimine les à-coups brutaux des roues et les oscillations en ligne droite
+                float max_steer_step = (std::abs(target_steering) < 15.0f) ? 3.5f : 6.0f;
+                float delta = std::clamp(target_steering - m_applied_steering, -max_steer_step, max_steer_step);
+                m_applied_steering += delta;
+
                 m_driver->set_speed(target_speed);
-                m_driver->set_steering(target_steering);
+                m_driver->set_steering(m_applied_steering);
             }
             if (m_telemetry) {
                 pthread_mutex_lock(&(m_telemetry->mtx));
@@ -210,6 +239,31 @@ void Motors::stop() {
         std::cout << "[Motors] Stopping service..." << std::endl;
         m_running.store(false);
     }
+    m_ipc_server.stop();
+}
+
+bool Motors::apply_config_key(const std::string& key, float value) {
+    bool valid = false;
+    if (key == "STEERING_OFFSET" || key == "OFFSET") {
+        set_steering_offset(value);
+        valid = true;
+    } else if (key == "HZ") {
+        m_hz = std::clamp(static_cast<int>(value), 10, 200);
+        valid = true;
+    } else if (key == "INVERT") {
+        m_invert = (value != 0.0f);
+        valid = true;
+    }
+
+    if (!valid) {
+        std::cerr << "[Motors] SetConfigKey rejeté : clé inconnue '" << key << "'" << std::endl;
+        return false;
+    }
+
+    m_config.save_key(key, value);
+    std::cout << "[Motors] Configuration mise à jour : " << key << " = " << value 
+              << " (sauvegardé dans " << m_config.get_active_filepath() << ")" << std::endl;
+    return true;
 }
 
 } // namespace services

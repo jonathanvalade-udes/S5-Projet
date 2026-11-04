@@ -52,12 +52,14 @@ while [[ $# -gt 0 ]]; do
             ;;
         --embedded)
             EMBEDDED_MODE=true
+            STATIC_FLAG="ON"
             BUILD_DIR="${SCRIPT_DIR}/build-embedded"
             shift
             ;;
         --test)
             RUN_TESTS=true
             EMBEDDED_MODE=true
+            STATIC_FLAG="ON"
             BUILD_DIR="${SCRIPT_DIR}/build-embedded"
             shift
             ;;

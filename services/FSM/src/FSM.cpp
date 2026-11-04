@@ -6,6 +6,8 @@
 #include <thread>
 #include <algorithm>
 #include <sys/stat.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 #include <fcntl.h>
 #if !defined(_WIN32)
 #include <unistd.h>
@@ -24,7 +26,25 @@ FSM::~FSM() {
 
 bool FSM::check_start_trigger() {
     if (m_event_pipe_fd < 0) {
-        m_event_pipe_fd = open(m_event_pipe_path.c_str(), O_RDWR | O_NONBLOCK);
+        struct stat st;
+        if (stat(m_event_pipe_path.c_str(), &st) == 0 && S_ISSOCK(st.st_mode)) {
+            int sfd = ::socket(AF_UNIX, SOCK_STREAM, 0);
+            if (sfd >= 0) {
+                int flags = fcntl(sfd, F_GETFL, 0);
+                if (flags >= 0) fcntl(sfd, F_SETFL, flags | O_NONBLOCK);
+                sockaddr_un addr{};
+                addr.sun_family = AF_UNIX;
+                strncpy(addr.sun_path, m_event_pipe_path.c_str(), sizeof(addr.sun_path) - 1);
+                if (::connect(sfd, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) == 0 || errno == EINPROGRESS) {
+                    m_event_pipe_fd = sfd;
+                    std::cout << "[FSM] Connecté au socket d'événements " << m_event_pipe_path << " (attente du signal de départ)" << std::endl;
+                } else {
+                    close(sfd);
+                }
+            }
+        } else if (stat(m_event_pipe_path.c_str(), &st) == 0 && S_ISFIFO(st.st_mode)) {
+            m_event_pipe_fd = open(m_event_pipe_path.c_str(), O_RDWR | O_NONBLOCK);
+        }
         if (m_event_pipe_fd < 0) return false;
     }
 
@@ -33,13 +53,21 @@ bool FSM::check_start_trigger() {
     if (n > 0) {
         buf[n] = '\0';
         std::string msg(buf);
-        msg.erase(std::remove_if(msg.begin(), msg.end(), ::isspace), msg.end());
-        if (msg.find("trigger_start") != std::string::npos || 
-            msg.find("start") != std::string::npos ||
-            msg == "1") {
-            std::cout << "[FSM] Événement POSIX '" << msg << "' reçu sur " << m_event_pipe_path << " -> Déclenchement du départ !" << std::endl;
+        std::string lower_msg = msg;
+        std::transform(lower_msg.begin(), lower_msg.end(), lower_msg.begin(), ::tolower);
+        if (lower_msg.find("trigger_start") != std::string::npos || 
+            lower_msg.find("start") != std::string::npos ||
+            msg.find("1") != std::string::npos) {
+            std::cout << "[FSM] Événement POSIX '" << msg << "' reçu -> Top départ !" << std::endl;
             return true;
         }
+    } else if (n == 0) {
+        // Déconnexion ou fermeture du socket côté serveur
+        close(m_event_pipe_fd);
+        m_event_pipe_fd = -1;
+    } else if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
+        close(m_event_pipe_fd);
+        m_event_pipe_fd = -1;
     }
     return false;
 }
@@ -72,17 +100,33 @@ void FSM::transition_to(shared::fsm::MachineStates new_state) {
 bool FSM::init() {
     std::cout << "[FSM] Initializing Decision & Navigation engine at " << m_hz << " Hz..." << std::endl;
 
-    // Chargement de la configuration via picar.conf avec fallback automatique sur picar_constants.hpp
-    auto cfg = config::PicarConfig::read_config();
-    m_max_acceleration      = cfg.max_acceleration;
-    m_straight_cruise_speed = cfg.cruise_speed;
-    m_min_curve_speed       = cfg.min_curve_speed;
-    m_curve_safety_factor   = cfg.curve_safety_factor;
-    m_predictive_brake_gain = cfg.predictive_brake_gain;
-    m_line_kp               = cfg.line_kp;
-    m_line_kd               = cfg.line_kd;
-    m_obstacle_stop_dist_cm = cfg.obstacle_stop_dist_cm;
-    m_reverse_speed         = cfg.reverse_speed;
+    // Chargement de la configuration via fsm.conf (avec fallback automatique sur picar.conf et picar_constants.hpp)
+    if (m_config.load("fsm.conf")) {
+        std::cout << "[FSM] Configuration chargée depuis " << m_config.get_active_filepath() << std::endl;
+        m_max_acceleration      = m_config.get_float("MAX_ACCELERATION", m_max_acceleration);
+        m_straight_cruise_speed = m_config.get_float("STRAIGHT_CRUISE_SPEED", m_config.get_float("CRUISE_SPEED", m_straight_cruise_speed));
+        m_min_curve_speed       = m_config.get_float("MIN_CURVE_SPEED", m_min_curve_speed);
+        m_curve_safety_factor   = m_config.get_float("CURVE_SAFETY_FACTOR", m_curve_safety_factor);
+        m_predictive_brake_gain = m_config.get_float("PREDICTIVE_BRAKE_GAIN", m_predictive_brake_gain);
+        m_line_kp               = m_config.get_float("LINE_KP", m_config.get_float("KP", m_line_kp));
+        m_line_kd               = m_config.get_float("LINE_KD", m_config.get_float("KD", m_line_kd));
+        m_obstacle_stop_dist_cm = m_config.get_float("OBSTACLE_STOP_DIST_CM", m_obstacle_stop_dist_cm);
+        m_reverse_speed         = m_config.get_float("REVERSE_SPEED", m_reverse_speed);
+        m_avoid_side            = m_config.get_float("AVOID_SIDE", m_avoid_side);
+        m_auto_start_delay      = m_config.get_float("AUTO_START_DELAY", m_auto_start_delay);
+    } else {
+        auto cfg = config::PicarConfig::read_config();
+        m_max_acceleration      = cfg.max_acceleration;
+        m_straight_cruise_speed = cfg.cruise_speed;
+        m_min_curve_speed       = cfg.min_curve_speed;
+        m_curve_safety_factor   = cfg.curve_safety_factor;
+        m_predictive_brake_gain = cfg.predictive_brake_gain;
+        m_line_kp               = cfg.line_kp;
+        m_line_kd               = cfg.line_kd;
+        m_obstacle_stop_dist_cm = cfg.obstacle_stop_dist_cm;
+        m_reverse_speed         = cfg.reverse_speed;
+        m_auto_start_delay      = cfg.auto_start_delay;
+    }
 
     // Côté de contournement des obstacles : variable d'environnement AVOID_SIDE (gauche|droite|left|right)
     if (const char* side_env = std::getenv("AVOID_SIDE")) {
@@ -103,8 +147,10 @@ bool FSM::init() {
             pthread_mutex_lock(&(m_telemetry->mtx));
             m_telemetry->emergency_stop = false;
             m_telemetry->state = static_cast<int>(shared::fsm::MachineStates::Init);
-            // Si la SHM n'a pas encore de configuration, on y applique la nôtre
-            if (m_telemetry->cfg_version == 0) {
+            // On publie notre configuration (picar.conf) dans la SHM, même si un autre service l'a créée avec ses valeurs
+            // par défaut (SimBridge en simulation). Sinon les autres services utilisent une autre vitesse de croisière
+            // que le FSM : SimBridge convertirait le % moteur en m/s avec 0,40 au lieu de la vitesse configurée.
+            {
                 m_telemetry->cfg_max_acceleration = m_max_acceleration;
                 m_telemetry->cfg_cruise_speed     = m_straight_cruise_speed;
                 m_telemetry->cfg_min_curve_speed  = m_min_curve_speed;
@@ -112,7 +158,7 @@ bool FSM::init() {
                 m_telemetry->cfg_predictive_brake_gain = m_predictive_brake_gain;
                 m_telemetry->cfg_line_kp          = m_line_kp;
                 m_telemetry->cfg_line_kd          = m_line_kd;
-                m_telemetry->cfg_version          = 1;
+                m_telemetry->cfg_version          = m_telemetry->cfg_version + 1;
             }
             m_current_cfg_version = m_telemetry->cfg_version;
             pthread_mutex_unlock(&(m_telemetry->mtx));
@@ -129,15 +175,17 @@ bool FSM::init() {
         std::cerr << "[FSM] Warning: MemoryShare subscriber/publisher: " << e.what() << std::endl;
     }
 
-    // Préparation du tube d'événements POSIX (FIFO /tmp/peripheral)
-    mkfifo(m_event_pipe_path.c_str(), 0666);
-    m_event_pipe_fd = open(m_event_pipe_path.c_str(), O_RDWR | O_NONBLOCK);
-    if (m_event_pipe_fd >= 0) {
-        char drain[128];
-        while (read(m_event_pipe_fd, drain, sizeof(drain)) > 0) {}
-        std::cout << "[FSM] Écoute des événements POSIX prête sur " << m_event_pipe_path << std::endl;
+    // Canal d'événements POSIX (connexion dynamique au socket de PeripheralsService)
+    m_event_pipe_fd = -1;
+    check_start_trigger();
+
+    // Initialisation du serveur socket IPC (/tmp/fsm.sock)
+    if (!m_ipc_server.init(m_ipc_socket_path, shared::commands::ServiceID::FSM, [this](const std::string& k, float v) {
+        return this->apply_config_key(k, v);
+    })) {
+        std::cerr << "[FSM] Attention : impossible d'ouvrir le socket IPC " << m_ipc_socket_path << std::endl;
     } else {
-        std::cerr << "[FSM] Attention : impossible d'ouvrir le tube d'événements " << m_event_pipe_path << std::endl;
+        std::cout << "[FSM] Serveur socket IPC en écoute sur " << m_ipc_socket_path << std::endl;
     }
 
     transition_to(shared::fsm::MachineStates::Init);
@@ -147,30 +195,45 @@ bool FSM::init() {
 
 // Contournement d'un obstacle posé sur la ligne, en boucle ouverte sur l'odométrie (aucun capteur de cap) :
 //   0. recul de 10 cm (le pare-chocs est trop près pour braquer sans toucher l'obstacle),
-//   1. arc à braquage maximal du côté `side` jusqu'à 75° de cap,
+//   1. arc à braquage maximal du côté `side` jusqu'à 82° de cap,
 //   2. arc inverse jusqu'au cap initial : la voiture roule parallèle à la ligne, ~20 cm à côté,
 //   3. ligne droite jusqu'à ce que l'arrière de la voiture ait dépassé l'obstacle,
-//   4. braquage vers la ligne jusqu'au premier ruban vu (la voiture arrive de l'extérieur : c'est la ligne d'origine).
+//   4. virage modéré vers la ligne jusqu'à ~35° de cap, puis 5. tout droit jusqu'au premier ruban vu (la voiture arrive
+//      de l'extérieur : c'est la ligne d'origine). Un braquage à fond jusqu'au ruban la ferait arriver à plus de 90° :
+//      elle couperait la ligne à l'envers et le suivi repartirait dans le mauvais sens.
 // L'estimation de cap suppose un servo un peu lent (STEER_LAG_S). Réglages validés en simulation pour une voiture
 // parfaite et pour la voiture "réaliste" (biais, jeu, latence) : en dessous de 70° ou sans recul, l'arrière de la
 // voiture touche l'obstacle ; plus loin, la voiture risque de s'accrocher à une autre branche du parcours.
 // side = +1 : droite (RightDeviation), -1 : gauche.
+// Vitesse d'une manoeuvre d'évitement : la vitesse voulue, mais jamais sous MIN_CURVE_SPEED
+float FSM::avoidance_speed(float nominal) const {
+    return std::max(nominal, m_min_curve_speed);
+}
+
 FSM::DeviationResult FSM::run_obstacle_deviation(float side, float dt, const float darkness[5],
                                                  float& steering_deg, float& velocity) {
     constexpr float REVERSE_DISTANCE_M = 0.10f;
-    constexpr float FORWARD_SPEED = 0.16f;
-    constexpr float REVERSE_SPEED = 0.12f;
-    constexpr float RETURN_SPEED = 0.15f;
+    constexpr float FORWARD_SPEED_NOMINAL = 0.16f;
+    constexpr float REVERSE_SPEED_NOMINAL = 0.12f;
+    constexpr float RETURN_SPEED_NOMINAL = 0.15f;
+    constexpr float RETURN_STEER_DEG = 30.0f;            // braquage du virage de retour (moins que ARC_STEER_DEG)
+    constexpr float RETURN_HEADING_RAD = 35.0f * 3.14159265f / 180.0f;  // angle d'approche de la ligne
+    constexpr float RETURN_STRAIGHT_MAX_M = 0.60f;       // sans ruban sur cette distance : LineSearching
     constexpr float ARC_STEER_DEG = 45.0f;
-    constexpr float ARC_HEADING_RAD = 75.0f * 3.14159265f / 180.0f;
+    constexpr float ARC_HEADING_RAD = 82.0f * 3.14159265f / 180.0f;
     constexpr float WHEELBASE_M = 0.14f;
     constexpr float STEER_DEG_TO_REAL = 48.0f / 45.0f;   // le simulateur convertit 45° commandés en 48° de roue
     constexpr float STEER_LAG_S = 0.06f;                 // retard du servo de direction
     constexpr float OBSTACLE_DEPTH_M = 0.15f;            // profondeur supposée de l'obstacle
     constexpr float CAR_REAR_M = 0.15f;                  // distance de l'origine de la voiture à son arrière
     constexpr float CLEARANCE_M = 0.03f;
-    constexpr float RETURN_TIMEOUT_S = 4.0f;             // sans ruban : on laisse LineSearching reprendre la main
     constexpr float TIMEOUT_S = 14.0f;
+
+    // Les moteurs ne décollent pas à très basse puissance : on ne descend jamais sous la plus petite vitesse que le
+    // suivi de ligne utilise déjà (MIN_CURVE_SPEED), qui est validée sur le robot.
+    const float FORWARD_SPEED = avoidance_speed(FORWARD_SPEED_NOMINAL);
+    const float REVERSE_SPEED = avoidance_speed(REVERSE_SPEED_NOMINAL);
+    const float RETURN_SPEED = avoidance_speed(RETURN_SPEED_NOMINAL);
 
     m_state_timer += dt;
     const float v = m_motion_profiler ? m_motion_profiler->get_current_speed() : 0.0f;
@@ -220,13 +283,18 @@ FSM::DeviationResult FSM::run_obstacle_deviation(float side, float dt, const flo
             integrate(steering_deg);
             if (m_dev_x - CAR_REAR_M >= m_dev_obstacle_far_x + CLEARANCE_M) next_phase();
             break;
-        default: {  // retour : braquage vers la ligne jusqu'au premier ruban
-            steering_deg = -side * ARC_STEER_DEG;
+        case 4:  // virage modéré vers la ligne, jusqu'à l'angle d'approche voulu
+        default: {  // 5 : tout droit jusqu'au premier ruban
+            const bool turning = (m_dev_phase == 4);
+            steering_deg = turning ? -side * RETURN_STEER_DEG : 0.0f;
             velocity = RETURN_SPEED;
             integrate(steering_deg);
+            const float max_darkness = std::max({darkness[0], darkness[1], darkness[2], darkness[3], darkness[4]});
             const float total_darkness = darkness[0] + darkness[1] + darkness[2] + darkness[3] + darkness[4];
-            if (total_darkness >= 0.35f) return DeviationResult::LineFound;
-            if (m_dev_phase_distance >= RETURN_SPEED * RETURN_TIMEOUT_S) return DeviationResult::SearchLine;
+            // Détection de ligne : au moins un capteur sur le ruban (>=0.50f) ou seuil simulation
+            if (max_darkness >= 0.50f || (total_darkness >= 0.35f && max_darkness >= 0.35f)) return DeviationResult::LineFound;
+            if (turning && m_dev_heading <= -RETURN_HEADING_RAD) next_phase();
+            else if (!turning && m_dev_phase_distance >= RETURN_STRAIGHT_MAX_M) return DeviationResult::SearchLine;
             break;
         }
     }
@@ -250,6 +318,9 @@ void FSM::run() {
 
     while (m_running.load()) {
         auto start_time = std::chrono::steady_clock::now();
+
+        // Traitement des commandes IPC de configuration reçues sur /tmp/fsm.sock
+        m_ipc_server.process_pending_commands();
 
         float current_dist_cm = 100.0f;
         uint8_t line_sensors[5] = {0, 0, 0, 0, 0};          // Fallback strict: aucune ligne par défaut
@@ -382,9 +453,14 @@ void FSM::run() {
                 desired_steering = 0.0f;
                 m_state_timer += dt;
 
-                // Attente explicite de l'événement POSIX "trigger_start" dans /tmp/peripheral
-                if (check_start_trigger()) {
-                    std::cout << "[FSM] Événement 'trigger_start' reçu -> Top départ de suivi de ligne!" << std::endl;
+                bool triggered = check_start_trigger();
+                if (!triggered && m_auto_start_delay > 0.0f && m_state_timer >= m_auto_start_delay) {
+                    std::cout << "[FSM] Délai d'attente atteint (" << m_auto_start_delay << "s) -> Top départ de secours !" << std::endl;
+                    triggered = true;
+                }
+
+                if (triggered) {
+                    std::cout << "[FSM] Top départ de suivi de ligne !" << std::endl;
                     if (m_line_controller) m_line_controller->reset();
                     if (m_motion_profiler) m_motion_profiler->reset(0.0f);
                     m_course_finished = false;
@@ -481,6 +557,11 @@ void FSM::run() {
                         m_dev_trim_deg = m_line_controller ? m_line_controller->steering_trim() * 45.0f : 0.0f;
                         m_ignore_finish_s = IGNORE_FINISH_AFTER_AVOIDANCE_S;
                         std::cout << "[FSM] Correction de braquage apprise (biais des roues) : " << m_dev_trim_deg << " deg" << std::endl;
+                        {
+                            const float to_pct = (m_straight_cruise_speed > 0.01f) ? 50.0f / m_straight_cruise_speed : 0.0f;
+                            std::cout << "[FSM] Evitement : avance " << avoidance_speed(0.16f) << " m/s (" << avoidance_speed(0.16f) * to_pct
+                                      << " %), recul " << avoidance_speed(0.12f) << " m/s (" << avoidance_speed(0.12f) * to_pct << " %)" << std::endl;
+                        }
                     } else {
                         // Obstacle retiré -> reprise immédiate
                         transition_to(shared::fsm::MachineStates::LineFollowingForward);
@@ -512,11 +593,11 @@ void FSM::run() {
                 desired_steering = -24.0f; // Braquage vers la piste
                 desired_velocity = 0.15f;
 
-                float total_darkness = line_darkness[0] + line_darkness[1] + line_darkness[2] + line_darkness[3] + line_darkness[4];
-                bool line_seen = (total_darkness >= 0.35f);
+                float max_darkness = std::max({line_darkness[0], line_darkness[1], line_darkness[2], line_darkness[3], line_darkness[4]});
+                bool line_seen = (max_darkness >= 0.55f);
                 // Dès que le ruban est vu après au moins 250 ms de recherche
                 if (line_seen && m_state_timer >= 0.25f) {
-                    std::cout << "[FSM] Ruban noir détecté (darkness=" << total_darkness << ") -> Transition vers LineDetected!" << std::endl;
+                    std::cout << "[FSM] Ruban noir détecté (max_darkness=" << max_darkness << ") -> Transition vers LineDetected!" << std::endl;
                     transition_to(shared::fsm::MachineStates::LineDetected);
                 } else if (m_state_timer >= 4.0f) {
                     std::cerr << "[FSM] Erreur : Timeout recherche de piste ! Failsafe." << std::endl;
@@ -535,9 +616,10 @@ void FSM::run() {
                     m_line_controller->reset();
                 }
 
-                // Raccrochage dès que les capteurs centraux voient le ruban
-                bool center_seen = (line_darkness[2] >= 0.35f || (line_darkness[1] + line_darkness[2] + line_darkness[3]) >= 0.55f);
-                if (center_seen || m_state_timer >= 0.2f) {
+                // Raccrochage dès que les capteurs centraux voient le ruban (> 0.55)
+                float max_darkness = std::max({line_darkness[0], line_darkness[1], line_darkness[2], line_darkness[3], line_darkness[4]});
+                bool center_seen = (line_darkness[2] >= 0.55f || (line_darkness[1] >= 0.55f && line_darkness[3] >= 0.55f));
+                if (center_seen || (max_darkness >= 0.55f && m_state_timer >= 0.35f)) {
                     std::cout << "[FSM] Verrouillage sur ruban réussi -> Reprise suivi nominal!" << std::endl;
                     transition_to(shared::fsm::MachineStates::LineFollowingForward);
                 }
@@ -558,7 +640,7 @@ void FSM::run() {
                 float curr_v = m_motion_profiler ? std::abs(m_motion_profiler->get_current_speed()) : std::abs(desired_velocity);
                 m_state_distance += curr_v * dt;
 
-                bool central_found = (line_darkness[1] + line_darkness[2] + line_darkness[3] >= 0.40f);
+                bool central_found = (line_darkness[1] >= 0.55f || line_darkness[2] >= 0.55f || line_darkness[3] >= 0.55f);
                 // Si la ligne est réacquise après avoir reculé d'au moins 3 cm :
                 if (central_found && m_state_distance >= 0.03f) {
                     std::cout << "[FSM] Ruban réacquis en marche arrière (" << (m_state_distance * 1000.0f) << " mm) -> Reprise suivi nominal!" << std::endl;
@@ -649,10 +731,81 @@ void FSM::stop() {
         std::cout << "[FSM] Stopping service..." << std::endl;
         m_running.store(false);
     }
+    m_ipc_server.stop();
     if (m_event_pipe_fd >= 0) {
         close(m_event_pipe_fd);
         m_event_pipe_fd = -1;
     }
+}
+
+bool FSM::apply_config_key(const std::string& key, float value) {
+    bool valid = false;
+    if (key == "MAX_ACCELERATION") {
+        m_max_acceleration = std::clamp(value, 0.1f, 1.5f);
+        if (m_motion_profiler) m_motion_profiler->set_max_accel(m_max_acceleration);
+        valid = true;
+    } else if (key == "STRAIGHT_CRUISE_SPEED" || key == "CRUISE_SPEED") {
+        m_straight_cruise_speed = std::clamp(value, 0.05f, 0.60f);
+        if (m_line_controller) m_line_controller->set_cruise_speed(m_straight_cruise_speed);
+        if (m_motion_profiler) m_motion_profiler->set_max_speed(m_straight_cruise_speed);
+        valid = true;
+    } else if (key == "MIN_CURVE_SPEED") {
+        m_min_curve_speed = std::clamp(value, 0.05f, 0.40f);
+        if (m_line_controller) m_line_controller->set_min_curve_speed(m_min_curve_speed);
+        valid = true;
+    } else if (key == "CURVE_SAFETY_FACTOR") {
+        m_curve_safety_factor = std::clamp(value, 0.30f, 1.20f);
+        valid = true;
+    } else if (key == "PREDICTIVE_BRAKE_GAIN") {
+        m_predictive_brake_gain = std::clamp(value, 0.0f, 0.30f);
+        valid = true;
+    } else if (key == "LINE_KP" || key == "KP") {
+        m_line_kp = std::clamp(value, 0.0f, 2.0f);
+        if (m_line_controller) m_line_controller->set_kp(m_line_kp);
+        valid = true;
+    } else if (key == "LINE_KD" || key == "KD") {
+        m_line_kd = std::clamp(value, 0.0f, 1.0f);
+        if (m_line_controller) m_line_controller->set_kd(m_line_kd);
+        valid = true;
+    } else if (key == "OBSTACLE_STOP_DIST_CM") {
+        m_obstacle_stop_dist_cm = std::clamp(value, 10.0f, 80.0f);
+        valid = true;
+    } else if (key == "REVERSE_SPEED") {
+        m_reverse_speed = std::clamp(value, 0.05f, 0.30f);
+        valid = true;
+    } else if (key == "AVOID_SIDE") {
+        m_avoid_side = (value < 0.0f) ? -1.0f : 1.0f;
+        valid = true;
+    } else if (key == "AUTO_START_DELAY") {
+        m_auto_start_delay = std::max(0.0f, value);
+        valid = true;
+    }
+
+    if (!valid) {
+        std::cerr << "[FSM] SetConfigKey rejeté : clé inconnue '" << key << "'" << std::endl;
+        return false;
+    }
+
+    // 1. Mise à jour de la SHM si disponible
+    if (m_telemetry) {
+        pthread_mutex_lock(&(m_telemetry->mtx));
+        if (key == "MAX_ACCELERATION") m_telemetry->cfg_max_acceleration = m_max_acceleration;
+        else if (key == "STRAIGHT_CRUISE_SPEED" || key == "CRUISE_SPEED") m_telemetry->cfg_cruise_speed = m_straight_cruise_speed;
+        else if (key == "MIN_CURVE_SPEED") m_telemetry->cfg_min_curve_speed = m_min_curve_speed;
+        else if (key == "CURVE_SAFETY_FACTOR") m_telemetry->cfg_curve_safety_factor = m_curve_safety_factor;
+        else if (key == "PREDICTIVE_BRAKE_GAIN") m_telemetry->cfg_predictive_brake_gain = m_predictive_brake_gain;
+        else if (key == "LINE_KP" || key == "KP") m_telemetry->cfg_line_kp = m_line_kp;
+        else if (key == "LINE_KD" || key == "KD") m_telemetry->cfg_line_kd = m_line_kd;
+        m_telemetry->cfg_version++;
+        m_current_cfg_version = m_telemetry->cfg_version;
+        pthread_mutex_unlock(&(m_telemetry->mtx));
+    }
+
+    // 2. Persistance dans fsm.conf
+    m_config.save_key(key, value);
+    std::cout << "[FSM] Configuration mise à jour : " << key << " = " << value 
+              << " (sauvegardé dans " << m_config.get_active_filepath() << ")" << std::endl;
+    return true;
 }
 
 } // namespace services

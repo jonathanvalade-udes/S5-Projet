@@ -27,7 +27,7 @@ target_include_directories(test_ipc PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/.. 
     ${CMAKE_CURRENT_SOURCE_DIR}/../libs/shared-headers
 )
-target_link_libraries(test_ipc PRIVATE Threads::Threads)
+target_link_libraries(test_ipc PRIVATE Threads::Threads shared_headers)
 add_test(NAME test_ipc COMMAND test_ipc)
 
 add_executable(test_control test_control.cpp)
