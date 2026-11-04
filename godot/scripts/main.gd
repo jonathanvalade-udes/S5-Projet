@@ -5,6 +5,8 @@ var NetworkIPAddrRegex: RegEx = RegEx.new()
 @onready var btn_connect: Button = $GridContainer/btn_Connect
 @onready var lb_status: Label = $GridContainer/lb_ConnectionStatusPackets
 @onready var le_ip: LineEdit = $GridContainer/le_IpAdress
+@onready var btn_start_fsm: Button = $GridContainer/btn_StartFSM
+@onready var btn_stop_fsm: Button = $GridContainer/btn_StopFSM
 
 func _ready() -> void:
 	NetworkIPAddrRegex.compile(r'^((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(:\d+)?$')
@@ -64,3 +66,17 @@ func _on_connect_pressed() -> void:
 			network_client.connect_to_server(target_ip, target_port)
 		else:
 			lb_status.text = "Wrong IP Address!"
+
+func _on_start_fsm_pressed() -> void:
+	if network_client and network_client.is_connected:
+		network_client.send_trigger_start()
+		lb_status.text = "FSM Démarré !"
+	else:
+		lb_status.text = "Erreur: Non connecté !"
+
+func _on_stop_fsm_pressed() -> void:
+	if network_client and network_client.is_connected:
+		network_client.send_emergency_stop()
+		lb_status.text = "Arrêt d'urgence FSM"
+	else:
+		lb_status.text = "Erreur: Non connecté !"
