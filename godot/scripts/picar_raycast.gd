@@ -11,21 +11,19 @@ var steer_dir: float = 0.0
 var lfs: Node = null
 var network: NetworkClient = null
 
-# Animation des roues : rotation (roulement) de chaque pneu + braquage des roues avant.
-# - Roulement : chaque pneu tourne autour de son axe de cylindre (Y local), sans déformation
-#   même si le modèle est étiré à l'import.
-# - Braquage : les pneus avant (et leurs petits axes) pivotent autour de l'axe vertical du modèle.
-# Repère du modèle : l'avant du robot est +Z, le haut est +Y.
+# Animation des roues : roulement de chaque roue + braquage des roues avant.
+# - Les 4 roues sont des nœuds "Roue*" (instances de Roue.blend), enfants de PiCar. Leur axe est leur axe X local.
+# - Les petits axes de roue (dans robot.blend) ne roulent pas : seuls ceux de l'avant suivent le braquage.
+# Tout est calculé dans le repère de la voiture : l'avant est -X, le haut est +Y, l'axe des roues est Z.
 const MAX_STEER_DEG: float = 48.0  # même valeur que la cinématique d'Ackermann plus bas
 
 var model: Node3D = null
-var parts: Array[MeshInstance3D] = []
-var part_rest: Array[Transform3D] = []    # pose de repos, en repère du modèle
-var part_center: Array[Vector3] = []      # centre du mesh, en repère du mesh
-var part_pivot: Array[Vector3] = []       # pivot du braquage, en repère du modèle
+var parts: Array[Node3D] = []             # roues puis petits axes
+var part_rest: Array[Transform3D] = []    # pose de repos, en repère de la voiture
+var part_pivot: Array[Vector3] = []       # pivot du braquage, en repère de la voiture
 var part_spin: Array[float] = []          # +1 / -1 : sens de roulement ; 0 : ne roule pas (axe)
 var part_front: Array[bool] = []          # true : suit le braquage
-var wheel_radius_m: float = 0.055         # rayon de contact au sol, en mètres
+var wheel_radius_m: float = 0.0456        # rayon de contact au sol, en mètres (recalculé depuis le modèle)
 var wheel_angle: float = 0.0
 var steer_visual: float = 0.0             # angle de braquage affiché (rad), lissé
 
@@ -50,59 +48,58 @@ func _ready() -> void:
 	network = get_node_or_null("/root/Main/NetworkClient")
 	_find_wheels()
 
-# Repère les pièces mobiles d'après leur taille (en unités du modèle) :
-#   pneus : 1,4 à 3,6   |   petits axes de roue : 0,5 à 0,8   |   (le capteur ~0,4 et le châssis ~4,4 sont ignorés)
+# Repère les roues ("Roue*", enfants de PiCar) et les petits axes de roue du modèle (pièces de 0,5 à 0,8 unités)
 func _find_wheels() -> void:
+	var to_car: Transform3D = global_transform.affine_inverse()
+	var wheel_idx: Array[int] = []
+	for child in get_children():
+		if not (child is Node3D) or not String(child.name).begins_with("Roue"):
+			continue
+		var rest: Transform3D = to_car * (child as Node3D).global_transform
+		# Le haut de la roue doit aller vers l'avant (-X) : rotation autour de +Z, donc on suit le sens de l'axe.
+		var spin: float = 1.0 if rest.basis.x.z >= 0.0 else -1.0
+		for mesh in child.find_children("*", "MeshInstance3D", true, false):
+			var mi := mesh as MeshInstance3D
+			wheel_radius_m = ((to_car * mi.global_transform) * mi.get_aabb()).size.y / 2.0
+			break
+		wheel_idx.append(parts.size())
+		_add_part(child as Node3D, rest, rest.origin, spin)
+
 	model = get_node_or_null("RobotModel") as Node3D
-	if model == null:
-		print("[PiCar] ERREUR : nœud RobotModel introuvable sous PiCar")
-		return
-	var inv: Transform3D = model.global_transform.affine_inverse()
-	var tyres: Array[int] = []
-	var zs: Array[float] = []
-	for n in model.find_children("*", "MeshInstance3D", true, false):
-		var mi := n as MeshInstance3D
-		var to_model: Transform3D = inv * mi.global_transform
-		var box: AABB = to_model * mi.get_aabb()
-		var largest: float = maxf(box.size.x, maxf(box.size.y, box.size.z))
-		var is_tyre: bool = largest > 1.4 and largest < 3.6
-		var is_stub: bool = largest > 0.5 and largest <= 0.8
-		if not (is_tyre or is_stub):
-			continue
-		var spin: float = 0.0
-		if is_tyre:
-			# Le haut du pneu doit aller vers l'avant (+Z) : rotation positive autour de +X du modèle.
-			var axis_in_model: Vector3 = to_model.basis * Vector3.UP
-			spin = 1.0 if axis_in_model.x >= 0.0 else -1.0
-			wheel_radius_m = box.size.y / 2.0 * model.global_transform.basis.y.length()
-			tyres.append(parts.size())
-		parts.append(mi)
-		part_rest.append(to_model)
-		part_center.append(mi.get_aabb().get_center())
-		part_pivot.append(to_model * mi.get_aabb().get_center())
-		part_spin.append(spin)
-		zs.append(box.get_center().z)
-		part_front.append(false)
-	# Pièces à l'avant = celles dont le centre est plus en avant que le milieu du robot
-	var z_mid: float = 0.0
-	for z in zs: z_mid += z
-	z_mid /= maxf(zs.size(), 1)
+	if model != null:
+		var to_model: Transform3D = model.global_transform.affine_inverse()
+		for n in model.find_children("*", "MeshInstance3D", true, false):
+			var mi := n as MeshInstance3D
+			var box: AABB = (to_model * mi.global_transform) * mi.get_aabb()
+			var largest: float = maxf(box.size.x, maxf(box.size.y, box.size.z))
+			if largest > 0.5 and largest <= 0.8:
+				var rest: Transform3D = to_car * mi.global_transform
+				var center: Vector3 = rest * mi.get_aabb().get_center()
+				# Un petit axe braque autour du centre de la roue la plus proche, pas autour de lui-même
+				var pivot: Vector3 = center
+				var best_d: float = INF
+				for w in wheel_idx:
+					var d: float = absf(part_pivot[w].x - center.x) + absf(part_pivot[w].z - center.z)
+					if d < best_d:
+						best_d = d
+						pivot = part_pivot[w]
+				_add_part(mi, rest, pivot, 0.0)
+
+	# Avant = pièces dont le pivot est plus en avant (-X) que le milieu des roues
+	var x_mid: float = 0.0
+	for w in wheel_idx:
+		x_mid += part_pivot[w].x
+	x_mid /= maxf(wheel_idx.size(), 1)
 	for i in parts.size():
-		part_front[i] = zs[i] > z_mid
-	# Un petit axe pivote autour du centre du pneu avant le plus proche (même côté), pas autour de lui-même
-	for i in parts.size():
-		if part_spin[i] != 0.0 or not part_front[i]:
-			continue
-		var best: int = -1
-		var best_d: float = INF
-		for t in tyres:
-			var d: float = absf(part_pivot[t].x - part_pivot[i].x) + absf(part_pivot[t].z - part_pivot[i].z)
-			if d < best_d:
-				best_d = d
-				best = t
-		if best >= 0:
-			part_pivot[i] = part_pivot[best]
-	print("[PiCar] pièces animées : ", parts.size(), " dont ", tyres.size(), " pneus (rayon ", wheel_radius_m, " m)")
+		part_front[i] = part_pivot[i].x < x_mid
+	print("[PiCar] pièces animées : ", parts.size(), " dont ", wheel_idx.size(), " roues (rayon ", wheel_radius_m, " m)")
+
+func _add_part(node: Node3D, rest: Transform3D, pivot: Vector3, spin: float) -> void:
+	parts.append(node)
+	part_rest.append(rest)
+	part_pivot.append(pivot)
+	part_spin.append(spin)
+	part_front.append(false)
 
 # distance : mètres parcourus (positif = avant) ; steer_rad : angle de braquage demandé (rad)
 func _animate_wheels(distance: float, steer_rad: float, delta: float) -> void:
@@ -111,18 +108,16 @@ func _animate_wheels(distance: float, steer_rad: float, delta: float) -> void:
 	if wheel_radius_m > 0.0:
 		wheel_angle = fposmod(wheel_angle + distance / wheel_radius_m, TAU)
 	steer_visual = lerpf(steer_visual, steer_rad, clampf(delta * 15.0, 0.0, 1.0))
-	var steer_basis := Basis(Vector3.UP, steer_visual)  # + = vers +X du modèle, comme rotate_y du robot
-	var m: Transform3D = model.global_transform
+	var steer_basis := Basis(Vector3.UP, steer_visual)  # + = même sens que rotate_y de la voiture
+	var car: Transform3D = global_transform
 	for i in parts.size():
 		var local := part_rest[i]
 		if part_spin[i] != 0.0:
-			var rot := Basis(Vector3.UP, wheel_angle * part_spin[i])
-			var c: Vector3 = part_center[i]
-			local = local * Transform3D(rot, c - rot * c)
+			local = local * Transform3D(Basis(Vector3.RIGHT, wheel_angle * part_spin[i]), Vector3.ZERO)  # axe X de la roue
 		if part_front[i]:
 			var p: Vector3 = part_pivot[i]
 			local = Transform3D(steer_basis, p - steer_basis * p) * local
-		parts[i].global_transform = m * local
+		parts[i].global_transform = car * local
 
 func _unhandled_key_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_R:
