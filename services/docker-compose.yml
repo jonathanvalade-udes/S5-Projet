@@ -2,8 +2,8 @@
 # Docker Compose pour le projet PiCar (Build, Tests et Simulation Godot)
 # ==============================================================================
 # Usage :
-#   docker compose -f Services/docker-compose.yml up builder     # Compiler
-#   docker compose -f Services/docker-compose.yml up simulation  # Lancer SimBridge + FSM pour Godot
+#   docker compose -f services/docker-compose.yml up builder     # Compiler
+#   docker compose -f services/docker-compose.yml up simulation  # Lancer SimBridge + FSM pour Godot
 # ==============================================================================
 services:
   builder:

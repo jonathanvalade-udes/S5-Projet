@@ -200,7 +200,7 @@ def run_optimization(n_trials: int = 500):
     print("=" * 65)
 
     # Export automatique vers un header C++ pour FSM
-    header_path = "Services/libs/shared-headers/control/optimized_params.hpp"
+    header_path = "services/libs/shared-headers/control/optimized_params.hpp"
     os.makedirs(os.path.dirname(header_path), exist_ok=True)
     with open(header_path, "w") as f:
         f.write("// Généré automatiquement par tools/optimizer/optimize_params.py via Optuna\n")

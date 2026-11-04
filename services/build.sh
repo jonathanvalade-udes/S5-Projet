@@ -114,7 +114,7 @@ if [[ "${EMBEDDED_MODE}" == true ]]; then
             CMD="cmake -B /workspace/build-embedded -S /workspace -DSTATIC=${STATIC_FLAG} && cmake --build /workspace/build-embedded --target ${TARGET}"
             docker run --rm --dns 8.8.8.8 -v "${SCRIPT_DIR}":/workspace -w /workspace "${IMAGE_NAME}" sh -c "${CMD}"
             echo ""
-            echo "==> SUCCESS! Binaries generated in Services/build-embedded/:"
+            echo "==> SUCCESS! Binaries generated in services/build-embedded/:"
             file "${BUILD_DIR}/ServiceManager/init" "${BUILD_DIR}/FSM/FSM" "${BUILD_DIR}/Sensors/Sensors" "${BUILD_DIR}/Motors/Motors" "${BUILD_DIR}/TelemetryService/TelemetryService"
             exit 0
         else
