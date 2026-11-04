@@ -46,8 +46,8 @@ void test_telemetry_metrics_and_watchdog() {
     telem->line_sensors[4] = 0;
     pthread_mutex_unlock(&(telem->mtx));
 
-    // Instance de TelemetryService à 20 Hz, sans affichage UI console, tcp_port=0 (désactivé)
-    services::TelemetryService telem_service(20, false, 0, 0);
+    // Instance de TelemetryService à 50 Hz, sans affichage UI console, tcp_port=0 (désactivé)
+    services::TelemetryService telem_service(50, false, 0, 0);
     assert(telem_service.init());
 
     // Lance le service en arrière-plan
@@ -103,7 +103,7 @@ void test_telemetry_acceleration_alert() {
     telem->heartbeat = 1;
     pthread_mutex_unlock(&(telem->mtx));
 
-    services::TelemetryService telem_service(20, false, 0, 0);
+    services::TelemetryService telem_service(50, false, 0, 0);
     assert(telem_service.init());
 
     std::thread th([&]() {
@@ -196,7 +196,7 @@ void test_tcp_server_ping_pong_and_stream() {
 
     // Utiliser un port de test TCP unprivileged
     const int test_port = 9191;
-    services::TelemetryService telem_service(20, false, test_port, 0);
+    services::TelemetryService telem_service(50, false, test_port, 0);
     assert(telem_service.init());
 
     std::thread th([&]() {

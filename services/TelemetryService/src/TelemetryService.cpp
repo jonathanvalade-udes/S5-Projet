@@ -419,14 +419,13 @@ void TelemetryService::tcp_worker() {
         // 2. Client connecté : attente et gestion du handshake ping-pong
         if (!m_client_handshaked.load()) {
             handle_ping_pong();
-            std::this_thread::sleep_for(std::chrono::milliseconds(5));
             continue;
         }
 
         // 3. Handshake terminé : attente de l'événement de mise à jour temps N (zéro délai supplémentaire)
         {
             std::unique_lock<std::mutex> lock(m_stream_mutex);
-            m_stream_cv.wait_for(lock, std::chrono::milliseconds(50), [&]() {
+            m_stream_cv.wait_for(lock, std::chrono::milliseconds(20), [&]() {
                 return !m_running.load() || m_new_data_available.load() || !m_client_connected.load();
             });
         }

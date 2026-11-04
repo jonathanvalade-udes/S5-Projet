@@ -20,10 +20,12 @@ build-*/
 compile_commands.json
 
 # ==========================================
-# Godot 4 (Simulation)
+# Godot 4 & Blender (Simulation & 3D)
 # ==========================================
 .godot/
 .import/
+*.blend1
+*.blend2
 
 # ==========================================
 # Python (Outils de filtrage)

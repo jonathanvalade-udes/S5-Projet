@@ -41,7 +41,7 @@ struct TelemetryMetrics {
 
 class TelemetryService {
 public:
-    explicit TelemetryService(int hz = 20, bool enable_ui = true, int tcp_port = 91, int udp_port = 9002);
+    explicit TelemetryService(int hz = 50, bool enable_ui = true, int tcp_port = 91, int udp_port = 9002);
     ~TelemetryService();
 
     bool init();
@@ -72,7 +72,7 @@ private:
     bool stream_telemetry_packet();
 
     std::atomic<bool> m_running{false};
-    int m_hz{20};
+    int m_hz{50};
     bool m_enable_ui{true};
     int m_tcp_port{91};
     int m_udp_port{9002};
@@ -95,7 +95,7 @@ private:
     float m_last_speed_ms{0.0f};
     uint64_t m_last_heartbeat{0};
     int m_heartbeat_stalled_cycles{0};
-    int m_ui_render_divider{4}; // Render UI at 5 Hz (20 Hz / 4)
+    int m_ui_render_divider{10}; // Render UI at 5 Hz (50 Hz / 10)
     int m_udp_fd{-1};
     std::chrono::steady_clock::time_point m_start_time;
 
