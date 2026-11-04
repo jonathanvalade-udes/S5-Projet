@@ -37,6 +37,7 @@ private:
     bool m_invert{false};
     float m_steering_offset{0.0f};
     bool m_offset_specified{false};
+    float m_applied_steering{0.0f};
 
     std::unique_ptr<IMotorDriver> m_driver;
     std::unique_ptr<SharedMemoryManager> m_shm_mgr;

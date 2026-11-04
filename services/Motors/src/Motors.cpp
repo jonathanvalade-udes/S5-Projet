@@ -127,6 +127,7 @@ void Motors::run() {
 
         if (emergency_stop_requested) {
             if (m_driver) m_driver->emergency_stop();
+            m_applied_steering = 0.0f;
             if (m_telemetry) {
                 pthread_mutex_lock(&(m_telemetry->mtx));
                 m_telemetry->speed = 0.0f;
@@ -135,8 +136,14 @@ void Motors::run() {
             }
         } else {
             if (m_driver) {
+                // Slew-rate limiter anti-saccades : max ~175°/s en ligne droite, ~300°/s en grand virage
+                // Élimine les à-coups brutaux des roues et les oscillations en ligne droite
+                float max_steer_step = (std::abs(target_steering) < 15.0f) ? 3.5f : 6.0f;
+                float delta = std::clamp(target_steering - m_applied_steering, -max_steer_step, max_steer_step);
+                m_applied_steering += delta;
+
                 m_driver->set_speed(target_speed);
-                m_driver->set_steering(target_steering);
+                m_driver->set_steering(m_applied_steering);
             }
             if (m_telemetry) {
                 pthread_mutex_lock(&(m_telemetry->mtx));

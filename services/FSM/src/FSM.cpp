@@ -6,6 +6,8 @@
 #include <thread>
 #include <algorithm>
 #include <sys/stat.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 #include <fcntl.h>
 #if !defined(_WIN32)
 #include <unistd.h>
@@ -25,12 +27,25 @@ FSM::~FSM() {
 bool FSM::check_start_trigger() {
     if (m_event_pipe_fd < 0) {
         struct stat st;
-        if (stat(m_event_pipe_path.c_str(), &st) == 0 && !S_ISFIFO(st.st_mode)) {
-            unlink(m_event_pipe_path.c_str());
+        if (stat(m_event_pipe_path.c_str(), &st) == 0) {
+            if (S_ISSOCK(st.st_mode)) {
+                int sfd = ::socket(AF_UNIX, SOCK_STREAM, 0);
+                if (sfd >= 0) {
+                    int flags = fcntl(sfd, F_GETFL, 0);
+                    if (flags >= 0) fcntl(sfd, F_SETFL, flags | O_NONBLOCK);
+                    sockaddr_un addr{};
+                    addr.sun_family = AF_UNIX;
+                    strncpy(addr.sun_path, m_event_pipe_path.c_str(), sizeof(addr.sun_path) - 1);
+                    if (::connect(sfd, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) == 0 || errno == EINPROGRESS) {
+                        m_event_pipe_fd = sfd;
+                    } else {
+                        close(sfd);
+                    }
+                }
+            } else if (S_ISFIFO(st.st_mode)) {
+                m_event_pipe_fd = open(m_event_pipe_path.c_str(), O_RDWR | O_NONBLOCK);
+            }
         }
-        mkfifo(m_event_pipe_path.c_str(), 0666);
-        chmod(m_event_pipe_path.c_str(), 0666);
-        m_event_pipe_fd = open(m_event_pipe_path.c_str(), O_RDWR | O_NONBLOCK);
         if (m_event_pipe_fd < 0) return false;
     }
 
@@ -39,13 +54,17 @@ bool FSM::check_start_trigger() {
     if (n > 0) {
         buf[n] = '\0';
         std::string msg(buf);
-        msg.erase(std::remove_if(msg.begin(), msg.end(), ::isspace), msg.end());
-        if (msg.find("trigger_start") != std::string::npos || 
-            msg.find("start") != std::string::npos ||
-            msg == "1") {
+        std::string lower_msg = msg;
+        std::transform(lower_msg.begin(), lower_msg.end(), lower_msg.begin(), ::tolower);
+        if (lower_msg.find("trigger_start") != std::string::npos || 
+            lower_msg.find("start") != std::string::npos ||
+            msg.find("1") != std::string::npos) {
             std::cout << "[FSM] Événement POSIX '" << msg << "' reçu sur " << m_event_pipe_path << " -> Déclenchement du départ !" << std::endl;
             return true;
         }
+    } else if (n == 0) {
+        close(m_event_pipe_fd);
+        m_event_pipe_fd = -1;
     }
     return false;
 }
@@ -135,17 +154,12 @@ bool FSM::init() {
         std::cerr << "[FSM] Warning: MemoryShare subscriber/publisher: " << e.what() << std::endl;
     }
 
-    // Préparation du tube d'événements POSIX (FIFO /tmp/peripherals.sock)
+    // Préparation du canal d'événements POSIX
     struct stat st;
-    if (stat(m_event_pipe_path.c_str(), &st) == 0) {
-        if (!S_ISFIFO(st.st_mode)) {
-            // Nettoyage automatique si le fichier existant est un socket UNIX ou un fichier ordinaire
-            unlink(m_event_pipe_path.c_str());
-        }
+    if (stat(m_event_pipe_path.c_str(), &st) != 0) {
+        mkfifo(m_event_pipe_path.c_str(), 0666);
+        chmod(m_event_pipe_path.c_str(), 0666);
     }
-    mkfifo(m_event_pipe_path.c_str(), 0666);
-    chmod(m_event_pipe_path.c_str(), 0666);
-    m_event_pipe_fd = open(m_event_pipe_path.c_str(), O_RDWR | O_NONBLOCK);
     if (m_event_pipe_fd >= 0) {
         char drain[128];
         while (read(m_event_pipe_fd, drain, sizeof(drain)) > 0) {}
@@ -239,8 +253,8 @@ FSM::DeviationResult FSM::run_obstacle_deviation(float side, float dt, const flo
             steering_deg = -side * ARC_STEER_DEG;
             velocity = RETURN_SPEED;
             integrate(steering_deg);
-            const float total_darkness = darkness[0] + darkness[1] + darkness[2] + darkness[3] + darkness[4];
-            if (total_darkness >= 0.35f) return DeviationResult::LineFound;
+            const float max_darkness = std::max({darkness[0], darkness[1], darkness[2], darkness[3], darkness[4]});
+            if (max_darkness >= 0.55f) return DeviationResult::LineFound;
             if (m_dev_phase_distance >= RETURN_SPEED * RETURN_TIMEOUT_S) return DeviationResult::SearchLine;
             break;
         }
@@ -527,11 +541,11 @@ void FSM::run() {
                 desired_steering = -24.0f; // Braquage vers la piste
                 desired_velocity = 0.15f;
 
-                float total_darkness = line_darkness[0] + line_darkness[1] + line_darkness[2] + line_darkness[3] + line_darkness[4];
-                bool line_seen = (total_darkness >= 0.35f);
+                float max_darkness = std::max({line_darkness[0], line_darkness[1], line_darkness[2], line_darkness[3], line_darkness[4]});
+                bool line_seen = (max_darkness >= 0.55f);
                 // Dès que le ruban est vu après au moins 250 ms de recherche
                 if (line_seen && m_state_timer >= 0.25f) {
-                    std::cout << "[FSM] Ruban noir détecté (darkness=" << total_darkness << ") -> Transition vers LineDetected!" << std::endl;
+                    std::cout << "[FSM] Ruban noir détecté (max_darkness=" << max_darkness << ") -> Transition vers LineDetected!" << std::endl;
                     transition_to(shared::fsm::MachineStates::LineDetected);
                 } else if (m_state_timer >= 4.0f) {
                     std::cerr << "[FSM] Erreur : Timeout recherche de piste ! Failsafe." << std::endl;
@@ -550,9 +564,10 @@ void FSM::run() {
                     m_line_controller->reset();
                 }
 
-                // Raccrochage dès que les capteurs centraux voient le ruban
-                bool center_seen = (line_darkness[2] >= 0.35f || (line_darkness[1] + line_darkness[2] + line_darkness[3]) >= 0.55f);
-                if (center_seen || m_state_timer >= 0.2f) {
+                // Raccrochage dès que les capteurs centraux voient le ruban (> 0.55)
+                float max_darkness = std::max({line_darkness[0], line_darkness[1], line_darkness[2], line_darkness[3], line_darkness[4]});
+                bool center_seen = (line_darkness[2] >= 0.55f || (line_darkness[1] >= 0.55f && line_darkness[3] >= 0.55f));
+                if (center_seen || (max_darkness >= 0.55f && m_state_timer >= 0.35f)) {
                     std::cout << "[FSM] Verrouillage sur ruban réussi -> Reprise suivi nominal!" << std::endl;
                     transition_to(shared::fsm::MachineStates::LineFollowingForward);
                 }
@@ -573,7 +588,7 @@ void FSM::run() {
                 float curr_v = m_motion_profiler ? std::abs(m_motion_profiler->get_current_speed()) : std::abs(desired_velocity);
                 m_state_distance += curr_v * dt;
 
-                bool central_found = (line_darkness[1] + line_darkness[2] + line_darkness[3] >= 0.40f);
+                bool central_found = (line_darkness[1] >= 0.55f || line_darkness[2] >= 0.55f || line_darkness[3] >= 0.55f);
                 // Si la ligne est réacquise après avoir reculé d'au moins 3 cm :
                 if (central_found && m_state_distance >= 0.03f) {
                     std::cout << "[FSM] Ruban réacquis en marche arrière (" << (m_state_distance * 1000.0f) << " mm) -> Reprise suivi nominal!" << std::endl;

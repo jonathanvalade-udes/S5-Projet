@@ -225,17 +225,19 @@ public:
         float total = 0.0f;
         float weighted = 0.0f;
         int dark_count = 0;
+        float max_d = 0.0f;
 
         for (int i = 0; i < 5; ++i) {
             const float d = std::clamp(darkness[i], 0.0f, 1.0f);
+            if (d > max_d) max_d = d;
+            if (d > ANALOG_DARK_THRESHOLD) dark_count++;
             total += d;
             weighted += weights[i] * d;
-            if (d > ANALOG_DARK_THRESHOLD) dark_count++;
         }
 
         const bool is_t_stop = finish_detection_enabled && (dark_count >= 4 || total >= 3.6f);
-        const bool has_line = (total >= ANALOG_MIN_TOTAL_DARKNESS);
-        float error = has_line ? (weighted / total) : 0.0f;
+        const bool has_line = (dark_count >= 1 || max_d >= 0.50f);
+        float error = (has_line && total > 0.01f) ? (weighted / total) : 0.0f;
 
         // Filtrage passe-bas de l'erreur AVANT la dérivée : sans lui, le bruit de mesure (quantification,
         // ADC) est multiplié par 1/dt dans le terme D et fait trembler la direction en ligne droite.

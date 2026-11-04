@@ -7,6 +7,13 @@
 #include <sys/stat.h>
 #include <sys/mount.h>
 #include <chrono>
+#include <csignal>
+
+static volatile sig_atomic_t g_shutdown_requested = 0;
+static void handle_exit_signal(int sig) {
+    (void)sig;
+    g_shutdown_requested = 1;
+}
 
 int main(int argc, char* argv[])
 {
@@ -39,9 +46,12 @@ int main(int argc, char* argv[])
 
     setenv("PATH", "/root:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:.", 1);
 
-    // Nettoyage préventif des anciens segments SHM pour démarrer propre
+    // Nettoyage préventif complet pour permettre un redémarrage instantané de /root/init
+    system("killall -q -9 FSM Sensors Motors TelemetryService PeripheralsService peripherals 2>/dev/null");
+    unlink("/tmp/peripherals.sock");
     unlink("/dev/shm/picar_shm");
-    system("rm -f /dev/shm/car/* 2>/dev/null");
+    system("rm -f /dev/shm/* /tmp/*.sock /tmp/peripherals.sock 2>/dev/null");
+    usleep(80000); // 80 ms pour libérer les ports TCP/UDP et sockets
 
     log_msg(1, "[INIT] STARTING THE SYSTEM...\n");
 
@@ -62,9 +72,9 @@ int main(int argc, char* argv[])
 
     // Monitored microservices with multiple candidate binary names
     std::vector<MonitoredService> monitored_services = {
-        /*{
+        {
             "FSM",
-            {"/root/FSM"},
+            {"/root/FSM", "/root/fsm", "FSM", "fsm", "/usr/local/bin/FSM", "/usr/local/bin/fsm", "/usr/sbin/FSM"},
             {},
             -1,
             0,
@@ -73,7 +83,7 @@ int main(int argc, char* argv[])
         },
         {
             "Sensors",
-            {"/root/Sensors"},
+            {"/root/Sensors", "/root/sensors", "Sensors", "sensors", "/usr/local/bin/Sensors", "/usr/local/bin/sensors", "/usr/sbin/Sensors"},
             {},
             -1,
             0,
@@ -82,7 +92,7 @@ int main(int argc, char* argv[])
         },
         {
             "Motors",
-            {"/root/Motors"},
+            {"/root/Motors", "/root/motors", "Motors", "motors", "/usr/local/bin/Motors", "/usr/local/bin/motors", "/usr/sbin/Motors"},
             {},
             -1,
             0,
@@ -91,16 +101,16 @@ int main(int argc, char* argv[])
         },
         {
             "TelemetryService",
-            {"/root/TelemetryService"},
+            {"/root/TelemetryService", "/root/telemetry", "TelemetryService", "telemetry", "/usr/local/bin/TelemetryService", "/usr/local/bin/telemetry", "/usr/sbin/TelemetryService"},
             {},
             -1,
             0,
             {},
             false
-        },*/ 
+        },
         {
             "PeripheralsService",
-            {"/usr/sbin/peripherals"},
+            {"/root/PeripheralsService", "/usr/sbin/peripherals"},
             {},
             -1,
             0,
@@ -111,7 +121,10 @@ int main(int argc, char* argv[])
 
     log_msg(1, "[INIT] MONITORING SERVICES..\n");
 
-    while (true) {
+    signal(SIGINT, handle_exit_signal);
+    signal(SIGTERM, handle_exit_signal);
+
+    while (!g_shutdown_requested) {
         int status;
         pid_t dead_pid;
         while ((dead_pid = waitpid(-1, &status, WNOHANG)) > 0) {
@@ -192,6 +205,40 @@ int main(int argc, char* argv[])
 
         usleep(100000); // 100 ms monitoring interval
     }
+
+    log_msg(1, "\n[INIT] Signal d'arrêt reçu (Ctrl+C). Extinction propre des microservices...\n");
+    for (auto& svc : monitored_services) {
+        if (svc.pid > 0) {
+            kill(svc.pid, SIGINT);
+        }
+    }
+
+    // Attente que tous les enfants se terminent proprement (max 1.5s)
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(1500);
+    for (auto& svc : monitored_services) {
+        if (svc.pid > 0) {
+            while (std::chrono::steady_clock::now() < deadline) {
+                int status;
+                if (waitpid(svc.pid, &status, WNOHANG) > 0) {
+                    svc.pid = -1;
+                    break;
+                }
+                usleep(20000); // 20ms
+            }
+            if (svc.pid > 0) {
+                kill(svc.pid, SIGKILL);
+                waitpid(svc.pid, nullptr, 0);
+                svc.pid = -1;
+            }
+        }
+    }
+
+    // Nettoyage immédiat des sockets et segments SHM pour réarmement instantané
+    unlink("/tmp/peripherals.sock");
+    unlink("/dev/shm/picar_shm");
+    system("rm -f /tmp/peripherals.sock /tmp/*.sock 2>/dev/null");
+
+    log_msg(1, "[INIT] Tous les services et sockets sont libérés. Vous pouvez relancer /root/init immédiatement.\n");
 
     return 0;
 }
