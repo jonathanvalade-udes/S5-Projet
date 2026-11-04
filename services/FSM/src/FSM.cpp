@@ -103,8 +103,10 @@ bool FSM::init() {
             pthread_mutex_lock(&(m_telemetry->mtx));
             m_telemetry->emergency_stop = false;
             m_telemetry->state = static_cast<int>(shared::fsm::MachineStates::Init);
-            // Si la SHM n'a pas encore de configuration, on y applique la nôtre
-            if (m_telemetry->cfg_version == 0) {
+            // On publie notre configuration (picar.conf) dans la SHM, même si un autre service l'a créée avec ses valeurs
+            // par défaut (SimBridge en simulation). Sinon les autres services utilisent une autre vitesse de croisière
+            // que le FSM : SimBridge convertirait le % moteur en m/s avec 0,40 au lieu de la vitesse configurée.
+            {
                 m_telemetry->cfg_max_acceleration = m_max_acceleration;
                 m_telemetry->cfg_cruise_speed     = m_straight_cruise_speed;
                 m_telemetry->cfg_min_curve_speed  = m_min_curve_speed;
@@ -112,7 +114,7 @@ bool FSM::init() {
                 m_telemetry->cfg_predictive_brake_gain = m_predictive_brake_gain;
                 m_telemetry->cfg_line_kp          = m_line_kp;
                 m_telemetry->cfg_line_kd          = m_line_kd;
-                m_telemetry->cfg_version          = 1;
+                m_telemetry->cfg_version          = m_telemetry->cfg_version + 1;
             }
             m_current_cfg_version = m_telemetry->cfg_version;
             pthread_mutex_unlock(&(m_telemetry->mtx));
@@ -147,10 +149,12 @@ bool FSM::init() {
 
 // Contournement d'un obstacle posé sur la ligne, en boucle ouverte sur l'odométrie (aucun capteur de cap) :
 //   0. recul de 10 cm (le pare-chocs est trop près pour braquer sans toucher l'obstacle),
-//   1. arc à braquage maximal du côté `side` jusqu'à 75° de cap,
+//   1. arc à braquage maximal du côté `side` jusqu'à 82° de cap,
 //   2. arc inverse jusqu'au cap initial : la voiture roule parallèle à la ligne, ~20 cm à côté,
 //   3. ligne droite jusqu'à ce que l'arrière de la voiture ait dépassé l'obstacle,
-//   4. braquage vers la ligne jusqu'au premier ruban vu (la voiture arrive de l'extérieur : c'est la ligne d'origine).
+//   4. virage modéré vers la ligne jusqu'à ~35° de cap, puis 5. tout droit jusqu'au premier ruban vu (la voiture arrive
+//      de l'extérieur : c'est la ligne d'origine). Un braquage à fond jusqu'au ruban la ferait arriver à plus de 90° :
+//      elle couperait la ligne à l'envers et le suivi repartirait dans le mauvais sens.
 // L'estimation de cap suppose un servo un peu lent (STEER_LAG_S). Réglages validés en simulation pour une voiture
 // parfaite et pour la voiture "réaliste" (biais, jeu, latence) : en dessous de 70° ou sans recul, l'arrière de la
 // voiture touche l'obstacle ; plus loin, la voiture risque de s'accrocher à une autre branche du parcours.
@@ -161,15 +165,17 @@ FSM::DeviationResult FSM::run_obstacle_deviation(float side, float dt, const flo
     constexpr float FORWARD_SPEED = 0.16f;
     constexpr float REVERSE_SPEED = 0.12f;
     constexpr float RETURN_SPEED = 0.15f;
+    constexpr float RETURN_STEER_DEG = 30.0f;            // braquage du virage de retour (moins que ARC_STEER_DEG)
+    constexpr float RETURN_HEADING_RAD = 35.0f * 3.14159265f / 180.0f;  // angle d'approche de la ligne
+    constexpr float RETURN_STRAIGHT_MAX_M = 0.60f;       // sans ruban sur cette distance : LineSearching
     constexpr float ARC_STEER_DEG = 45.0f;
-    constexpr float ARC_HEADING_RAD = 75.0f * 3.14159265f / 180.0f;
+    constexpr float ARC_HEADING_RAD = 82.0f * 3.14159265f / 180.0f;
     constexpr float WHEELBASE_M = 0.14f;
     constexpr float STEER_DEG_TO_REAL = 48.0f / 45.0f;   // le simulateur convertit 45° commandés en 48° de roue
     constexpr float STEER_LAG_S = 0.06f;                 // retard du servo de direction
     constexpr float OBSTACLE_DEPTH_M = 0.15f;            // profondeur supposée de l'obstacle
     constexpr float CAR_REAR_M = 0.15f;                  // distance de l'origine de la voiture à son arrière
     constexpr float CLEARANCE_M = 0.03f;
-    constexpr float RETURN_TIMEOUT_S = 4.0f;             // sans ruban : on laisse LineSearching reprendre la main
     constexpr float TIMEOUT_S = 14.0f;
 
     m_state_timer += dt;
@@ -220,13 +226,16 @@ FSM::DeviationResult FSM::run_obstacle_deviation(float side, float dt, const flo
             integrate(steering_deg);
             if (m_dev_x - CAR_REAR_M >= m_dev_obstacle_far_x + CLEARANCE_M) next_phase();
             break;
-        default: {  // retour : braquage vers la ligne jusqu'au premier ruban
-            steering_deg = -side * ARC_STEER_DEG;
+        case 4:  // virage modéré vers la ligne, jusqu'à l'angle d'approche voulu
+        default: {  // 5 : tout droit jusqu'au premier ruban
+            const bool turning = (m_dev_phase == 4);
+            steering_deg = turning ? -side * RETURN_STEER_DEG : 0.0f;
             velocity = RETURN_SPEED;
             integrate(steering_deg);
             const float total_darkness = darkness[0] + darkness[1] + darkness[2] + darkness[3] + darkness[4];
             if (total_darkness >= 0.35f) return DeviationResult::LineFound;
-            if (m_dev_phase_distance >= RETURN_SPEED * RETURN_TIMEOUT_S) return DeviationResult::SearchLine;
+            if (turning && m_dev_heading <= -RETURN_HEADING_RAD) next_phase();
+            else if (!turning && m_dev_phase_distance >= RETURN_STRAIGHT_MAX_M) return DeviationResult::SearchLine;
             break;
         }
     }
