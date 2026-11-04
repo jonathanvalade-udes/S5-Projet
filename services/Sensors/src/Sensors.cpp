@@ -27,6 +27,25 @@ float Sensors::compute_line_error(const uint8_t sensors[5], float fallback_error
     return (weighted_sum / (2.0f * active_count));
 }
 
+float Sensors::compute_line_error_analog(const float darkness[5], float fallback_error) {
+    constexpr float weights[5] = {-2.0f, -1.0f, 0.0f, 1.0f, 2.0f};
+    float total_darkness = 0.0f;
+    float weighted_sum = 0.0f;
+
+    for (int i = 0; i < 5; ++i) {
+        float d = std::clamp(darkness[i], 0.0f, 1.0f);
+        total_darkness += d;
+        weighted_sum += weights[i] * d;
+    }
+
+    // Seuil minimal pour considérer que le ruban est vu (au moins 20% de noirceur cumulée)
+    if (total_darkness < 0.20f) {
+        return fallback_error;
+    }
+    // Erreur normalisée dans [-1.0f, +1.0f]
+    return (weighted_sum / (2.0f * total_darkness));
+}
+
 Sensors::Sensors(int hz, int trig, int echo) 
     : m_running(false), m_hz(hz), m_trig_pin(trig), m_echo_pin(echo), m_last_line_error(0.0f) {}
 
@@ -103,7 +122,7 @@ void Sensors::run() {
         }
 
         float filtered_dist = m_pipeline ? m_pipeline->process(raw_dist, dt, current_speed) : raw_dist;
-        m_last_line_error = compute_line_error(line_sensors, m_last_line_error);
+        m_last_line_error = compute_line_error_analog(line_darkness, m_last_line_error);
         float line_error = m_last_line_error;
 
         // Update legacy / fast SHM

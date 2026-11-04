@@ -217,7 +217,7 @@ public:
             if (d > ANALOG_DARK_THRESHOLD) dark_count++;
         }
 
-        const bool is_t_stop = (dark_count >= 4);
+        const bool is_t_stop = (dark_count >= 4 || total >= 3.6f);
         const bool has_line = (total >= ANALOG_MIN_TOTAL_DARKNESS);
         float error = has_line ? (weighted / total) : 0.0f;
 

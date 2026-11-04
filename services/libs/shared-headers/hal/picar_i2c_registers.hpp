@@ -117,6 +117,14 @@ namespace picar::i2c {
         inline constexpr float DEFAULT_WHITE_ADC        = 100.0f; // Valeur ADC typique sur le fond blanc
 
         /**
+         * @brief Structure de calibration individuelle des 5 capteurs TCRT5000.
+         */
+        struct CalibrationData {
+            float black_adc[5] = {DEFAULT_BLACK_ADC, DEFAULT_BLACK_ADC, DEFAULT_BLACK_ADC, DEFAULT_BLACK_ADC, DEFAULT_BLACK_ADC};
+            float white_adc[5] = {DEFAULT_WHITE_ADC, DEFAULT_WHITE_ADC, DEFAULT_WHITE_ADC, DEFAULT_WHITE_ADC, DEFAULT_WHITE_ADC};
+        };
+
+        /**
          * @brief Convertit une valeur ADC brute en "noirceur" continue [0.0 = blanc, 1.0 = noir].
          * Les TCRT5000 renvoient une valeur BASSE sur le noir. Interpolation linéaire entre les
          * références blanc/noir, bornée à [0, 1] : 55 -> 0.56, 92 -> 0.10, 25 -> 0.94 (avec 20/100).
@@ -127,6 +135,15 @@ namespace picar::i2c {
             if (span <= 1.0f) return (static_cast<float>(adc) < (black_adc + white_adc) * 0.5f) ? 1.0f : 0.0f;
             const float d = (white_adc - static_cast<float>(adc)) / span;
             return d < 0.0f ? 0.0f : (d > 1.0f ? 1.0f : d);
+        }
+
+        /**
+         * @brief Convertit les 5 valeurs ADC brutes en noirceur continue selon la calibration par capteur.
+         */
+        inline void convert_raw_to_darkness(const uint16_t adc[5], const CalibrationData& calib, float out_darkness[5]) {
+            for (size_t i = 0; i < 5; ++i) {
+                out_darkness[i] = adc_to_darkness(adc[i], calib.black_adc[i], calib.white_adc[i]);
+            }
         }
 
         /**

@@ -185,6 +185,18 @@ void test_line_follower_analog() {
         assert(!out.is_finished && !out.is_line_lost);
     }
 
+    // 6. Continuité et monotonie stricte du barycentre (passage continu de capteur 2 à capteur 3)
+    {
+        LineFollowerController c(0.65f, 0.05f, 0.32f, 0.14f);
+        float last_steer = -999.0f;
+        for (float alpha = 0.0f; alpha <= 1.0f; alpha += 0.1f) {
+            float d[5] = {0.0f, 0.0f, 1.0f - alpha, alpha, 0.0f};
+            LineFollowerOutput out = c.update_analog(d, dt);
+            assert(out.steer_normalized >= last_steer - 1e-4f); // Évolution strictement monotone sans discontinuité
+            last_steer = out.steer_normalized;
+        }
+    }
+
     std::cout << "  ✓ LineFollowerController : lecture analogique (centre de gravité) validée." << std::endl;
 }
 

@@ -328,10 +328,11 @@ void FSM::run() {
                 desired_steering = -24.0f; // Braquage vers la piste
                 desired_velocity = 0.15f;
 
-                bool line_seen = (line_sensors[0] || line_sensors[1] || line_sensors[2] || line_sensors[3] || line_sensors[4]);
+                float total_darkness = line_darkness[0] + line_darkness[1] + line_darkness[2] + line_darkness[3] + line_darkness[4];
+                bool line_seen = (total_darkness >= 0.35f);
                 // Dès que le ruban est vu après au moins 250 ms de recherche
                 if (line_seen && m_state_timer >= 0.25f) {
-                    std::cout << "[FSM] Ruban noir détecté -> Transition vers LineDetected!" << std::endl;
+                    std::cout << "[FSM] Ruban noir détecté (darkness=" << total_darkness << ") -> Transition vers LineDetected!" << std::endl;
                     transition_to(shared::fsm::MachineStates::LineDetected);
                 } else if (m_state_timer >= 4.0f) {
                     std::cerr << "[FSM] Erreur : Timeout recherche de piste ! Failsafe." << std::endl;
@@ -350,8 +351,9 @@ void FSM::run() {
                     m_line_controller->reset();
                 }
 
-                // Raccrochage immédiat dès que le capteur central est actif
-                if (line_sensors[2] || m_state_timer >= 0.2f) {
+                // Raccrochage dès que les capteurs centraux voient le ruban
+                bool center_seen = (line_darkness[2] >= 0.35f || (line_darkness[1] + line_darkness[2] + line_darkness[3]) >= 0.55f);
+                if (center_seen || m_state_timer >= 0.2f) {
                     std::cout << "[FSM] Verrouillage sur ruban réussi -> Reprise suivi nominal!" << std::endl;
                     transition_to(shared::fsm::MachineStates::LineFollowingForward);
                 }
@@ -372,7 +374,7 @@ void FSM::run() {
                 float curr_v = m_motion_profiler ? std::abs(m_motion_profiler->get_current_speed()) : std::abs(desired_velocity);
                 m_state_distance += curr_v * dt;
 
-                bool central_found = (line_sensors[1] || line_sensors[2] || line_sensors[3]);
+                bool central_found = (line_darkness[1] + line_darkness[2] + line_darkness[3] >= 0.40f);
                 // Si la ligne est réacquise après avoir reculé d'au moins 3 cm :
                 if (central_found && m_state_distance >= 0.03f) {
                     std::cout << "[FSM] Ruban réacquis en marche arrière (" << (m_state_distance * 1000.0f) << " mm) -> Reprise suivi nominal!" << std::endl;

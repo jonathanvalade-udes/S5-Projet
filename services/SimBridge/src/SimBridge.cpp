@@ -188,12 +188,22 @@ void SimBridge::run() {
                     if (m_sim_mode) {
                         // Mode simulation Godot : injection des capteurs virtuels dans la mémoire partagée
                         m_telemetry->filtered_dist = m_us_pipeline.process(telem_in.distance);
+                        float total_darkness = 0.0f;
+                        float weighted_darkness = 0.0f;
+                        constexpr float weights[5] = {-2.0f, -1.0f, 0.0f, 1.0f, 2.0f};
+
                         for (int i = 0; i < 5; ++i) {
-                            m_telemetry->line_darkness[i] = telem_in.line_darkness[i];
+                            float d = std::clamp(telem_in.line_darkness[i], 0.0f, 1.0f);
+                            m_telemetry->line_darkness[i] = d;
+                            total_darkness += d;
+                            weighted_darkness += weights[i] * d;
                             // Vue binaire : dérivée de l'analogique si présent, sinon trame binaire brute
                             m_telemetry->line_sensors[i] = telem_in.has_analog
-                                ? static_cast<uint8_t>(telem_in.line_darkness[i] > 0.5f ? 1 : 0)
+                                ? static_cast<uint8_t>(d > 0.5f ? 1 : 0)
                                 : telem_in.line_sensors[i];
+                        }
+                        if (total_darkness >= 0.20f) {
+                            m_telemetry->line_error = (weighted_darkness / (2.0f * total_darkness));
                         }
                         if (telem_in.ball_dropped) {
                             m_telemetry->emergency_stop = true;

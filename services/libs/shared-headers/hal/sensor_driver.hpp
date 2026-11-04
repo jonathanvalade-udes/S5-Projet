@@ -11,6 +11,9 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <dirent.h>
+#include <fstream>
+#include <sstream>
+#include <string>
 
 #include "picar_i2c_registers.hpp"
 #include "i2c_device.hpp"
@@ -96,6 +99,7 @@ private:
     int actual_trig = 12;
     int actual_echo = 16;
     picar::hal::I2CDevice m_line_device;
+    picar::i2c::line_follower::CalibrationData m_calibration;
     uint16_t m_thresholds[5] = {picar::i2c::line_follower::DEFAULT_THRESHOLD,
                                 picar::i2c::line_follower::DEFAULT_THRESHOLD,
                                 picar::i2c::line_follower::DEFAULT_THRESHOLD,
@@ -105,12 +109,61 @@ private:
     float m_last_darkness[5] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
     int m_consecutive_i2c_errors = 0;
 
-    float m_black_adc = env_float("PICAR_LINE_BLACK_ADC", picar::i2c::line_follower::DEFAULT_BLACK_ADC);
-    float m_white_adc = env_float("PICAR_LINE_WHITE_ADC", picar::i2c::line_follower::DEFAULT_WHITE_ADC);
-
     static float env_float(const char* name, float fallback) {
         const char* v = std::getenv(name);
         return (v && v[0] != '\0') ? static_cast<float>(std::atof(v)) : fallback;
+    }
+
+    void load_calibration() {
+        float env_b = env_float("PICAR_LINE_BLACK_ADC", picar::i2c::line_follower::DEFAULT_BLACK_ADC);
+        float env_w = env_float("PICAR_LINE_WHITE_ADC", picar::i2c::line_follower::DEFAULT_WHITE_ADC);
+        for (int i = 0; i < 5; ++i) {
+            m_calibration.black_adc[i] = env_b;
+            m_calibration.white_adc[i] = env_w;
+            m_thresholds[i] = static_cast<uint16_t>((env_b + env_w) * 0.5f);
+        }
+
+        const char* paths[] = {"/etc/picar_line_calibration", nullptr};
+        const char* home = std::getenv("HOME");
+        std::string home_path = home ? (std::string(home) + "/.picar_line_calibration") : "";
+
+        const char* target_path = nullptr;
+        std::ifstream file;
+        file.open(paths[0]);
+        if (file.is_open()) {
+            target_path = paths[0];
+        } else if (!home_path.empty()) {
+            file.open(home_path);
+            if (file.is_open()) {
+                target_path = home_path.c_str();
+            }
+        }
+
+        if (target_path && file.is_open()) {
+            std::string line;
+            int count = 0;
+            while (std::getline(file, line) && count < 5) {
+                if (line.empty() || line[0] == '#') continue;
+                std::istringstream iss(line);
+                float v1 = 0.0f, v2 = 0.0f, v3 = 0.0f;
+                if (iss >> v1 >> v2) {
+                    if (iss >> v3) {
+                        int idx = static_cast<int>(v1);
+                        if (idx >= 0 && idx < 5) {
+                            m_calibration.black_adc[idx] = v2;
+                            m_calibration.white_adc[idx] = v3;
+                            m_thresholds[idx] = static_cast<uint16_t>((v2 + v3) * 0.5f);
+                        }
+                    } else {
+                        m_calibration.black_adc[count] = v1;
+                        m_calibration.white_adc[count] = v2;
+                        m_thresholds[count] = static_cast<uint16_t>((v1 + v2) * 0.5f);
+                    }
+                    count++;
+                }
+            }
+            std::cout << "[INFO] Calibration suiveur de ligne chargée depuis " << target_path << std::endl;
+        }
     }
 
     static int detect_gpio_base() {
@@ -201,6 +254,19 @@ public:
 
         std::cout << "[INFO] HC-SR04 configuré sur Trig=GPIO" << actual_trig << " (BCM " << trig_pin 
                   << "), Echo=GPIO" << actual_echo << " (BCM " << echo_pin << ")" << std::endl;
+
+        load_calibration();
+    }
+
+    const picar::i2c::line_follower::CalibrationData& get_calibration() const {
+        return m_calibration;
+    }
+
+    void set_calibration(const picar::i2c::line_follower::CalibrationData& calib) {
+        m_calibration = calib;
+        for (int i = 0; i < 5; ++i) {
+            m_thresholds[i] = static_cast<uint16_t>((calib.black_adc[i] + calib.white_adc[i]) * 0.5f);
+        }
     }
 
     ~PiCarHatsSensorDriver() override {
@@ -285,9 +351,7 @@ public:
                 uint16_t raw_adc[5];
                 picar::i2c::line_follower::parse_raw_adc(buffer, raw_adc);
                 picar::i2c::line_follower::binarize_sensors(raw_adc, m_thresholds, m_last_sensors);
-                for (int i = 0; i < 5; ++i) {
-                    m_last_darkness[i] = picar::i2c::line_follower::adc_to_darkness(raw_adc[i], m_black_adc, m_white_adc);
-                }
+                picar::i2c::line_follower::convert_raw_to_darkness(raw_adc, m_calibration, m_last_darkness);
             } else {
                 m_consecutive_i2c_errors++;
             }
