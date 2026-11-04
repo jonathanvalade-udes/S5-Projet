@@ -26,13 +26,10 @@ func _process(_delta: float) -> void:
 	if network == null:
 		network = get_node_or_null("/root/Main/NetworkClient")
 	if network and network.is_connected:
-		network.data_to_send["line_follower"] = [
-			int(line_follower_array[0]),
-			int(line_follower_array[1]),
-			int(line_follower_array[2]),
-			int(line_follower_array[3]),
-			int(line_follower_array[4])
-		]
+		var bits: Array = []
+		for i in range(5):
+			bits.append(Realism.noisy_line_bit(int(line_follower_array[i])))  # un capteur se trompe parfois
+		network.data_to_send["line_follower"] = bits
 
 func _physics_process(_delta: float) -> void:
 	_update_analog()

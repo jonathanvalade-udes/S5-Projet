@@ -4,6 +4,7 @@
 #include <memory>
 #include <string>
 
+#include "filters/ultrasonic_pipeline.hpp"
 #include "ipc/shared_memory.hpp"
 #include "utils/simple_json.hpp"
 
@@ -30,6 +31,10 @@ private:
 
     std::unique_ptr<SharedMemoryManager> m_shm_mgr;
     RobotTelemetry* m_telemetry{nullptr};
+
+    // Même filtre ultrason (médian + EMA) que le service Sensors du vrai robot : sans lui, une valeur
+    // aberrante de Godot arrive brute au FSM et déclenche un faux arrêt "obstacle".
+    UltrasonicPipeline m_us_pipeline{5, 0.25f};
 };
 
 } // namespace services

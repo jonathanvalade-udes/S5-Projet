@@ -19,14 +19,17 @@ struct LineFollowerOutput {
 class LineFollowerController {
 public:
     static constexpr float DEFAULT_KP = 0.65f;
-    static constexpr float DEFAULT_KD = 0.20f;
+    static constexpr float DEFAULT_KD = 0.05f;         // Faible : avec la latence (~60 ms) un kd élevé fait osciller la direction en ligne droite
+    static constexpr float DEFAULT_KI = 0.30f;         // Compense le biais fixe des roues (alignement), voir INTEGRAL_*
+    static constexpr float INTEGRAL_LIMIT = 0.15f;     // Contribution max de l'intégrale au braquage normalisé (~7°)
+    static constexpr float INTEGRAL_ACTIVE_BELOW = 0.6f; // N'intègre que près du centre (|erreur| en pas de capteur) : pas dans les virages
     static constexpr float CRUISE_SPEED = 0.22f;       // m/s en ligne droite
     static constexpr float MIN_CURVE_SPEED = 0.10f;     // m/s en virage serré (R = 120 mm)
     static constexpr float SPEED_REDUCTION_GAIN = 0.08f;
     static constexpr float LINE_LOSS_TIMEOUT = 1.20f;   // Secondes avant arrêt d'urgence
     static constexpr float ANALOG_DARK_THRESHOLD = 0.5f;       // Un capteur compte comme "noir" au-delà (barre d'arrivée)
     static constexpr float ANALOG_ERROR_ALPHA = 0.4f;          // Filtre EMA de l'erreur analogique (1 = aucun filtre)
-    static constexpr float ANALOG_CENTER_KNEE = 0.30f;         // Erreur (en pas de capteur ~19 mm) sous laquelle on atténue
+    static constexpr float ANALOG_CENTER_KNEE = 0.15f;         // Erreur (en pas de capteur ~19 mm) sous laquelle on atténue
     static constexpr float ANALOG_MIN_TOTAL_DARKNESS = 0.25f;  // Noirceur totale minimale pour dire "ligne vue"
 
 private:
@@ -39,6 +42,7 @@ private:
     float last_steer;
     float line_lost_elapsed;
     float filtered_d_error;
+    float integral = 0.0f;              // terme intégral du braquage (normalisé), compense le biais des roues
     bool has_previous_error;
     float analog_error_filtered = 0.0f; // erreur analogique filtrée (EMA) avant le terme dérivé
     bool has_analog_error = false;
@@ -64,6 +68,7 @@ public:
         last_steer = 0.0f;
         line_lost_elapsed = 0.0f;
         filtered_d_error = 0.0f;
+        integral = 0.0f;
         has_previous_error = false;
         analog_error_filtered = 0.0f;
         has_analog_error = false;
@@ -135,8 +140,16 @@ public:
             }
             last_error = error;
 
-            // Correction PD
-            float steer = (kp * error) + (kd * d_error);
+            // Intégrale : seulement près du centre (ligne droite), limitée ; relâchée doucement dans les virages
+            if (std::abs(error) < INTEGRAL_ACTIVE_BELOW) {
+                integral += DEFAULT_KI * error * dt;
+            } else {
+                integral *= (1.0f - 0.5f * dt);
+            }
+            integral = std::clamp(integral, -INTEGRAL_LIMIT, INTEGRAL_LIMIT);
+
+            // Correction PID
+            float steer = (kp * error) + (kd * d_error) + integral;
             steer = std::clamp(steer, -1.0f, 1.0f);
             last_steer = steer;
 

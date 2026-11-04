@@ -28,7 +28,7 @@ void FSM::transition_to(shared::fsm::MachineStates new_state) {
 bool FSM::init() {
     std::cout << "[FSM] Initializing Decision & Navigation engine at " << m_hz << " Hz..." << std::endl;
 
-    m_line_controller = std::make_unique<LineFollowerController>(0.65f, 0.20f, STRAIGHT_CRUISE_SPEED, MIN_CURVE_SPEED);
+    m_line_controller = std::make_unique<LineFollowerController>(0.65f, LineFollowerController::DEFAULT_KD,STRAIGHT_CRUISE_SPEED, MIN_CURVE_SPEED);
     m_motion_profiler = std::make_unique<MotionProfiler>(MAX_ACCELERATION, STRAIGHT_CRUISE_SPEED);
 
     try {

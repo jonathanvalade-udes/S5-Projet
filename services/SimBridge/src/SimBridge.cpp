@@ -110,6 +110,7 @@ void SimBridge::run() {
             std::cout << "[SimBridge] Client connected from " 
                       << inet_ntoa(client_addr.sin_addr) << ":" << ntohs(client_addr.sin_port) << std::endl;
             rx_buffer.clear();
+            m_us_pipeline.reset(100.0f);
         }
 
         char recv_buf[1024];
@@ -151,7 +152,7 @@ void SimBridge::run() {
 
                     if (m_sim_mode) {
                         // Mode simulation Godot : injection des capteurs virtuels dans la mémoire partagée
-                        m_telemetry->filtered_dist = telem_in.distance;
+                        m_telemetry->filtered_dist = m_us_pipeline.process(telem_in.distance);
                         for (int i = 0; i < 5; ++i) {
                             m_telemetry->line_darkness[i] = telem_in.line_darkness[i];
                             // Vue binaire : dérivée de l'analogique si présent, sinon trame binaire brute

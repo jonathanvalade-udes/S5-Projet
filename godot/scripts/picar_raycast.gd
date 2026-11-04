@@ -29,7 +29,20 @@ var wheel_radius_m: float = 0.055         # rayon de contact au sol, en mètres
 var wheel_angle: float = 0.0
 var steer_visual: float = 0.0             # angle de braquage affiché (rad), lissé
 
+# Mouvement RÉEL de la voiture, avec les imperfections de Realism (lu aussi par la bille)
+var actual_speed: float = 0.0
+var actual_steer_rad: float = 0.0
+var _servo_play: float = 0.0              # position du servo avec son jeu (rad)
+var _servo_rad: float = 0.0               # angle réel des roues, après limite de vitesse du servo (rad)
+var _speed_noise: float = 0.0             # variation lente de la vitesse (fraction)
+var _steer_noise: float = 0.0             # dérive lente de l'angle de braquage (degrés)
+var _cmd_queue: Array = []                # ordres reçus [temps, vitesse, direction], appliqués avec un délai
+var _clock: float = 0.0
+var _next_kick: float = 0.0               # secondes avant le prochain petit choc
+
 func _ready() -> void:
+	Realism.setup()
+	_next_kick = Realism.rng.randf_range(0.5, 1.5) * Realism.p["kick_interval_s"]
 	ray = get_node_or_null("RayCast3D")
 	var lfs_node = get_node_or_null("line_follower_sensor")
 	if lfs_node and lfs_node.get_child_count() > 0:
@@ -111,6 +124,60 @@ func _animate_wheels(distance: float, steer_rad: float, delta: float) -> void:
 			local = Transform3D(steer_basis, p - steer_basis * p) * local
 		parts[i].global_transform = m * local
 
+func _unhandled_key_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_R:
+		Realism.toggle()
+
+# Retarde les ordres de Python (latence de la communication). Renvoie (vitesse, direction).
+func _apply_latency(cmd_speed: float, cmd_dir: float, delta: float) -> Vector2:
+	_clock += delta
+	if not Realism.enabled:
+		_cmd_queue.clear()
+		return Vector2(cmd_speed, cmd_dir)
+	_cmd_queue.append([_clock, cmd_speed, cmd_dir])
+	var due: float = _clock - Realism.p["latency_s"]
+	# on garde l'ordre le plus récent qui date d'au moins `latency_s`
+	while _cmd_queue.size() > 1 and _cmd_queue[1][0] <= due:
+		_cmd_queue.pop_front()
+	return Vector2(_cmd_queue[0][1], _cmd_queue[0][2])
+
+# Calcule la vitesse et l'angle de braquage RÉELS à partir des ordres (actual_speed, actual_steer_rad)
+func _update_actual_motion(cmd_speed: float, cmd_dir: float, delta: float) -> void:
+	var max_steer: float = deg_to_rad(MAX_STEER_DEG)
+	if not Realism.enabled:
+		actual_speed = cmd_speed
+		actual_steer_rad = cmd_dir * max_steer
+		_servo_play = actual_steer_rad
+		_servo_rad = actual_steer_rad
+		return
+	# Direction : biais d'alignement + dérive lente, puis jeu du servo et vitesse limitée du servo.
+	# La dérive est un bruit lissé (constante de temps 0,4 s) : un bruit tiré à chaque image ferait
+	# trembler les roues à gauche et à droite, ce qui n'est pas ce que fait un vrai servo.
+	const STEER_NOISE_TAU: float = 0.4
+	_steer_noise += -_steer_noise / STEER_NOISE_TAU * delta \
+			+ Realism.noise("steer_noise_deg") * sqrt(2.0 * delta / STEER_NOISE_TAU) * Realism.gauss(1.0)
+	var target: float = cmd_dir * max_steer + deg_to_rad(Realism.p["steer_bias_deg"] + _steer_noise)
+	var half_play: float = deg_to_rad(Realism.p["steer_backlash_deg"]) / 2.0
+	if target > _servo_play + half_play:
+		_servo_play = target - half_play
+	elif target < _servo_play - half_play:
+		_servo_play = target + half_play
+	_servo_rad = move_toward(_servo_rad, _servo_play, deg_to_rad(Realism.p["servo_speed_dps"]) * delta)
+	actual_steer_rad = clampf(_servo_rad, -max_steer, max_steer)
+	# Vitesse : gain moteur et variation lente (processus d'Ornstein-Uhlenbeck, constante de temps 1 s)
+	_speed_noise += -_speed_noise * delta + Realism.noise("motor_noise") * sqrt(2.0 * delta) * Realism.gauss(1.0)
+	actual_speed = cmd_speed * Realism.p["motor_gain"] * (1.0 + _speed_noise)
+
+# Petit choc aléatoire (bosse, gravier) : fait pivoter un peu la voiture
+func _apply_kick(delta: float) -> void:
+	if not Realism.enabled or absf(actual_speed) < 0.05:
+		return
+	_next_kick -= delta
+	if _next_kick > 0.0:
+		return
+	_next_kick = Realism.rng.randf_range(0.5, 1.5) * Realism.p["kick_interval_s"]
+	rotate_y(deg_to_rad(Realism.rng.randf_range(-1.0, 1.0) * Realism.noise("kick_yaw_deg")))
+
 func _process(delta: float) -> void:
 	if network == null:
 		network = get_node_or_null("/root/Main/NetworkClient")
@@ -119,20 +186,23 @@ func _process(delta: float) -> void:
 	if network == null or not network.is_connected:
 		speed = 0.0
 		steer_dir = 0.0
+		actual_speed = 0.0
+		actual_steer_rad = 0.0
 		return
 
 	# Mode connecté : cinématique pilotée exclusivement par Python
 	var rx_speed: float = float(network.data_received.get("velocity", 0.0))
 	var rx_steer: float = float(network.data_received.get("direction", 0.0))
-	
-	# Cinématique métrique d'Ackermann
-	var steer_rad: float = rx_steer * deg_to_rad(MAX_STEER_DEG)
-	var angular_velocity: float = (rx_speed / 0.14) * tan(steer_rad)
-	
-	translate(Vector3(-rx_speed * delta, 0, 0))
+	var cmd: Vector2 = _apply_latency(rx_speed, rx_steer, delta)
+	_update_actual_motion(cmd.x, cmd.y, delta)
+
+	# Cinématique métrique d'Ackermann, avec le mouvement réel
+	var angular_velocity: float = (actual_speed / 0.14) * tan(actual_steer_rad)
+	translate(Vector3(-actual_speed * delta, 0, 0))
 	rotate_y(angular_velocity * delta)
-	# Roues : roulement + braquage des roues avant
-	_animate_wheels(rx_speed * delta, steer_rad, delta)
+	_apply_kick(delta)
+	# Roues : roulement + braquage des roues avant (on voit donc les roues désalignées)
+	_animate_wheels(actual_speed * delta, actual_steer_rad, delta)
 
 	# Feedback télémesure vers Python
 	network.data_to_send["velocity"] = rx_speed
@@ -148,4 +218,4 @@ func _physics_process(_delta: float) -> void:
 
 	if network and network.is_connected:
 		# Distance ultrason transmise en centimètres
-		network.data_to_send["distance"] = round(distance * 100.0)
+		network.data_to_send["distance"] = round(Realism.noisy_distance(distance) * 100.0)

@@ -55,6 +55,12 @@ func _physics_process(delta: float):
 	if network and network.is_connected:
 		rx_speed = network.data_received.get("velocity", 0.0)
 		rx_steer = network.data_received.get("direction", 0.0)
+	var steer_rad: float = rx_steer * deg_to_rad(48.0)
+	# La bille subit le mouvement RÉEL de la voiture (avec les imperfections du simulateur)
+	var car = get_parent()
+	if network and network.is_connected and car != null and "actual_speed" in car:
+		rx_speed = car.actual_speed
+		steer_rad = car.actual_steer_rad
 
 	# 1. Calcul des accélérations du véhicule (référentiel non-inertiel)
 	if not has_last_speed:
@@ -66,7 +72,6 @@ func _physics_process(delta: float):
 	last_speed = rx_speed
 
 	# Accélération centripète : a_centri = v * omega, dirigée vers l'extérieur du virage
-	var steer_rad = rx_steer * deg_to_rad(48.0)
 	var angular_vel = (rx_speed / 0.14) * tan(steer_rad)
 	var a_lat = rx_speed * angular_vel
 

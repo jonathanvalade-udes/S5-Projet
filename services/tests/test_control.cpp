@@ -105,7 +105,7 @@ void test_line_follower_analog() {
         LineFollowerController c(0.65f, 0.20f, 0.32f, 0.14f);
         const float between[5] = {0.0f, 0.0f, 0.5f, 0.5f, 0.0f};
         LineFollowerOutput out = c.update_analog(between, dt);
-        assert(std::abs(out.steer_normalized - 0.65f * 0.5f) < 1e-3f);
+        assert(std::abs(out.steer_normalized - 0.65f * 0.5f) < 1e-2f); // + une trame d'intégrale (~0.003)
     }
 
     // 3. Balayage continu du ruban sous les capteurs : le braquage doit évoluer sans à-coups.
@@ -131,7 +131,7 @@ void test_line_follower_analog() {
     // 3b. Ligne droite avec bruit de mesure (quantification 1/7 + bruit de +-1 rayon) :
     //     la direction ne doit pas trembler (régression : l'écart-type était 0.27 sans filtrage de l'erreur).
     {
-        LineFollowerController c(0.65f, 0.20f, 0.32f, 0.14f);
+        LineFollowerController c(0.65f, LineFollowerController::DEFAULT_KD, 0.32f, 0.14f);
         const float w[5] = {-2.0f, -1.0f, 0.0f, 1.0f, 2.0f};
         uint32_t rng = 12345u; // LCG déterministe (indépendant de la bibliothèque standard)
         auto rnd = [&rng]() { rng = rng * 1664525u + 1013904223u; return static_cast<float>(rng >> 8) / 16777216.0f; };
