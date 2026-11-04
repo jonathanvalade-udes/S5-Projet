@@ -1,12 +1,10 @@
 #include "TelemetryService.hpp"
 #include <csignal>
-#include <iostream>
 #include <string>
 
 static services::TelemetryService* g_service_instance = nullptr;
 
-static void signal_handler(int sig) {
-    std::cout << "\n[TelemetryService] Signal " << sig << " received, stopping..." << std::endl;
+static void signal_handler(int /*sig*/) {
     if (g_service_instance) {
         g_service_instance->stop();
     }
@@ -14,9 +12,10 @@ static void signal_handler(int sig) {
 
 int main(int argc, char* argv[]) {
     int hz = 50;
-    bool enable_ui = true;
+    bool enable_ui = false;
     int tcp_port = 91;
     int udp_port = 9002;
+    std::string posix_socket = "/tmp/peripherals.sock";
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -28,21 +27,21 @@ int main(int argc, char* argv[]) {
             tcp_port = std::stoi(argv[++i]);
         } else if (arg == "--udp-port" && i + 1 < argc) {
             udp_port = std::stoi(argv[++i]);
+        } else if ((arg == "--posix-socket" || arg == "--sock") && i + 1 < argc) {
+            posix_socket = argv[++i];
         }
     }
 
     std::signal(SIGINT, signal_handler);
     std::signal(SIGTERM, signal_handler);
 
-    services::TelemetryService service(hz, enable_ui, tcp_port, udp_port);
+    services::TelemetryService service(hz, enable_ui, tcp_port, udp_port, posix_socket);
     g_service_instance = &service;
 
     if (!service.init()) {
-        std::cerr << "[TelemetryService] Failed to initialize!" << std::endl;
         return 1;
     }
 
     service.run();
-    std::cout << "[TelemetryService] Exited cleanly." << std::endl;
     return 0;
 }

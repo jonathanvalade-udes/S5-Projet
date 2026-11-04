@@ -57,6 +57,10 @@ add_test(NAME test_i2c COMMAND test_i2c)
 add_executable(test_telemetry 
     test_telemetry.cpp 
     ${CMAKE_CURRENT_SOURCE_DIR}/../TelemetryService/src/TelemetryService.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../TelemetryService/src/PosixClient.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../TelemetryService/src/TcpStreamer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../TelemetryService/src/ShmCollector.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../TelemetryService/src/UsbLogger.cpp
 )
 target_include_directories(test_telemetry PRIVATE 
     ${CMAKE_CURRENT_SOURCE_DIR}/.. 

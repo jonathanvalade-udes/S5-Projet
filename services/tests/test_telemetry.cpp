@@ -6,6 +6,7 @@
 #include <cstring>
 #include <vector>
 #include <sys/socket.h>
+#include <sys/un.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
@@ -18,6 +19,7 @@
 #include "header/header.hpp"
 #include "crc/crc_global.hpp"
 #include "commands/global_commands.hpp"
+#include "commands/commands_header.hpp"
 #include "responses/global_responses.hpp"
 #include "car/full_packet.hpp"
 
@@ -399,6 +401,207 @@ void test_usb_fifo_direct_streaming() {
     rmdir(mock_usb);
 }
 
+void test_posix_connection_and_command_forwarding() {
+    std::cout << "[TEST] TelemetryService - Connexion POSIX et routage vers les services..." << std::endl;
+
+    const std::string mock_sock_path = "/tmp/test_telem_posix.sock";
+    ::unlink(mock_sock_path.c_str());
+
+    // 1. Créer le serveur POSIX simulé (comme PeripheralsService)
+    int server_fd = ::socket(AF_UNIX, SOCK_STREAM, 0);
+    assert(server_fd >= 0);
+
+    struct sockaddr_un saddr{};
+    saddr.sun_family = AF_UNIX;
+    std::strncpy(saddr.sun_path, mock_sock_path.c_str(), sizeof(saddr.sun_path) - 1);
+
+    int b_res = ::bind(server_fd, reinterpret_cast<struct sockaddr*>(&saddr), sizeof(saddr));
+    assert(b_res == 0);
+    assert(::listen(server_fd, 5) == 0);
+
+    int flags = fcntl(server_fd, F_GETFL, 0);
+    fcntl(server_fd, F_SETFL, flags | O_NONBLOCK);
+
+    // 2. Initialiser TelemetryService configuré sur ce socket POSIX
+    services::TelemetryService telem_service(50, false, 0, 0, mock_sock_path);
+    assert(telem_service.init());
+
+    // Accepter la connexion entrante du TelemetryService
+    int client_fd = -1;
+    for (int retry = 0; retry < 10; ++retry) {
+        client_fd = ::accept(server_fd, nullptr, nullptr);
+        if (client_fd >= 0) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    assert(client_fd >= 0);
+    std::cout << "  ✓ TelemetryService s'est connecté avec succès au socket POSIX des services." << std::endl;
+
+    // 3. Tester l'envoi de commandes via la connexion POSIX
+    assert(telem_service.send_posix_message("trigger_start"));
+
+    char rx_buf[128]{};
+    ssize_t n = ::recv(client_fd, rx_buf, sizeof(rx_buf) - 1, 0);
+    assert(n > 0);
+    assert(std::string(rx_buf).find("trigger_start") != std::string::npos);
+    std::cout << "  ✓ Commande 'trigger_start' correctement transmise via le socket POSIX." << std::endl;
+
+    assert(telem_service.send_posix_message("emergency_stop"));
+    std::memset(rx_buf, 0, sizeof(rx_buf));
+    n = ::recv(client_fd, rx_buf, sizeof(rx_buf) - 1, 0);
+    assert(n > 0);
+    assert(std::string(rx_buf).find("emergency_stop") != std::string::npos);
+    std::cout << "  ✓ Commande 'emergency_stop' correctement transmise via le socket POSIX." << std::endl;
+
+    ::close(client_fd);
+    ::close(server_fd);
+    ::unlink(mock_sock_path.c_str());
+
+    telem_service.stop();
+}
+
+void test_tcp_command_packet_redirect_without_crc() {
+    std::cout << "[TEST] TelemetryService - Réception TCP & Redirection du paquet de commande sans CRC..." << std::endl;
+
+    const std::string mock_posix_path = "/tmp/test_posix_redirect.sock";
+    ::unlink(mock_posix_path.c_str());
+
+    // 1. Démarrer le serveur POSIX écoutant les commandes redirigées
+    int posix_server_fd = ::socket(AF_UNIX, SOCK_STREAM, 0);
+    assert(posix_server_fd >= 0);
+
+    struct sockaddr_un saddr{};
+    saddr.sun_family = AF_UNIX;
+    std::strncpy(saddr.sun_path, mock_posix_path.c_str(), sizeof(saddr.sun_path) - 1);
+    assert(::bind(posix_server_fd, reinterpret_cast<struct sockaddr*>(&saddr), sizeof(saddr)) == 0);
+    assert(::listen(posix_server_fd, 5) == 0);
+
+    int flags = fcntl(posix_server_fd, F_GETFL, 0);
+    fcntl(posix_server_fd, F_SETFL, flags | O_NONBLOCK);
+
+    // 2. Démarrer TelemetryService sur le port TCP 9393 et relié au socket POSIX
+    const int tcp_port = 9393;
+    services::TelemetryService telem_service(50, false, tcp_port, 0, mock_posix_path);
+    assert(telem_service.init());
+
+    std::thread th([&]() {
+        telem_service.run();
+    });
+
+    // Accepter la connexion POSIX de TelemetryService
+    int posix_client_fd = -1;
+    for (int retry = 0; retry < 15; ++retry) {
+        posix_client_fd = ::accept(posix_server_fd, nullptr, nullptr);
+        if (posix_client_fd >= 0) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    assert(posix_client_fd >= 0);
+
+    // 3. Connecter un client TCP à TelemetryService
+    int tcp_client = ::socket(AF_INET, SOCK_STREAM, 0);
+    assert(tcp_client >= 0);
+
+    struct sockaddr_in serv_addr{};
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(tcp_port);
+    serv_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+
+    int conn_res = -1;
+    for (int retry = 0; retry < 10; ++retry) {
+        conn_res = ::connect(tcp_client, reinterpret_cast<struct sockaddr*>(&serv_addr), sizeof(serv_addr));
+        if (conn_res == 0) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    assert(conn_res == 0);
+
+    // Handshake Ping-Pong
+    shared::headers::PacketHeader ping_hdr{};
+    ping_hdr.type = shared::headers::HeadersType::Command;
+    ping_hdr.headerFlag = shared::headers::flags::REPLY_REQUESTED | shared::headers::flags::CRC_ENABLED;
+    ping_hdr.seqNumber = 101;
+    uint32_t ping_val = static_cast<uint32_t>(shared::commands::CommandID::Ping);
+    ping_hdr.payloadLength = sizeof(ping_val);
+    auto ping_pkt = shared::headers::serializePacket(ping_hdr, reinterpret_cast<const uint8_t*>(&ping_val), sizeof(ping_val));
+    assert(::send(tcp_client, ping_pkt.data(), ping_pkt.size(), 0) == static_cast<ssize_t>(ping_pkt.size()));
+
+    size_t pong_len = sizeof(shared::headers::PacketHeader) + sizeof(uint32_t) + sizeof(shared::crc::PacketCRC);
+    std::vector<uint8_t> pong_rx(pong_len);
+    size_t rx_total = 0;
+    while (rx_total < pong_len) {
+        ssize_t r = ::recv(tcp_client, pong_rx.data() + rx_total, pong_len - rx_total, 0);
+        assert(r > 0);
+        rx_total += r;
+    }
+
+    // 4. Envoyer un paquet de commande avec CRC depuis le client TCP
+    shared::headers::PacketHeader cmd_hdr{};
+    cmd_hdr.type = shared::headers::HeadersType::Command;
+    cmd_hdr.headerFlag = shared::headers::flags::CRC_ENABLED;
+    cmd_hdr.seqNumber = 777;
+
+    shared::commands::CommandsHeader cmd_payload{};
+    cmd_payload.serviceID = shared::commands::ServiceID::FSM;
+    cmd_payload.commandID = shared::commands::CommandID::SetActive;
+    cmd_payload.payloadLen = 0;
+    cmd_hdr.payloadLength = sizeof(cmd_payload);
+
+    auto tcp_cmd_packet = shared::headers::serializePacket(
+        cmd_hdr,
+        reinterpret_cast<const uint8_t*>(&cmd_payload),
+        sizeof(cmd_payload)
+    );
+
+    // Le paquet TCP contient bien le CRC (PacketHeader + payload + PacketCRC)
+    size_t expected_tcp_len = sizeof(shared::headers::PacketHeader) + sizeof(cmd_payload) + sizeof(shared::crc::PacketCRC);
+    assert(tcp_cmd_packet.size() == expected_tcp_len);
+
+    assert(::send(tcp_client, tcp_cmd_packet.data(), tcp_cmd_packet.size(), 0) == static_cast<ssize_t>(tcp_cmd_packet.size()));
+    std::cout << "  ✓ Paquet de commande envoyé par client TCP (avec CRC, seq=777, ServiceID=FSM)." << std::endl;
+
+    // 5. Vérifier que le socket POSIX reçoit le même paquet commande SANS LE CRC
+    size_t expected_posix_len = sizeof(shared::headers::PacketHeader) + sizeof(cmd_payload);
+    std::vector<uint8_t> posix_rx(expected_posix_len);
+    size_t posix_received = 0;
+
+    struct pollfd pfd{};
+    pfd.fd = posix_client_fd;
+    pfd.events = POLLIN;
+
+    for (int retry = 0; retry < 20 && posix_received < expected_posix_len; ++retry) {
+        if (poll(&pfd, 1, 50) > 0 && (pfd.revents & POLLIN)) {
+            ssize_t n = ::recv(posix_client_fd, posix_rx.data() + posix_received, expected_posix_len - posix_received, 0);
+            if (n > 0) posix_received += n;
+        }
+    }
+
+    assert(posix_received == expected_posix_len);
+    std::cout << "  ✓ Taille du paquet POSIX reçu : " << posix_received << " octets (exactement sans CRC)." << std::endl;
+
+    // Validation du paquet reçu sur le socket POSIX
+    shared::headers::PacketHeader received_posix_hdr{};
+    std::memcpy(&received_posix_hdr, posix_rx.data(), sizeof(received_posix_hdr));
+
+    assert(received_posix_hdr.type == shared::headers::HeadersType::Command);
+    assert(received_posix_hdr.seqNumber == 777);
+    assert(received_posix_hdr.payloadLength == sizeof(cmd_payload));
+    assert((received_posix_hdr.headerFlag & shared::headers::flags::CRC_ENABLED) == 0); // CRC désactivé
+
+    shared::commands::CommandsHeader received_cmd{};
+    std::memcpy(&received_cmd, posix_rx.data() + sizeof(received_posix_hdr), sizeof(received_cmd));
+    assert(received_cmd.serviceID == shared::commands::ServiceID::FSM);
+    assert(received_cmd.commandID == shared::commands::CommandID::SetActive);
+
+    std::cout << "  ✓ Redirection POSIX validée : Header identique, CRC exclu, ServiceID=FSM, CommandID=SetActive." << std::endl;
+
+    // Nettoyage
+    ::close(tcp_client);
+    ::close(posix_client_fd);
+    ::close(posix_server_fd);
+    ::unlink(mock_posix_path.c_str());
+
+    telem_service.stop();
+    if (th.joinable()) th.join();
+}
+
 int main() {
     std::cout << "===============================================" << std::endl;
     std::cout << "   PiCar C++17 - Tests Unitaires Télémétrie   " << std::endl;
@@ -409,6 +612,8 @@ int main() {
     test_telemetry_acceleration_alert();
     test_tcp_server_ping_pong_and_stream();
     test_usb_fifo_direct_streaming();
+    test_posix_connection_and_command_forwarding();
+    test_tcp_command_packet_redirect_without_crc();
 
     std::cout << "===============================================" << std::endl;
     std::cout << "   TOUS LES TESTS DE TÉLÉMÉTRIE ONT RÉUSSI !   " << std::endl;
@@ -416,3 +621,5 @@ int main() {
 
     return 0;
 }
+
+
