@@ -24,6 +24,12 @@ FSM::~FSM() {
 
 bool FSM::check_start_trigger() {
     if (m_event_pipe_fd < 0) {
+        struct stat st;
+        if (stat(m_event_pipe_path.c_str(), &st) == 0 && !S_ISFIFO(st.st_mode)) {
+            unlink(m_event_pipe_path.c_str());
+        }
+        mkfifo(m_event_pipe_path.c_str(), 0666);
+        chmod(m_event_pipe_path.c_str(), 0666);
         m_event_pipe_fd = open(m_event_pipe_path.c_str(), O_RDWR | O_NONBLOCK);
         if (m_event_pipe_fd < 0) return false;
     }
@@ -129,15 +135,24 @@ bool FSM::init() {
         std::cerr << "[FSM] Warning: MemoryShare subscriber/publisher: " << e.what() << std::endl;
     }
 
-    // Préparation du tube d'événements POSIX (FIFO /tmp/peripheral)
+    // Préparation du tube d'événements POSIX (FIFO /tmp/peripherals.sock)
+    struct stat st;
+    if (stat(m_event_pipe_path.c_str(), &st) == 0) {
+        if (!S_ISFIFO(st.st_mode)) {
+            // Nettoyage automatique si le fichier existant est un socket UNIX ou un fichier ordinaire
+            unlink(m_event_pipe_path.c_str());
+        }
+    }
     mkfifo(m_event_pipe_path.c_str(), 0666);
+    chmod(m_event_pipe_path.c_str(), 0666);
     m_event_pipe_fd = open(m_event_pipe_path.c_str(), O_RDWR | O_NONBLOCK);
     if (m_event_pipe_fd >= 0) {
         char drain[128];
         while (read(m_event_pipe_fd, drain, sizeof(drain)) > 0) {}
         std::cout << "[FSM] Écoute des événements POSIX prête sur " << m_event_pipe_path << std::endl;
     } else {
-        std::cerr << "[FSM] Attention : impossible d'ouvrir le tube d'événements " << m_event_pipe_path << std::endl;
+        std::cerr << "[FSM] Attention : impossible d'ouvrir le tube d'événements " << m_event_pipe_path 
+                  << " (" << std::strerror(errno) << ")" << std::endl;
     }
 
     transition_to(shared::fsm::MachineStates::Init);
