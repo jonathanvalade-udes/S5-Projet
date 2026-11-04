@@ -1,0 +1,312 @@
+#include "WebServer.hpp"
+
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <cstring>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <poll.h>
+#include <algorithm>
+
+namespace telemetry {
+
+WebServer::WebServer(int port, const std::string& web_root)
+    : m_port(port), m_web_root(web_root) {}
+
+WebServer::~WebServer() {
+    stop();
+}
+
+bool WebServer::start() {
+    if (m_running.load()) return true;
+
+    int sfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sfd < 0) {
+        std::cerr << "[WebServer] Erreur de création du socket HTTP." << std::endl;
+        return false;
+    }
+
+    int opt = 1;
+    setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+#if defined(SO_REUSEPORT)
+    setsockopt(sfd, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt));
+#endif
+
+    struct sockaddr_in serv_addr{};
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_addr.s_addr = INADDR_ANY;
+    serv_addr.sin_port = htons(m_port);
+
+    if (bind(sfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
+        std::cerr << "[WebServer] Échec du bind sur le port web " << m_port << "." << std::endl;
+        close(sfd);
+        return false;
+    }
+
+    if (listen(sfd, 16) < 0) {
+        std::cerr << "[WebServer] Échec du listen sur le port web " << m_port << "." << std::endl;
+        close(sfd);
+        return false;
+    }
+
+    m_server_fd = sfd;
+    m_running.store(true);
+    m_thread = std::thread(&WebServer::server_loop, this);
+
+    std::cout << "[WebServer] Dashboard Web accessible sur http://localhost:" << m_port << std::endl;
+    return true;
+}
+
+void WebServer::stop() {
+    if (!m_running.load()) return;
+    m_running.store(false);
+
+    if (m_server_fd >= 0) {
+        close(m_server_fd);
+        m_server_fd = -1;
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(m_sse_mutex);
+        for (int cfd : m_sse_clients) {
+            close(cfd);
+        }
+        m_sse_clients.clear();
+    }
+
+    if (m_thread.joinable()) {
+        m_thread.join();
+    }
+    std::cout << "[WebServer] Serveur Web arrêté." << std::endl;
+}
+
+void WebServer::server_loop() {
+    while (m_running.load()) {
+        struct pollfd pfd{};
+        pfd.fd = m_server_fd;
+        pfd.events = POLLIN;
+
+        int ret = poll(&pfd, 1, 200);
+        if (ret <= 0 || !(pfd.revents & POLLIN)) {
+            continue;
+        }
+
+        struct sockaddr_in client_addr{};
+        socklen_t client_len = sizeof(client_addr);
+        int client_fd = accept(m_server_fd, (struct sockaddr*)&client_addr, &client_len);
+        if (client_fd < 0) {
+            continue;
+        }
+
+        // Rendre non-bloquant ou timeout
+        struct timeval tv;
+        tv.tv_sec = 2;
+        tv.tv_usec = 0;
+        setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
+        setsockopt(client_fd, SOL_SOCKET, SO_SNDTIMEO, (const char*)&tv, sizeof tv);
+
+        char buf[4096];
+        ssize_t n = recv(client_fd, buf, sizeof(buf) - 1, 0);
+        if (n <= 0) {
+            close(client_fd);
+            continue;
+        }
+        buf[n] = '\0';
+
+        std::string request_str(buf);
+        handle_http_request(client_fd, request_str);
+    }
+}
+
+void WebServer::handle_http_request(int client_fd, const std::string& request) {
+    std::istringstream req_stream(request);
+    std::string method, path, version;
+    req_stream >> method >> path >> version;
+
+    if (method == "OPTIONS") {
+        send_response(client_fd, 204, "text/plain", "");
+        close(client_fd);
+        return;
+    }
+
+    if (method == "GET") {
+        if (path == "/" || path == "/index.html") {
+            serve_file(client_fd, m_web_root + "/index.html", "text/html; charset=utf-8");
+            close(client_fd);
+        } else if (path == "/style.css") {
+            serve_file(client_fd, m_web_root + "/style.css", "text/css; charset=utf-8");
+            close(client_fd);
+        } else if (path == "/app.js") {
+            serve_file(client_fd, m_web_root + "/app.js", "application/javascript; charset=utf-8");
+            close(client_fd);
+        } else if (path == "/api/status") {
+            std::string st;
+            {
+                std::lock_guard<std::mutex> lock(m_last_state_mutex);
+                st = m_last_status_json;
+            }
+            send_response(client_fd, 200, "application/json", st);
+            close(client_fd);
+        } else if (path == "/api/stream") {
+            // Configuration du flux Server-Sent Events (SSE)
+            std::string sse_hdr = 
+                "HTTP/1.1 200 OK\r\n"
+                "Content-Type: text/event-stream\r\n"
+                "Cache-Control: no-cache\r\n"
+                "Connection: keep-alive\r\n"
+                "Access-Control-Allow-Origin: *\r\n\r\n";
+
+            send(client_fd, sse_hdr.data(), sse_hdr.size(), 0);
+
+            // Envoi immédiat du dernier état
+            std::string init_data;
+            {
+                std::lock_guard<std::mutex> lock(m_last_state_mutex);
+                init_data = "event: status\ndata: " + m_last_status_json + "\n\n"
+                          + "event: telemetry\ndata: " + m_last_telemetry_json + "\n\n";
+            }
+            send(client_fd, init_data.data(), init_data.size(), 0);
+
+            // Conserver le socket ouvert dans la liste SSE
+            {
+                std::lock_guard<std::mutex> lock(m_sse_mutex);
+                m_sse_clients.push_back(client_fd);
+            }
+            // Ne pas fermer le socket client_fd ici !
+        } else {
+            send_response(client_fd, 404, "text/plain", "404 Not Found");
+            close(client_fd);
+        }
+    } else if (method == "POST" && path == "/api/command") {
+        // Extraction du corps de la requête
+        size_t body_pos = request.find("\r\n\r\n");
+        std::string body;
+        if (body_pos != std::string::npos) {
+            body = request.substr(body_pos + 4);
+        }
+
+        // Nettoyage éventuel (suppression retours à la ligne ou quotes)
+        body.erase(std::remove(body.begin(), body.end(), '\r'), body.end());
+        body.erase(std::remove(body.begin(), body.end(), '\n'), body.end());
+
+        // Support d'un format JSON {"command":"..."} ou texte brut
+        std::string command_to_execute = body;
+        size_t cmd_idx = body.find("\"command\":");
+        if (cmd_idx != std::string::npos) {
+            size_t first_quote = body.find('"', cmd_idx + 10);
+            size_t second_quote = body.find('"', first_quote + 1);
+            if (first_quote != std::string::npos && second_quote != std::string::npos) {
+                command_to_execute = body.substr(first_quote + 1, second_quote - first_quote - 1);
+            }
+        }
+
+        if (m_command_cb && !command_to_execute.empty()) {
+            m_command_cb(command_to_execute);
+        }
+
+        std::string resp_json = "{\"status\":\"ok\",\"command\":\"" + command_to_execute + "\"}";
+        send_response(client_fd, 200, "application/json", resp_json);
+        close(client_fd);
+    } else {
+        send_response(client_fd, 405, "text/plain", "Method Not Allowed");
+        close(client_fd);
+    }
+}
+
+void WebServer::serve_file(int client_fd, const std::string& filepath, const std::string& content_type) {
+    std::ifstream file(filepath, std::ios::binary);
+    if (!file.is_open()) {
+        send_response(client_fd, 404, "text/plain", "File Not Found: " + filepath);
+        return;
+    }
+
+    std::ostringstream ss;
+    ss << file.rdbuf();
+    std::string content = ss.str();
+
+    send_response(client_fd, 200, content_type, content);
+}
+
+void WebServer::send_response(int client_fd, int status_code, const std::string& content_type, const std::string& body) {
+    std::ostringstream ss;
+    ss << "HTTP/1.1 " << status_code << " " << (status_code == 200 ? "OK" : (status_code == 204 ? "No Content" : "Error")) << "\r\n";
+    ss << "Content-Type: " << content_type << "\r\n";
+    ss << "Content-Length: " << body.size() << "\r\n";
+    ss << "Access-Control-Allow-Origin: *\r\n";
+    ss << "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n";
+    ss << "Access-Control-Allow-Headers: Content-Type\r\n";
+    ss << "Connection: close\r\n\r\n";
+    ss << body;
+
+    std::string resp = ss.str();
+    send(client_fd, resp.data(), resp.size(), 0);
+}
+
+void WebServer::broadcast_telemetry(const std::string& json_data) {
+    {
+        std::lock_guard<std::mutex> lock(m_last_state_mutex);
+        m_last_telemetry_json = json_data;
+    }
+
+    std::string message = "event: telemetry\ndata: " + json_data + "\n\n";
+
+    std::lock_guard<std::mutex> lock(m_sse_mutex);
+    std::vector<int> active_clients;
+
+    for (int cfd : m_sse_clients) {
+        int flags = 0;
+#if defined(MSG_NOSIGNAL)
+        flags |= MSG_NOSIGNAL;
+#endif
+        ssize_t sent = send(cfd, message.data(), message.size(), flags);
+        if (sent > 0) {
+            active_clients.push_back(cfd);
+        } else {
+            close(cfd);
+        }
+    }
+
+    m_sse_clients = std::move(active_clients);
+}
+
+void WebServer::broadcast_status(bool robot_connected, const std::string& robot_ip, int robot_port) {
+    std::ostringstream ss;
+    ss << "{"
+       << "\"connected\":" << (robot_connected ? "true" : "false") << ","
+       << "\"ip\":\"" << robot_ip << "\","
+       << "\"port\":" << robot_port
+       << "}";
+
+    std::string json = ss.str();
+    {
+        std::lock_guard<std::mutex> lock(m_last_state_mutex);
+        m_last_status_json = json;
+    }
+
+    std::string message = "event: status\ndata: " + json + "\n\n";
+
+    std::lock_guard<std::mutex> lock(m_sse_mutex);
+    std::vector<int> active_clients;
+
+    for (int cfd : m_sse_clients) {
+        int flags = 0;
+#if defined(MSG_NOSIGNAL)
+        flags |= MSG_NOSIGNAL;
+#endif
+        ssize_t sent = send(cfd, message.data(), message.size(), flags);
+        if (sent > 0) {
+            active_clients.push_back(cfd);
+        } else {
+            close(cfd);
+        }
+    }
+
+    m_sse_clients = std::move(active_clients);
+}
+
+} // namespace telemetry

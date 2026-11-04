@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FastDrink — Telemetry Client & Control Hub</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header class="navbar">
+        <div class="brand">
+            <span class="logo-icon">🏎️</span>
+            <h1>FastDrink <span>Telemetry Hub</span></h1>
+        </div>
+        <div class="status-bar">
+            <div id="connection-status" class="status-badge disconnected">
+                <span class="status-dot"></span>
+                <span id="connection-text">Déconnecté</span>
+            </div>
+            <div class="info-pill">
+                <span class="pill-label">Cible:</span>
+                <span id="target-address">--:--</span>
+            </div>
+            <div class="info-pill">
+                <span class="pill-label">Trames:</span>
+                <span id="packet-seq">0</span>
+            </div>
+            <div class="info-pill">
+                <span class="pill-label">Fréquence:</span>
+                <span id="packet-rate">0 Hz</span>
+            </div>
+        </div>
+    </header>
+
+    <main class="dashboard-grid">
+        <!-- Section Commandes Rapides -->
+        <section class="card quick-actions-card">
+            <h2>⚡ Commandes Prioritaires</h2>
+            <div class="actions-group">
+                <button id="btn-start" class="btn btn-start" onclick="sendCommand('trigger_start')">
+                    ▶ DÉPART FSM
+                </button>
+                <button id="btn-stop" class="btn btn-stop" onclick="sendCommand('emergency_stop')">
+                    🛑 ARRÊT D'URGENCE
+                </button>
+                <button id="btn-export" class="btn btn-export" onclick="sendCommand('export_usb')">
+                    💾 EXPORT USB / FLUSH
+                </button>
+            </div>
+        </section>
+
+        <!-- Section Machine d'État FSM -->
+        <section class="card fsm-card">
+            <h2>🧠 État FSM Robot</h2>
+            <div class="fsm-display">
+                <div id="fsm-badge" class="fsm-state-badge state-init">Initialisation</div>
+                <div class="fsm-id-text">Code État : <span id="fsm-id">0</span></div>
+            </div>
+        </section>
+
+        <!-- Section Capteur Ultrasons -->
+        <section class="card sonar-card">
+            <h2>📡 Distance Ultrasons (HC-SR04)</h2>
+            <div class="metric-container">
+                <div class="metric-value-huge">
+                    <span id="sonar-dist">--</span> <span class="unit">cm</span>
+                </div>
+                <div class="sonar-bar-container">
+                    <div id="sonar-progress" class="sonar-bar" style="width: 50%;"></div>
+                </div>
+                <div class="metric-meta">
+                    <span>Brute: <b id="sonar-raw">--</b> cm</span>
+                    <span>Zone: <b id="sonar-zone">Normal</b></span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section Capteurs de Suivi de Ligne -->
+        <section class="card line-card">
+            <h2>🛤️ Capteurs Suivi de Ligne (5x TCRT5000)</h2>
+            <div class="line-sensors-visual">
+                <div class="sensor-node" id="sensor-0">
+                    <div class="sensor-indicator"></div>
+                    <span class="sensor-label">S1 (-2)</span>
+                    <span class="sensor-val" id="sval-0">0.00</span>
+                </div>
+                <div class="sensor-node" id="sensor-1">
+                    <div class="sensor-indicator"></div>
+                    <span class="sensor-label">S2 (-1)</span>
+                    <span class="sensor-val" id="sval-1">0.00</span>
+                </div>
+                <div class="sensor-node" id="sensor-2">
+                    <div class="sensor-indicator"></div>
+                    <span class="sensor-label">S3 (0)</span>
+                    <span class="sensor-val" id="sval-2">0.00</span>
+                </div>
+                <div class="sensor-node" id="sensor-3">
+                    <div class="sensor-indicator"></div>
+                    <span class="sensor-label">S4 (+1)</span>
+                    <span class="sensor-val" id="sval-3">0.00</span>
+                </div>
+                <div class="sensor-node" id="sensor-4">
+                    <div class="sensor-indicator"></div>
+                    <span class="sensor-label">S5 (+2)</span>
+                    <span class="sensor-val" id="sval-4">0.00</span>
+                </div>
+            </div>
+            <div class="line-meta">
+                <span>Statut : <b id="line-status">Recherche...</b></span>
+            </div>
+        </section>
+
+        <!-- Section Moteurs & Direction -->
+        <section class="card motor-card">
+            <h2>⚙️ Moteurs & Servomoteur</h2>
+            <div class="motor-grid">
+                <div class="motor-box">
+                    <div class="box-title">Moteur Gauche</div>
+                    <div class="throttle-gauge">
+                        <div id="motor-left-fill" class="gauge-fill" style="width: 0%;"></div>
+                    </div>
+                    <div class="metric-meta">
+                        <span>Consigne: <b id="motor-left-tgt">0%</b></span>
+                        <span>Appliqué: <b id="motor-left-app">0%</b></span>
+                    </div>
+                </div>
+                <div class="motor-box">
+                    <div class="box-title">Moteur Droit</div>
+                    <div class="throttle-gauge">
+                        <div id="motor-right-fill" class="gauge-fill" style="width: 0%;"></div>
+                    </div>
+                    <div class="metric-meta">
+                        <span>Consigne: <b id="motor-right-tgt">0%</b></span>
+                        <span>Appliqué: <b id="motor-right-app">0%</b></span>
+                    </div>
+                </div>
+            </div>
+            <div class="steering-box">
+                <div class="box-title">Angle de Braquage Direction : <span id="steering-val">0.0°</span></div>
+                <div class="steering-gauge-bar">
+                    <div class="steering-center-mark"></div>
+                    <div id="steering-indicator" class="steering-pointer" style="left: 50%;"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section Édition & Ajustement des Paramètres -->
+        <section class="card config-card">
+            <h2>🔧 Ajustement Dynamique des Paramètres</h2>
+            <div class="config-table">
+                <div class="config-row">
+                    <div class="config-label-group">
+                        <span class="config-name">MAX_ACCELERATION</span>
+                        <span class="config-unit">Limite dynamique (m/s²)</span>
+                    </div>
+                    <div class="config-input-group">
+                        <input type="number" step="0.05" id="cfg-accel" value="0.55">
+                        <button class="btn-sm" onclick="applyParam('MAX_ACCELERATION', 'cfg-accel')">Appliquer</button>
+                    </div>
+                </div>
+                <div class="config-row">
+                    <div class="config-label-group">
+                        <span class="config-name">CRUISE_SPEED</span>
+                        <span class="config-unit">Vitesse ligne droite (%)</span>
+                    </div>
+                    <div class="config-input-group">
+                        <input type="number" step="1" id="cfg-cruise" value="40">
+                        <button class="btn-sm" onclick="applyParam('CRUISE_SPEED', 'cfg-cruise')">Appliquer</button>
+                    </div>
+                </div>
+                <div class="config-row">
+                    <div class="config-label-group">
+                        <span class="config-name">MIN_CURVE_SPEED</span>
+                        <span class="config-unit">Plancher virage serré (%)</span>
+                    </div>
+                    <div class="config-input-group">
+                        <input type="number" step="1" id="cfg-curve" value="25">
+                        <button class="btn-sm" onclick="applyParam('MIN_CURVE_SPEED', 'cfg-curve')">Appliquer</button>
+                    </div>
+                </div>
+                <div class="config-row">
+                    <div class="config-label-group">
+                        <span class="config-name">LINE_KP</span>
+                        <span class="config-unit">Gain proportionnel direction</span>
+                    </div>
+                    <div class="config-input-group">
+                        <input type="number" step="0.05" id="cfg-kp" value="0.35">
+                        <button class="btn-sm" onclick="applyParam('LINE_KP', 'cfg-kp')">Appliquer</button>
+                    </div>
+                </div>
+                <div class="config-row">
+                    <div class="config-label-group">
+                        <span class="config-name">LINE_KD</span>
+                        <span class="config-unit">Gain dérivé amortissement</span>
+                    </div>
+                    <div class="config-input-group">
+                        <input type="number" step="0.05" id="cfg-kd" value="0.15">
+                        <button class="btn-sm" onclick="applyParam('LINE_KD', 'cfg-kd')">Appliquer</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section Console de Commandes Personnalisées -->
+        <section class="card console-card">
+            <h2>💻 Console de Commandes TCP</h2>
+            <form id="command-form" class="cmd-form" onsubmit="event.preventDefault(); submitCustomCommand();">
+                <input type="text" id="custom-cmd-input" placeholder="Tapez une commande (ex: trigger_start, MAX_ACCELERATION=0.6, emergency_stop)..." autocomplete="off">
+                <button type="submit" class="btn btn-send">Envoyer</button>
+            </form>
+            <div id="cmd-logs" class="console-logs">
+                <div class="log-entry system">Console initialisée. Prêt pour les commandes.</div>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <p>Projet FastDrink S5-GI &bull; Architecture Microservices C++17 &bull; Docker Hub</p>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+</html>
