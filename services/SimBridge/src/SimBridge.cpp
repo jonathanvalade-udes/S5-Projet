@@ -255,6 +255,7 @@ void SimBridge::run() {
                     float target_steer = m_telemetry->target_steering;
                     bool emergency = m_telemetry->emergency_stop;
                     float current_dist = m_telemetry->filtered_dist;
+                    float cruise_cfg = (m_telemetry->cfg_cruise_speed > 0.05f) ? m_telemetry->cfg_cruise_speed : 0.40f;
                     uint8_t current_lines[5];
                     for (int i = 0; i < 5; ++i) {
                         current_lines[i] = m_telemetry->line_sensors[i];
@@ -262,9 +263,8 @@ void SimBridge::run() {
                     pthread_mutex_unlock(&(m_telemetry->mtx));
 
                     GodotCommandOut cmd_out;
-                    // Harmonisation stricte avec FSM::STRAIGHT_CRUISE_SPEED = 0.32 m/s :
-                    // (target_spd / 50.0f) * 0.32f produit exactement la vitesse physique en m/s
-                    cmd_out.velocity = (target_spd / 50.0f) * 0.32f;
+                    // Vitesse physique réelle respectant STRAIGHT_CRUISE_SPEED dynamique de SHM
+                    cmd_out.velocity = (target_spd / 50.0f) * cruise_cfg;
                     // Normalisation de l'angle de braquage [-1.0, 1.0] pour l'épure d'Ackermann de Godot (+-48°)
                     cmd_out.direction = std::clamp(target_steer / 45.0f, -1.0f, 1.0f);
                     cmd_out.brake = emergency;
