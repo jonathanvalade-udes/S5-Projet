@@ -64,6 +64,7 @@ bool FSM::init() {
     m_straight_cruise_speed = cfg.cruise_speed;
     m_min_curve_speed       = cfg.min_curve_speed;
     m_curve_safety_factor   = cfg.curve_safety_factor;
+    m_predictive_brake_gain = cfg.predictive_brake_gain;
     m_line_kp               = cfg.line_kp;
     m_line_kd               = cfg.line_kd;
     m_obstacle_stop_dist_cm = cfg.obstacle_stop_dist_cm;
@@ -85,6 +86,7 @@ bool FSM::init() {
                 m_telemetry->cfg_cruise_speed     = m_straight_cruise_speed;
                 m_telemetry->cfg_min_curve_speed  = m_min_curve_speed;
                 m_telemetry->cfg_curve_safety_factor = m_curve_safety_factor;
+                m_telemetry->cfg_predictive_brake_gain = m_predictive_brake_gain;
                 m_telemetry->cfg_line_kp          = m_line_kp;
                 m_telemetry->cfg_line_kd          = m_line_kd;
                 m_telemetry->cfg_version          = 1;
@@ -149,6 +151,9 @@ void FSM::run() {
                 m_curve_safety_factor   = (m_telemetry->cfg_curve_safety_factor > 0.1f) 
                                             ? m_telemetry->cfg_curve_safety_factor 
                                             : m_curve_safety_factor;
+                m_predictive_brake_gain = (m_telemetry->cfg_predictive_brake_gain >= 0.0f)
+                                            ? m_telemetry->cfg_predictive_brake_gain
+                                            : m_predictive_brake_gain;
                 m_line_kp               = m_telemetry->cfg_line_kp;
                 m_line_kd               = m_telemetry->cfg_line_kd;
 
@@ -273,7 +278,7 @@ void FSM::run() {
 
             case shared::fsm::MachineStates::LineFollowingForward: {
                 LineFollowerOutput line_out = m_line_controller ? m_line_controller->update_analog(line_darkness, dt)
-                                                                : LineFollowerOutput{0.0f, 0.0f, m_straight_cruise_speed, false, false};
+                                                                : LineFollowerOutput{0.0f, 0.0f, m_straight_cruise_speed, 0.0f, false, false};
                 desired_steering = line_out.steer_degrees;
 
                 // Vitesse adaptative basée sur la physique centrifuge d'Ackermann :
@@ -283,6 +288,15 @@ void FSM::run() {
                     ? m_motion_profiler->calculate_curve_speed_ackermann(
                           desired_steering, m_straight_cruise_speed, m_min_curve_speed, m_curve_safety_factor)
                     : m_straight_cruise_speed;
+
+                // Feedforward prédictif : si l'erreur de ligne évolue rapidement (entrée de virage imminente),
+                // on freine AVANT que l'angle d'Ackermann soit au maximum — compense la latence ~60-80 ms.
+                // Sans lui, le robot est déjà en plein virage quand le MotionProfiler ralentit.
+                if (m_motion_profiler && m_predictive_brake_gain > 0.0f) {
+                    adaptive_velocity = m_motion_profiler->apply_predictive_brake(
+                        line_out.d_error_dt, adaptive_velocity, m_predictive_brake_gain);
+                }
+
                 desired_velocity = adaptive_velocity;
 
                 if (line_out.is_finished) {
