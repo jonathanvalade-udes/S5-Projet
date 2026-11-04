@@ -22,6 +22,9 @@ void FSM::transition_to(shared::fsm::MachineStates new_state) {
         m_current_state = new_state;
         m_state_timer = 0.0f;
         m_state_distance = 0.0f;
+        m_dev_phase = 0;
+        m_dev_phase_distance = 0.0f;
+        m_dev_heading = 0.0f;
     }
 }
 
@@ -77,6 +80,55 @@ bool FSM::init() {
     transition_to(shared::fsm::MachineStates::Init);
     m_running.store(true);
     return true;
+}
+
+// Contournement d'un obstacle posé sur la ligne (cube ~15 cm), en boucle ouverte sur l'odométrie :
+//   0. recul de 8 cm (le pare-chocs est trop près du cube pour braquer sans le toucher),
+//   1. arc à braquage maximal du côté `side` jusqu'à un cap de 70° (le cube est dépassé latéralement),
+//   2. arc inverse jusqu'à retrouver le cap initial (la voiture roule parallèle à la ligne, ~18 cm à côté),
+//   3. 15 cm en ligne droite, puis LineSearching ramène la voiture sur le ruban.
+// Géométrie validée par simulation : sans le recul ou avec un cap < 70°, le coin de la voiture touche le cube.
+// side = +1 : droite (RightDeviation), -1 : gauche. Retourne true quand la manoeuvre est terminée.
+bool FSM::run_obstacle_deviation(float side, float dt, float& steering_deg, float& velocity) {
+    constexpr float REVERSE_DISTANCE_M = 0.08f;
+    constexpr float FORWARD_SPEED = 0.16f;
+    constexpr float REVERSE_SPEED = 0.12f;
+    constexpr float ARC_STEER_DEG = 45.0f;
+    constexpr float ARC_HEADING_DEG = 70.0f;
+    constexpr float PARALLEL_DISTANCE_M = 0.15f;
+    constexpr float WHEELBASE_M = 0.14f;
+    constexpr float STEER_DEG_TO_REAL = 48.0f / 45.0f;   // le simulateur convertit 45° commandés en 48° de roue
+    constexpr float TIMEOUT_S = 10.0f;                   // sécurité : on laisse LineSearching reprendre la main
+
+    m_state_timer += dt;
+    const float v = m_motion_profiler ? m_motion_profiler->get_current_speed() : 0.0f;
+    m_dev_phase_distance += std::abs(v) * dt;
+
+    switch (m_dev_phase) {
+        case 0:
+            steering_deg = 0.0f;
+            velocity = -REVERSE_SPEED;
+            if (m_dev_phase_distance >= REVERSE_DISTANCE_M) { m_dev_phase = 1; m_dev_phase_distance = 0.0f; }
+            break;
+        case 1:
+            steering_deg = side * ARC_STEER_DEG;
+            velocity = FORWARD_SPEED;
+            m_dev_heading += v / WHEELBASE_M * std::tan(steering_deg * STEER_DEG_TO_REAL * 3.14159265f / 180.0f) * dt * side;
+            if (m_dev_heading >= ARC_HEADING_DEG * 3.14159265f / 180.0f) { m_dev_phase = 2; m_dev_phase_distance = 0.0f; }
+            break;
+        case 2:
+            steering_deg = -side * ARC_STEER_DEG;
+            velocity = FORWARD_SPEED;
+            m_dev_heading += v / WHEELBASE_M * std::tan(steering_deg * STEER_DEG_TO_REAL * 3.14159265f / 180.0f) * dt * side;
+            if (m_dev_heading <= 0.0f) { m_dev_phase = 3; m_dev_phase_distance = 0.0f; }
+            break;
+        default:
+            steering_deg = 0.0f;
+            velocity = FORWARD_SPEED;
+            if (m_dev_phase_distance >= PARALLEL_DISTANCE_M) return true;
+            break;
+    }
+    return m_state_timer >= TIMEOUT_S;
 }
 
 void FSM::run() {
@@ -302,31 +354,11 @@ void FSM::run() {
                 break;
             }
 
-            case shared::fsm::MachineStates::RightDeviation: {
-                m_state_timer += dt;
-                desired_steering = 25.0f;  // Angle de dégagement à droite
-                desired_velocity = 0.16f;  // Vitesse douce respectant a <= 0.735 m/s²
-
-                float curr_v = m_motion_profiler ? std::abs(m_motion_profiler->get_current_speed()) : desired_velocity;
-                m_state_distance += curr_v * dt;
-
-                // Dégagement latéral complété dès que ~18 cm sont parcourus ou timer de sécurité
-                if (m_state_distance >= 0.18f || m_state_timer >= 1.2f) {
-                    std::cout << "[FSM] Dégagement latéral achevé (" << (m_state_distance * 100.0f) << " cm) -> Recoupage (LineSearching)..." << std::endl;
-                    transition_to(shared::fsm::MachineStates::LineSearching);
-                }
-                break;
-            }
-
+            case shared::fsm::MachineStates::RightDeviation:
             case shared::fsm::MachineStates::LeftDeviation: {
-                m_state_timer += dt;
-                desired_steering = -25.0f; // Angle de dégagement à gauche
-                desired_velocity = 0.16f;
-
-                float curr_v = m_motion_profiler ? std::abs(m_motion_profiler->get_current_speed()) : desired_velocity;
-                m_state_distance += curr_v * dt;
-
-                if (m_state_distance >= 0.18f || m_state_timer >= 1.2f) {
+                const float side = (m_current_state == shared::fsm::MachineStates::RightDeviation) ? 1.0f : -1.0f;
+                if (run_obstacle_deviation(side, dt, desired_steering, desired_velocity)) {
+                    std::cout << "[FSM] Dégagement latéral achevé -> Recoupage (LineSearching)..." << std::endl;
                     transition_to(shared::fsm::MachineStates::LineSearching);
                 }
                 break;

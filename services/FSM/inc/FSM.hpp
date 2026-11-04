@@ -34,12 +34,16 @@ public:
 
 private:
     void transition_to(shared::fsm::MachineStates new_state);
+    bool run_obstacle_deviation(float side, float dt, float& steering_deg, float& velocity);
 
     std::atomic<bool> m_running{false};
     int m_hz{50};
     shared::fsm::MachineStates m_current_state{shared::fsm::MachineStates::Init};
     float m_state_timer{0.0f};
     float m_state_distance{0.0f};
+    int m_dev_phase{0};              // phase de la manoeuvre d'évitement (voir run_obstacle_deviation)
+    float m_dev_phase_distance{0.0f};
+    float m_dev_heading{0.0f};       // cap estimé par odométrie pendant l'évitement (rad, + = côté de la déviation)
     bool m_course_finished{false}; // Barre d'arrivée vue : l'état Stopped devient terminal
 
     // Paramètres cinématiques et de suivi (modifiables à chaud via WiFi / .config / POSIX)
