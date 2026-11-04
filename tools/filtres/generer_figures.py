@@ -10,11 +10,10 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-RACINE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, os.path.join(RACINE, "robot"))
+SORTIE = os.path.dirname(os.path.abspath(__file__))  # tableau écrit à côté du script
+sys.path.insert(0, SORTIE)
 from ultrasonic_filters import LowPassIIR, SlidingMedian  # noqa: E402
 
-SORTIE = os.path.dirname(os.path.abspath(__file__))  # tableau écrit à côté du script
 DOSSIER_FIGURES = os.path.join(SORTIE, "figures")    # images PNG, dans un dossier à côté du script
 
 # ==============================================================================================

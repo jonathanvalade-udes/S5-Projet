@@ -9,23 +9,7 @@
 #include <cerrno>
 #include <sys/stat.h>
 #include <sys/ioctl.h>
-#if defined(__linux__)
 #include <sys/sysmacros.h>
-#else
-#include <sys/types.h>
-#ifndef MS_NOSUID
-#define MS_NOSUID 0
-#endif
-#ifndef MS_NODEV
-#define MS_NODEV 0
-#endif
-#ifndef MS_NOEXEC
-#define MS_NOEXEC 0
-#endif
-#ifndef MS_REMOUNT
-#define MS_REMOUNT 0
-#endif
-#endif
 #include <termios.h>
 #include <net/if.h>
 #include <arpa/inet.h>
@@ -76,19 +60,14 @@ void log_msg(int fd, const char* format, ...) {
 }
 
 void remount_rootfs_rw() {
-#if defined(__linux__)
     if (mount(nullptr, "/", nullptr, MS_REMOUNT, nullptr) == -1) {
         log_msg(2, "[INIT] Failed to remount rootfs as read-write: %s\n", std::strerror(errno));
     } else {
         log_msg(1, "[INIT] Successfully remounted rootfs as read-write.\n");
     }
-#else
-    log_msg(1, "[INIT] (Host non-Linux mock) Skip remounting rootfs as read-write.\n");
-#endif
 }
 
 void mount_essential_fs(const char* source, const char* target, const char* type, unsigned long flags) {
-#if defined(__linux__)
     if (mount(source, target, type, flags, nullptr) == 0) {
         log_msg(1, "[INIT] Mounted %s onto %s\n", type, target);
     } else {
@@ -98,10 +77,6 @@ void mount_essential_fs(const char* source, const char* target, const char* type
             log_msg(2, "[INIT] Failed to mount %s: %s\n", target, std::strerror(errno));
         }
     }
-#else
-    (void)source; (void)target; (void)type; (void)flags;
-    log_msg(1, "[INIT] (Host non-Linux mock) Skip mounting %s onto %s\n", type, target);
-#endif
 }
 
 void interface_admin_up(const char* iface) {
@@ -188,7 +163,6 @@ std::string find_ethernet_interface() {
 void setup_console() {
     mkdir("/dev", 0755);
 
-#if defined(__linux__)
     struct stat st;
     if (stat("/dev/console", &st) != 0) {
         mknod("/dev/console", S_IFCHR | 0600, makedev(5, 1));
@@ -199,7 +173,6 @@ void setup_console() {
     if (stat("/dev/null", &st) != 0) {
         mknod("/dev/null", S_IFCHR | 0666, makedev(1, 3));
     }
-#endif
 
     const char* console_candidates[] = {
         "/dev/ttyAMA0",

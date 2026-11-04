@@ -36,11 +36,7 @@ Sensors::~Sensors() {
 bool Sensors::init() {
     std::cout << "[Sensors] Initializing service at " << m_hz << " Hz (Trig=" << m_trig_pin << ", Echo=" << m_echo_pin << ")..." << std::endl;
 
-#ifdef __linux__
     m_driver = std::make_unique<PiCarHatsSensorDriver>(m_trig_pin, m_echo_pin);
-#else
-    m_driver = std::make_unique<MockSensorDriver>();
-#endif
 
     m_pipeline = std::make_unique<UltrasonicPipeline>(5, 0.25f);
     m_pipeline->reset(100.0f);

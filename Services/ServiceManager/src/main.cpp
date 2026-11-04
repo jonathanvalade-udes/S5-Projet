@@ -5,20 +5,8 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <sys/stat.h>
-#if defined(__linux__)
 #include <sys/mount.h>
-#endif
 #include <chrono>
-
-#ifndef MS_NOSUID
-#define MS_NOSUID 0
-#endif
-#ifndef MS_NODEV
-#define MS_NODEV 0
-#endif
-#ifndef MS_NOEXEC
-#define MS_NOEXEC 0
-#endif
 
 int main(int argc, char* argv[])
 {

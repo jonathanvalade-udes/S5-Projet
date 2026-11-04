@@ -58,20 +58,20 @@ target_position = Vector3(0, -0.8, 0)
 hit_from_inside = true
 
 [node name="Camera3D" type="Camera3D" parent="PiCar" unique_id=498650643]
-transform = Transform3D(-4.37114e-08, -0.42261797, 0.90630794, 0, 0.90630794, 0.42261797, -1, 1.8473223e-08, -3.9615987e-08, 0.620889, 0.5475717, 0)
+transform = Transform3D(-0.003895716, -0.7774255, 0.628963, -0.0019658043, 0.6289725, 0.77742505, -0.99999064, 0.0017922098, -0.0039785653, 0.2798217, 0.62038064, -0.0077910423)
 current = true
 
 [node name="line_follower_sensor" parent="PiCar" unique_id=1091166352 instance=ExtResource("9_a0528")]
 transform = Transform3D(-4.37114e-08, 0, -1, 0, 1, 0, 1, 0, -4.37114e-08, -0.125, 0.02, 0)
 
 [node name="RobotModel" parent="PiCar" unique_id=826783087 instance=ExtResource("8_cyber")]
-transform = Transform3D(0, 0, -0.055922873, 0, 0.07217001, 0, 0.07217001, 0, 0, 0.1547566, 0.052628856, -0.0017000437)
+transform = Transform3D(0, 0, -0.07217001, 0, 0.07217001, 0, 0.07217001, 0, 0, 0.1547566, 0.052628856, -0.0017000437)
 
 [node name="PlaquetteSupport" parent="PiCar" unique_id=1599129438 instance=ExtResource("11_plaq")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.020602405, 0.074666634, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.075690806, 0.074666634, 0)
 
 [node name="Bille" type="RigidBody3D" parent="PiCar" unique_id=1804454935]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.020383954, 0.09271516, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.075690806, 0.09271516, 0)
 mass = 0.065
 script = ExtResource("10_bmon")
 
@@ -98,23 +98,16 @@ offset_right = 320.0
 offset_bottom = 89.0
 columns = 2
 
-[node name="CheckBox" type="CheckBox" parent="GridContainer" unique_id=1272806309]
-layout_mode = 2
-text = "Localhost"
-
 [node name="lb_ConnectionStatusPackets" type="Label" parent="GridContainer" unique_id=325927368]
 layout_mode = 2
 text = "Disconnected"
 
 [node name="le_IpAdress" type="LineEdit" parent="GridContainer" unique_id=1579573758]
 layout_mode = 2
-text = "127.0.0.1"
-placeholder_text = "192.168.13.XX"
+text = "127.0.0.1:9000"
+placeholder_text = "127.0.0.1:9000"
 expand_to_text_length = true
-context_menu_enabled = false
 clear_button_enabled = true
-middle_mouse_paste_enabled = false
-virtual_keyboard_enabled = false
 
 [node name="btn_Connect" type="Button" parent="GridContainer" unique_id=1443713077]
 layout_mode = 2
@@ -124,6 +117,5 @@ text = "Connect"
 layout_mode = 2
 text = "Quit"
 
-[connection signal="toggled" from="GridContainer/CheckBox" to="." method="_on_check_box_toggled"]
 [connection signal="pressed" from="GridContainer/btn_Connect" to="." method="_on_connect_pressed"]
 [connection signal="pressed" from="GridContainer/btn_Quit" to="." method="_on_quit_pressed"]

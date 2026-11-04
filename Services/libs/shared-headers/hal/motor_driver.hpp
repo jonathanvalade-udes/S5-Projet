@@ -7,12 +7,9 @@
 #include <chrono>
 #include <cstring>
 #include <cstdlib>
-
-#ifdef __linux__
 #include <fcntl.h>
 #include <unistd.h>
 #include <dirent.h>
-#endif
 
 #include "picar_i2c_registers.hpp"
 #include "i2c_device.hpp"
@@ -43,7 +40,7 @@ public:
 };
 
 /**
- * @brief Pilote Mock / Simulation utilisé sur macOS pour tests et développement sans robot physique.
+ * @brief Pilote Mock utilisé pour les tests unitaires et la logique IPC sans matériel physique.
  */
 class MockMotorDriver : public IMotorDriver {
 private:
@@ -98,7 +95,6 @@ private:
     bool m_invert_direction = false;
 
     static int detect_gpio_base() {
-#ifdef __linux__
         DIR* dir = opendir("/sys/class/gpio");
         if (!dir) return 0;
         struct dirent* entry;
@@ -131,9 +127,6 @@ private:
         }
         closedir(dir);
         return found_base;
-#else
-        return 0;
-#endif
     }
 
     void write_channel_pwm(uint8_t channel, uint16_t on_ticks, uint16_t off_ticks) {
@@ -150,7 +143,6 @@ private:
 public:
     explicit PiCarHatsMotorDriver(uint8_t addr = picar::i2c::ADDR_PCA9685, bool invert_direction = false) 
         : m_i2c(addr), m_invert_direction(invert_direction) {
-#ifdef __linux__
         int base = detect_gpio_base();
         actual_dir_a = base + dir_a_pin;
         actual_dir_b = base + dir_b_pin;
@@ -174,12 +166,17 @@ public:
         if (d_fd >= 0) {
             write(d_fd, "out", 3);
             close(d_fd);
+        } else {
+            std::cerr << "[WARN] Impossible de configurer DirA GPIO" << actual_dir_a << " (BCM " << dir_a_pin << ") en OUT" << std::endl;
         }
+
         snprintf(dir_path, sizeof(dir_path), "/sys/class/gpio/gpio%d/direction", actual_dir_b);
         d_fd = open(dir_path, O_WRONLY);
         if (d_fd >= 0) {
             write(d_fd, "out", 3);
             close(d_fd);
+        } else {
+            std::cerr << "[WARN] Impossible de configurer DirB GPIO" << actual_dir_b << " (BCM " << dir_b_pin << ") en OUT" << std::endl;
         }
 
         char val_path[64];
@@ -215,22 +212,10 @@ public:
         } else {
             std::cerr << "[WARN] PiCarHatsMotorDriver : PCA9685 non détecté sur le bus I2C." << std::endl;
         }
-#else
-        (void)addr;
-        (void)dir_a_pin;
-        (void)dir_b_pin;
-        (void)actual_dir_a;
-        (void)actual_dir_b;
-        (void)dir_a_fd;
-        (void)dir_b_fd;
-        (void)m_invert_direction;
-        std::cout << "[INFO] PiCarHatsMotorDriver initialisé en mode compatibilité (Non-Linux)." << std::endl;
-#endif
     }
 
     ~PiCarHatsMotorDriver() override {
         emergency_stop();
-#ifdef __linux__
         if (dir_a_fd >= 0) { close(dir_a_fd); dir_a_fd = -1; }
         if (dir_b_fd >= 0) { close(dir_b_fd); dir_b_fd = -1; }
         int unexport_fd = open("/sys/class/gpio/unexport", O_WRONLY);
@@ -242,15 +227,12 @@ public:
             write(unexport_fd, buf, strlen(buf));
             close(unexport_fd);
         }
-#endif
     }
 
     void set_speed(float speed_percent) override {
         float clamped = std::clamp(speed_percent, -100.0f, 100.0f);
         uint16_t pwm_ticks = picar::i2c::pca9685::speed_percent_to_pwm(clamped);
 
-#ifdef __linux__
-        // Par défaut sur PiCar-S avec TB6612 :
         // Pour AVANCER (speed >= 0) : broches à HIGH ("1")
         // Pour RECULER (speed < 0)  : broches à LOW ("0")
         bool forward = (clamped >= 0.0f);
@@ -265,7 +247,6 @@ public:
         if (dir_b_fd >= 0) {
             pwrite(dir_b_fd, val, 1, 0);
         }
-#endif
 
         // Pilotage simultané des deux roues motrices arrière (Canaux 4 et 5)
         write_channel_pwm(picar::i2c::pca9685::CH_MOTOR_L_PWM, 0, pwm_ticks);

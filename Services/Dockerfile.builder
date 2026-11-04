@@ -8,7 +8,8 @@ RUN apk add --no-cache \
     build-base \
     cmake \
     linux-headers \
-    file
+    file \
+    bash
 
 WORKDIR /workspace
 

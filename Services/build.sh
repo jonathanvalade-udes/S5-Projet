@@ -8,6 +8,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STATIC_FLAG="OFF"
 EMBEDDED_MODE=false
+RUN_TESTS=false
+SIM_MODE=false
 TARGET="all"
 BUILD_DIR="${SCRIPT_DIR}/build"
 
@@ -18,6 +20,8 @@ Usage: $0 [options] [target]
 Options:
   --static        Build executables with static linking (-static)
   --embedded      Build for Linux ARM64 (aarch64). Uses Docker automatically on macOS.
+  --test          Run the full test suite (ctest) inside the Linux environment
+  --sim           Start SimBridge + FSM in Docker for Godot simulation (port 9000)
   --build-docker  Build or update the Docker builder image (alpine-picar-builder) and exit
   --clean         Remove build directories (build and build-embedded) and exit
   -h, --help      Show this help message
@@ -27,8 +31,9 @@ Target:
   <service>      Build specific service (e.g. FSM, Motors, Sensors, TelemetryService, ServiceManager)
 
 Examples:
-  $0                         # Build all services natively for host (macOS / Linux)
   $0 --embedded --static     # Build all services statically for Raspberry Pi (ARM64)
+  $0 --test                  # Run all tests in the Linux Docker container on Mac
+  $0 --sim                   # Launch Godot simulation stack (SimBridge + FSM) via Docker
   $0 --clean                 # Clean all build artifacts
 EOF
     exit "${1:-0}"
@@ -45,6 +50,16 @@ while [[ $# -gt 0 ]]; do
         --embedded)
             EMBEDDED_MODE=true
             BUILD_DIR="${SCRIPT_DIR}/build-embedded"
+            shift
+            ;;
+        --test)
+            RUN_TESTS=true
+            EMBEDDED_MODE=true
+            BUILD_DIR="${SCRIPT_DIR}/build-embedded"
+            shift
+            ;;
+        --sim)
+            SIM_MODE=true
             shift
             ;;
         --build-docker)
@@ -72,6 +87,12 @@ if [[ ${#POSITIONAL_ARGS[@]} -gt 0 ]]; then
     TARGET="${POSITIONAL_ARGS[0]}"
 fi
 
+if [[ "${SIM_MODE}" == true ]]; then
+    echo "==> Starting Godot Simulation stack (SimBridge + FSM) via Docker Compose..."
+    docker compose -f "${SCRIPT_DIR}/docker-compose.yml" up --build simulation
+    exit 0
+fi
+
 # Detect if we are on macOS needing Linux ARM64 compilation
 if [[ "${EMBEDDED_MODE}" == true ]]; then
     if [[ "$(uname -s)" == "Darwin" ]] && ! command -v aarch64-linux-gnu-g++ &>/dev/null; then
@@ -82,6 +103,13 @@ if [[ "${EMBEDDED_MODE}" == true ]]; then
             if ! docker image inspect "${IMAGE_NAME}" &>/dev/null; then
                 echo "==> Docker image '${IMAGE_NAME}' not found. Building it once from Dockerfile.builder..."
                 docker build -f "${SCRIPT_DIR}/Dockerfile.builder" -t "${IMAGE_NAME}" "${SCRIPT_DIR}"
+            fi
+            if [[ "${RUN_TESTS}" == true ]]; then
+                CMD="cmake -B /workspace/build-embedded -S /workspace -DSTATIC=${STATIC_FLAG} && cmake --build /workspace/build-embedded && ctest --test-dir /workspace/build-embedded --output-on-failure"
+                docker run --rm --dns 8.8.8.8 -v "${SCRIPT_DIR}":/workspace -w /workspace "${IMAGE_NAME}" sh -c "${CMD}"
+                echo ""
+                echo "==> ALL TESTS PASSED SUCCESSFULLY IN DOCKER (LINUX)!"
+                exit 0
             fi
             CMD="cmake -B /workspace/build-embedded -S /workspace -DSTATIC=${STATIC_FLAG} && cmake --build /workspace/build-embedded --target ${TARGET}"
             docker run --rm --dns 8.8.8.8 -v "${SCRIPT_DIR}":/workspace -w /workspace "${IMAGE_NAME}" sh -c "${CMD}"
@@ -98,16 +126,16 @@ if [[ "${EMBEDDED_MODE}" == true ]]; then
 fi
 
 echo "==> Configuring with CMake (STATIC=${STATIC_FLAG})..."
-TOOLCHAIN_FLAG=""
-if [[ "${EMBEDDED_MODE}" == true ]]; then
-    TOOLCHAIN_FLAG="-DCMAKE_TOOLCHAIN_FILE=${SCRIPT_DIR}/toolchain-aarch64.cmake"
-fi
-
-cmake -B "${BUILD_DIR}" -DSTATIC="${STATIC_FLAG}" ${TOOLCHAIN_FLAG}
+cmake -B "${BUILD_DIR}" -DSTATIC="${STATIC_FLAG}"
 
 echo "==> Building target '${TARGET}'..."
 if [[ "${TARGET}" == "all" ]]; then
     cmake --build "${BUILD_DIR}"
 else
     cmake --build "${BUILD_DIR}" --target "${TARGET}"
+fi
+
+if [[ "${RUN_TESTS}" == true ]]; then
+    echo "==> Running test suite..."
+    ctest --test-dir "${BUILD_DIR}" --output-on-failure
 fi

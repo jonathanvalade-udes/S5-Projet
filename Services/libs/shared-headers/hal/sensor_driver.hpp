@@ -8,14 +8,12 @@
 #include <cstring>
 #include <cstdio>
 #include <cstdlib>
-#include "picar_i2c_registers.hpp"
-#include "i2c_device.hpp"
-
-#ifdef __linux__
 #include <fcntl.h>
 #include <unistd.h>
 #include <dirent.h>
-#endif
+
+#include "picar_i2c_registers.hpp"
+#include "i2c_device.hpp"
 
 /**
  * @brief Interface d'abstraction matérielle (HAL) pour les capteurs du robot.
@@ -26,7 +24,7 @@ public:
 
     /**
      * @brief Lit la distance brute mesurée par le capteur ultrasonique HC-SR04.
-     * @return Distance en centimètres (ou -1.0f en cas de timeout matériel).
+     * @return Distance en centimètres (ou -1.0f en cas de timeout ou panne matérielle).
      */
     virtual float read_raw_ultrasonic_cm() = 0;
 
@@ -49,7 +47,7 @@ public:
 };
 
 /**
- * @brief Pilote Mock pour les capteurs sur macOS / Windows / environnement de test.
+ * @brief Pilote Mock pour les capteurs pour tests unitaires et intégration sans robot physique.
  */
 class MockSensorDriver : public ISensorDriver {
 private:
@@ -70,7 +68,7 @@ public:
 
     float read_raw_ultrasonic_cm() override {
         counter++;
-        // Injection sporadique d'un glitch réaliste (toutes les 25 lectures)
+        // Injection sporadique d'un glitch de test (toutes les 25 lectures)
         if (counter % 25 == 0) {
             return 400.0f; // glitch max distance
         } else if (counter % 40 == 0) {
@@ -106,8 +104,6 @@ private:
     uint8_t m_last_sensors[5] = {0, 0, 1, 0, 0};
     float m_last_darkness[5] = {0.0f, 0.0f, 1.0f, 0.0f, 0.0f};
 
-    // Calibration de la lecture analogique : ADC sur le noir / sur le blanc.
-    // Réglable sans recompiler : PICAR_LINE_BLACK_ADC et PICAR_LINE_WHITE_ADC.
     float m_black_adc = env_float("PICAR_LINE_BLACK_ADC", picar::i2c::line_follower::DEFAULT_BLACK_ADC);
     float m_white_adc = env_float("PICAR_LINE_WHITE_ADC", picar::i2c::line_follower::DEFAULT_WHITE_ADC);
 
@@ -117,7 +113,6 @@ private:
     }
 
     static int detect_gpio_base() {
-#ifdef __linux__
         DIR* dir = opendir("/sys/class/gpio");
         if (!dir) return 0;
         struct dirent* entry;
@@ -150,9 +145,6 @@ private:
         }
         closedir(dir);
         return found_base;
-#else
-        return 0;
-#endif
     }
 
 public:
@@ -162,7 +154,6 @@ public:
           actual_trig(trig),
           actual_echo(echo),
           m_line_device(picar::i2c::ADDR_LINE_FOLLOWER, picar::i2c::ADDR_LINE_FOLLOWER_ALT) {
-#ifdef __linux__
         int base = detect_gpio_base();
         actual_trig = base + trig_pin;
         actual_echo = base + echo_pin;
@@ -171,7 +162,7 @@ public:
             std::cout << "[INFO] Suiveur de ligne PiCar-S connecté sur l'adresse I2C 0x" 
                       << std::hex << static_cast<int>(m_line_device.get_active_address()) << std::dec << std::endl;
         } else {
-            std::cerr << "[WARN] Suiveur de ligne PiCar-S non détecté sur le bus I2C (mode fallback actif)." << std::endl;
+            std::cerr << "[WARN] Suiveur de ligne PiCar-S non détecté sur le bus I2C." << std::endl;
         }
 
         // Préparation des GPIO pour HC-SR04 via sysfs
@@ -185,7 +176,7 @@ public:
             close(export_fd);
         }
 
-        usleep(50000); // Laisser 50 ms pour la création des nœuds sysfs
+        usleep(50000); // 50 ms pour la création des nœuds sysfs
 
         // Configuration explicite des directions
         char dir_path[64];
@@ -209,17 +200,9 @@ public:
 
         std::cout << "[INFO] HC-SR04 configuré sur Trig=GPIO" << actual_trig << " (BCM " << trig_pin 
                   << "), Echo=GPIO" << actual_echo << " (BCM " << echo_pin << ")" << std::endl;
-#else
-        (void)trig_pin;
-        (void)echo_pin;
-        (void)actual_trig;
-        (void)actual_echo;
-        std::cout << "[INFO] PiCarHatsSensorDriver initialisé en mode compatibilité (Non-Linux)." << std::endl;
-#endif
     }
 
     ~PiCarHatsSensorDriver() override {
-#ifdef __linux__
         int unexport_fd = open("/sys/class/gpio/unexport", O_WRONLY);
         if (unexport_fd >= 0) {
             char buf[16];
@@ -229,7 +212,6 @@ public:
             write(unexport_fd, buf, strlen(buf));
             close(unexport_fd);
         }
-#endif
     }
 
     void set_thresholds(const uint16_t thresholds[5]) {
@@ -237,7 +219,6 @@ public:
     }
 
     float read_raw_ultrasonic_cm() override {
-#ifdef __linux__
         char trig_path[64];
         char echo_path[64];
         snprintf(trig_path, sizeof(trig_path), "/sys/class/gpio/gpio%d/value", actual_trig);
@@ -286,14 +267,10 @@ public:
 
         if (t_fd >= 0) close(t_fd);
         if (e_fd >= 0) close(e_fd);
-        return 35.0f; // Repli par défaut si GPIO non câblés
-#else
-        return 35.0f;
-#endif
+        return -1.0f; // Panne matérielle ou GPIO inaccessibles
     }
 
     void read_line_sensors(uint8_t out_sensors[5]) override {
-#ifdef __linux__
         if (m_line_device.is_connected()) {
             uint8_t buffer[picar::i2c::line_follower::RAW_BUFFER_SIZE] = {0};
             if (m_line_device.read_block_data(picar::i2c::line_follower::REG_START, 
@@ -307,7 +284,6 @@ public:
                 }
             }
         }
-#endif
         for (int i = 0; i < 5; ++i) {
             out_sensors[i] = m_last_sensors[i];
         }

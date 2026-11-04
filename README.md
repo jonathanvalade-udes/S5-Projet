@@ -39,6 +39,36 @@ docker compose -f Services/docker-compose.yml build
 
 ---
 
+## 🧪 Exécution des Tests Automatisés (Docker & Linux)
+
+Puisque le projet est standardisé sur l'environnement cible Linux (Raspberry Pi), la suite de tests (`ctest`) s'exécute directement dans le conteneur Linux sur Mac et Windows.
+
+### Lancer tous les tests en une commande (Recommandé) :
+```bash
+./Services/build.sh --test
+```
+*(Le script lance Docker en arrière-plan, compile et exécute automatiquement la suite de 7 tests de robustesse : IPC, mémoire partagée, filtres, contrôle, et FSM).*
+
+### Ou via Docker Compose :
+```bash
+docker compose -f Services/docker-compose.yml run builder sh -c "cmake -B build-embedded -S . -DSTATIC=ON && cmake --build build-embedded && ctest --test-dir build-embedded --output-on-failure"
+```
+
+---
+
+## 🎮 Simulation 3D Godot via Docker (Mac & Windows)
+
+Vous pouvez lancer la pile logicielle de simulation (`SimBridge` + `FSM`) sous Docker sans avoir besoin d'installer Linux ou WSL :
+
+```bash
+./Services/build.sh --sim
+# ou
+docker compose -f Services/docker-compose.yml up simulation
+```
+*Puis dans l'application Godot sur votre Mac ou PC Windows : cochez **Localhost** (`127.0.0.1:9000`) et cliquez sur **Connect**.*
+
+---
+
 ## 📡 Déploiement sur le Robot (Raspberry Pi)
 
 Transférer tous les binaires compilés sur le robot via SCP :

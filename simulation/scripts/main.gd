@@ -64,8 +64,3 @@ func _on_connect_pressed() -> void:
 			network_client.connect_to_server(target_ip, target_port)
 		else:
 			lb_status.text = "Wrong IP Address!"
-
-func _on_check_box_toggled(toggled_on: bool) -> void:
-	if toggled_on:
-		le_ip.text = "127.0.0.1"
-		_on_connect_pressed()

@@ -260,13 +260,13 @@ Ligne perdue │            │ Obstacle détecté        │
 
 | Code Exigence | Composant Logiciel / Module | Fichier ou Domaine Technique | Critère de Validation |
 | :--- | :--- | :--- | :--- |
-| **S1** (Arrêt $\pm 30\text{ mm}$) | Profil de décélération & Filtrage US | `robot/control`, `robot/sensors` | Tolérance d'arrêt $\le \pm 30\text{ mm}$ |
-| **S2** (Ligne $18\text{ mm}$) | Asservissement suiveur de ligne | `robot/line_follower`, Simulation | Suivi continu sur ruban $18\text{ mm}$ |
-| **S3** (Courbe $R \ge 120\text{ mm}$) | Régulation d'angle & vitesse virage | `robot/navigation`, `simulation` | Courbe $120\text{ mm}$ franchie sans décrochage |
-| **S4** (Contournement) | Sous-routine FSM `BYPASS` | `robot/fsm`, `simulation` | Évitement obstacle et raccordement ligne |
-| **S5** (Recul $< 200\text{ mm}$) | Routine FSM `REVERSE` | `robot/fsm` | Recul contrôlé sur ruban noir |
-| **S6** (Maintien bille) | Profileur d'accélération ($0{,}735\text{ m/s}^2$) | `robot/motion_profile` | Bille conservée dans la soucoupe |
-| **S7** (3 capteurs) | Module Hardware Abstraction Layer | `robot/hardware` | Zéro capteur tiers utilisé |
-| **S8** (Zéro hardcoding) | Architecture réactive & FSM | `robot/decision` | Navigation autonome sur piste mystère |
+| **S1** (Arrêt $\pm 30\text{ mm}$) | Profil de décélération & Filtrage US | `Services/Sensors`, `Services/FSM` | Tolérance d'arrêt $\le \pm 30\text{ mm}$ |
+| **S2** (Ligne $18\text{ mm}$) | Asservissement suiveur de ligne | `Services/FSM`, `simulation` | Suivi continu sur ruban $18\text{ mm}$ |
+| **S3** (Courbe $R \ge 120\text{ mm}$) | Régulation d'angle & vitesse virage | `Services/FSM`, `Services/Motors` | Courbe $120\text{ mm}$ franchie sans décrochage |
+| **S4** (Contournement) | Sous-routine FSM `BYPASS` | `Services/FSM`, `simulation` | Évitement obstacle et raccordement ligne |
+| **S5** (Recul $< 200\text{ mm}$) | Routine FSM `REVERSE` | `Services/FSM` | Recul contrôlé sur ruban noir |
+| **S6** (Maintien bille) | Profileur d'accélération ($0{,}735\text{ m/s}^2$) | `Services/Motors` | Bille conservée dans la soucoupe |
+| **S7** (3 capteurs) | Module Hardware Abstraction Layer | `Services/libs/shared-headers/hal` | Zéro capteur tiers utilisé |
+| **S8** (Zéro hardcoding) | Architecture réactive & FSM | `Services/FSM` | Navigation autonome sur piste mystère |
 | **S9** (Simulation préalable)| Environnement Godot & Modèle Blender | `simulation/` | Validation virtuelle préalable |
-| **S10** (Symétrie code) | Cœur algorithmique partagé | WebSocket / Architecture commune | Même algorithme en virtuel et en réel |
+| **S10** (Symétrie code) | Cœur algorithmique partagé | `Services/SimBridge` / SHM | Même algorithme en virtuel et en réel |

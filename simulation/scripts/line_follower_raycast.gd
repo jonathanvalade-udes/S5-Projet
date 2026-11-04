@@ -66,6 +66,3 @@ func _on_body_shape_entered(_body_rid, body, _body_shape_index, local_shape_inde
 func _on_body_shape_exited(_body_rid, body, _body_shape_index, local_shape_index) -> void:
 	if body.collision_layer & 2:
 		line_follower_array[local_shape_index] = 0
-
-func _on_area_exited(_area: Area3D) -> void:
-	pass
