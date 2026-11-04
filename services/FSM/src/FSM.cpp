@@ -27,24 +27,23 @@ FSM::~FSM() {
 bool FSM::check_start_trigger() {
     if (m_event_pipe_fd < 0) {
         struct stat st;
-        if (stat(m_event_pipe_path.c_str(), &st) == 0) {
-            if (S_ISSOCK(st.st_mode)) {
-                int sfd = ::socket(AF_UNIX, SOCK_STREAM, 0);
-                if (sfd >= 0) {
-                    int flags = fcntl(sfd, F_GETFL, 0);
-                    if (flags >= 0) fcntl(sfd, F_SETFL, flags | O_NONBLOCK);
-                    sockaddr_un addr{};
-                    addr.sun_family = AF_UNIX;
-                    strncpy(addr.sun_path, m_event_pipe_path.c_str(), sizeof(addr.sun_path) - 1);
-                    if (::connect(sfd, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) == 0 || errno == EINPROGRESS) {
-                        m_event_pipe_fd = sfd;
-                    } else {
-                        close(sfd);
-                    }
+        if (stat(m_event_pipe_path.c_str(), &st) == 0 && S_ISSOCK(st.st_mode)) {
+            int sfd = ::socket(AF_UNIX, SOCK_STREAM, 0);
+            if (sfd >= 0) {
+                int flags = fcntl(sfd, F_GETFL, 0);
+                if (flags >= 0) fcntl(sfd, F_SETFL, flags | O_NONBLOCK);
+                sockaddr_un addr{};
+                addr.sun_family = AF_UNIX;
+                strncpy(addr.sun_path, m_event_pipe_path.c_str(), sizeof(addr.sun_path) - 1);
+                if (::connect(sfd, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) == 0 || errno == EINPROGRESS) {
+                    m_event_pipe_fd = sfd;
+                    std::cout << "[FSM] Connecté au socket d'événements " << m_event_pipe_path << " (attente du signal de départ)" << std::endl;
+                } else {
+                    close(sfd);
                 }
-            } else if (S_ISFIFO(st.st_mode)) {
-                m_event_pipe_fd = open(m_event_pipe_path.c_str(), O_RDWR | O_NONBLOCK);
             }
+        } else if (stat(m_event_pipe_path.c_str(), &st) == 0 && S_ISFIFO(st.st_mode)) {
+            m_event_pipe_fd = open(m_event_pipe_path.c_str(), O_RDWR | O_NONBLOCK);
         }
         if (m_event_pipe_fd < 0) return false;
     }
@@ -59,10 +58,14 @@ bool FSM::check_start_trigger() {
         if (lower_msg.find("trigger_start") != std::string::npos || 
             lower_msg.find("start") != std::string::npos ||
             msg.find("1") != std::string::npos) {
-            std::cout << "[FSM] Événement POSIX '" << msg << "' reçu sur " << m_event_pipe_path << " -> Déclenchement du départ !" << std::endl;
+            std::cout << "[FSM] Événement POSIX '" << msg << "' reçu -> Top départ !" << std::endl;
             return true;
         }
     } else if (n == 0) {
+        // Déconnexion ou fermeture du socket côté serveur
+        close(m_event_pipe_fd);
+        m_event_pipe_fd = -1;
+    } else if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
         close(m_event_pipe_fd);
         m_event_pipe_fd = -1;
     }
@@ -108,6 +111,7 @@ bool FSM::init() {
     m_line_kd               = cfg.line_kd;
     m_obstacle_stop_dist_cm = cfg.obstacle_stop_dist_cm;
     m_reverse_speed         = cfg.reverse_speed;
+    m_auto_start_delay      = cfg.auto_start_delay;
 
     // Côté de contournement des obstacles : variable d'environnement AVOID_SIDE (gauche|droite|left|right)
     if (const char* side_env = std::getenv("AVOID_SIDE")) {
@@ -156,22 +160,9 @@ bool FSM::init() {
         std::cerr << "[FSM] Warning: MemoryShare subscriber/publisher: " << e.what() << std::endl;
     }
 
-    // Préparation du canal d'événements POSIX (FIFO ou socket)
-    struct stat st;
-    if (stat(m_event_pipe_path.c_str(), &st) != 0) {
-        mkfifo(m_event_pipe_path.c_str(), 0666);
-        chmod(m_event_pipe_path.c_str(), 0666);
-    }
-    if (stat(m_event_pipe_path.c_str(), &st) == 0 && S_ISFIFO(st.st_mode)) {
-        m_event_pipe_fd = open(m_event_pipe_path.c_str(), O_RDWR | O_NONBLOCK);
-    }
-    if (m_event_pipe_fd >= 0) {
-        char drain[128];
-        while (read(m_event_pipe_fd, drain, sizeof(drain)) > 0) {}
-        std::cout << "[FSM] Écoute des événements POSIX prête sur " << m_event_pipe_path << std::endl;
-    } else {
-        std::cerr << "[FSM] Attention : impossible d'ouvrir le tube d'événements " << m_event_pipe_path << std::endl;
-    }
+    // Canal d'événements POSIX (connexion dynamique au socket de PeripheralsService)
+    m_event_pipe_fd = -1;
+    check_start_trigger();
 
     transition_to(shared::fsm::MachineStates::Init);
     m_running.store(true);
@@ -424,9 +415,14 @@ void FSM::run() {
                 desired_steering = 0.0f;
                 m_state_timer += dt;
 
-                // Attente explicite de l'événement POSIX "trigger_start" dans /tmp/peripheral
-                if (check_start_trigger()) {
-                    std::cout << "[FSM] Événement 'trigger_start' reçu -> Top départ de suivi de ligne!" << std::endl;
+                bool triggered = check_start_trigger();
+                if (!triggered && m_auto_start_delay > 0.0f && m_state_timer >= m_auto_start_delay) {
+                    std::cout << "[FSM] Délai d'attente atteint (" << m_auto_start_delay << "s) -> Top départ de secours !" << std::endl;
+                    triggered = true;
+                }
+
+                if (triggered) {
+                    std::cout << "[FSM] Top départ de suivi de ligne !" << std::endl;
                     if (m_line_controller) m_line_controller->reset();
                     if (m_motion_profiler) m_motion_profiler->reset(0.0f);
                     m_course_finished = false;

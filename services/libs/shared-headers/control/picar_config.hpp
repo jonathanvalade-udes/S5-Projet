@@ -24,6 +24,7 @@ struct PicarConfig {
     float line_kd               = picar::constants::DEFAULT_LINE_KD;
     float obstacle_stop_dist_cm = picar::constants::DEFAULT_OBSTACLE_STOP_DIST_CM;
     float reverse_speed         = picar::constants::DEFAULT_REVERSE_SPEED;
+    float auto_start_delay      = 2.0f;
 
     static std::string resolve_config_path(const std::string& custom = "") {
         if (!custom.empty()) return custom;
@@ -86,6 +87,7 @@ struct PicarConfig {
                 else if (key == "LINE_KD" || key == "KD") cfg.line_kd = std::max(0.0f, std::min(fval, 1.0f));
                 else if (key == "OBSTACLE_STOP_DIST_CM") cfg.obstacle_stop_dist_cm = std::max(10.0f, std::min(fval, 80.0f));
                 else if (key == "REVERSE_SPEED") cfg.reverse_speed = std::max(0.05f, std::min(fval, 0.30f));
+                else if (key == "AUTO_START_DELAY") cfg.auto_start_delay = std::max(0.0f, std::min(fval, 60.0f));
             } catch (...) {}
         }
 
