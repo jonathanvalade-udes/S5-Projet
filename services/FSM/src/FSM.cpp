@@ -57,18 +57,15 @@ void FSM::transition_to(shared::fsm::MachineStates new_state) {
         m_dev_phase = 0;
         m_dev_phase_distance = 0.0f;
         m_dev_heading = 0.0f;
-<<<<<<< Updated upstream
+        m_dev_steer_real = 0.0f;
+        m_dev_x = 0.0f;
+        m_dev_y = 0.0f;
 
         // Si on entre dans Armed, purger tout ancien événement résiduel dans le tube
         if (new_state == shared::fsm::MachineStates::Armed && m_event_pipe_fd >= 0) {
             char drain[128];
             while (read(m_event_pipe_fd, drain, sizeof(drain)) > 0) {}
         }
-=======
-        m_dev_steer_real = 0.0f;
-        m_dev_x = 0.0f;
-        m_dev_y = 0.0f;
->>>>>>> Stashed changes
     }
 }
 
