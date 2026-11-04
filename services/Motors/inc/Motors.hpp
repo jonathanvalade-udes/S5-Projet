@@ -1,26 +1,16 @@
 #pragma once
 
 #include <atomic>
-#include <memory>
 #include <string>
-
-// Shared headers from libs
-#include "header/header.hpp"
-#include "services/services_telemetry.hpp"
-#include "motors/motors_component.hpp"
-#include "servo/servo_telemetry.hpp"
-#include "hal/motor_driver.hpp"
-#include "ipc/shared_memory.hpp"
-#include "shared-services/memory/subscriber.hpp"
-#include "shared-services/memory/server.hpp"
-#include "shared-services/config/service_config.hpp"
-#include "shared-services/socket/service_ipc_socket.hpp"
+#include "MotorActuator.hpp"
+#include "MotorIpcHandler.hpp"
+#include "MotorShmBridge.hpp"
 
 namespace services {
 
 class Motors {
 public:
-    explicit Motors(int hz = 50, bool invert = false, 
+    explicit Motors(int hz = 100000, bool invert = false, 
                     float steering_offset = picar::i2c::calibration::DEFAULT_STEERING_OFFSET_DEG, 
                     bool offset_specified = false);
     ~Motors();
@@ -35,24 +25,15 @@ public:
 
 private:
     std::atomic<bool> m_running{false};
-    int m_hz{50};
+    int m_hz{100000};
     bool m_invert{false};
     float m_steering_offset{0.0f};
     bool m_offset_specified{false};
-    float m_applied_steering{0.0f};
 
-    std::unique_ptr<IMotorDriver> m_driver;
-    std::unique_ptr<SharedMemoryManager> m_shm_mgr;
-    RobotTelemetry* m_telemetry{nullptr};
+    MotorActuator m_actuator;
+    MotorIpcHandler m_ipc_handler;
+    MotorShmBridge m_shm_bridge;
 
-    std::unique_ptr<shared::services::memory::MemoryShareComponentServer> m_mem_server;
-    std::unique_ptr<shared::services::memory::MemoryShareComponentServer> m_servo_mem_server;
-    std::unique_ptr<shared::services::memory::MemoryShareComponentSubscriber> m_fsm_sub;
-
-    // Serveur socket IPC et configuration motors.conf
-    shared::services::config::ServiceConfig m_config;
-    shared::services::ipc::ServiceIPCSocketServer m_ipc_server;
-    std::string m_ipc_socket_path{"/tmp/motors.sock"};
     bool apply_config_key(const std::string& key, float value);
 };
 

@@ -17,7 +17,7 @@ namespace services {
  */
 class TelemetryService {
 public:
-    explicit TelemetryService(int hz = 50, bool enable_ui = false, int tcp_port = 91, int udp_port = 9002,
+    explicit TelemetryService(int hz = 100000, bool enable_ui = false, int tcp_port = 91, int udp_port = 9002,
                               std::string posix_socket_path = "/tmp/peripherals.sock");
     ~TelemetryService();
 

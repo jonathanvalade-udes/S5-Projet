@@ -43,16 +43,21 @@ static void signal_handler(int sig) {
 }
 
 int main(int argc, char* argv[]) {
-    (void)argc;
-    (void)argv;
+    int hz = 100000;
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--hz" && i + 1 < argc) {
+            hz = std::stoi(argv[++i]);
+        }
+    }
 
-    log_msg(1, "[FSM] Starting up...\n");
+    log_msg(1, "[FSM] Starting up (Hz=%d)...\n", hz);
 
     // Register POSIX signal handlers
     std::signal(SIGINT, signal_handler);
     std::signal(SIGTERM, signal_handler);
 
-    services::FSM service;
+    services::FSM service(hz);
     g_service_instance = &service;
 
     if (!service.init()) {

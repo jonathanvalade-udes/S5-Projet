@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cstring>
 #include <vector>
+#include <filesystem>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <netinet/in.h>
@@ -29,6 +30,9 @@ static bool approx_equal(float a, float b, float eps = 0.02f) {
 
 void test_telemetry_metrics_and_watchdog() {
     std::cout << "[TEST] TelemetryService - Agrégation, Odométrie et Watchdog..." << std::endl;
+
+    std::error_code ec;
+    std::filesystem::remove_all("/dev/shm/car", ec);
 
     SharedMemoryManager shm_mgr;
     RobotTelemetry* telem = shm_mgr.open_shm(true);
