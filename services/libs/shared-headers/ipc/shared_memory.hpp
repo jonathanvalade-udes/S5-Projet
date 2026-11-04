@@ -26,6 +26,7 @@ struct RobotTelemetry {
     // Consignes de commande (écrites par la navigation, lues par les moteurs)
     float target_speed;      // Consigne de vitesse
     float target_steering;   // Consigne d'angle de braquage des roues
+    float steering_offset;   // Offset logiciel de compensation matérielle (degrés)
 
     // États du système et sécurité
     uint32_t state;          // État FSM (0=STOP, 1=IDLE, 2=RUNNING, 99=FAILSAFE)
@@ -105,6 +106,7 @@ public:
             }
             shm_ptr->target_speed = 0.0f;
             shm_ptr->target_steering = 0.0f;
+            shm_ptr->steering_offset = 0.0f;
             shm_ptr->state = 0;
             shm_ptr->emergency_stop = false;
             shm_ptr->heartbeat = 0;

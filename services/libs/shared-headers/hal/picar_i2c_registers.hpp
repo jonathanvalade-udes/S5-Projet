@@ -16,6 +16,18 @@ namespace picar::i2c {
     inline constexpr uint8_t ADDR_PCF8591_ADC       = 0x48; // ADC Robot HAT (capteurs lumière / batterie)
 
     // =========================================================================
+    // 1b. CALIBRATION MATÉRIELLE PAR DÉFAUT (COMPILATION)
+    // =========================================================================
+    namespace calibration {
+        /**
+         * @brief Offset logiciel de direction par défaut fixé à la compilation (en degrés).
+         * Modifiez cette valeur directement ici avant de compiler (ex: +3.0f ou -2.5f).
+         * Elle sera utilisée par défaut si aucun fichier /etc/picar_steering_offset n'est présent.
+         */
+        inline constexpr float DEFAULT_STEERING_OFFSET_DEG = -5.0f;
+    }
+
+    // =========================================================================
     // 2. REGISTRES PCA9685 (0x40)
     // =========================================================================
     namespace pca9685 {

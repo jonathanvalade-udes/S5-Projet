@@ -18,7 +18,9 @@ namespace services {
 
 class Motors {
 public:
-    explicit Motors(int hz = 50, bool invert = false);
+    explicit Motors(int hz = 50, bool invert = false, 
+                    float steering_offset = picar::i2c::calibration::DEFAULT_STEERING_OFFSET_DEG, 
+                    bool offset_specified = false);
     ~Motors();
 
     bool init();
@@ -26,11 +28,15 @@ public:
     void stop();
 
     bool is_running() const { return m_running.load(); }
+    void set_steering_offset(float offset_deg);
+    float get_steering_offset() const;
 
 private:
     std::atomic<bool> m_running{false};
     int m_hz{50};
     bool m_invert{false};
+    float m_steering_offset{0.0f};
+    bool m_offset_specified{false};
 
     std::unique_ptr<IMotorDriver> m_driver;
     std::unique_ptr<SharedMemoryManager> m_shm_mgr;

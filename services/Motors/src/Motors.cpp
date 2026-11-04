@@ -6,10 +6,27 @@
 
 namespace services {
 
-Motors::Motors(int hz, bool invert) : m_running(false), m_hz(hz), m_invert(invert) {}
+Motors::Motors(int hz, bool invert, float steering_offset, bool offset_specified) 
+    : m_running(false), m_hz(hz), m_invert(invert), m_steering_offset(steering_offset), m_offset_specified(offset_specified) {}
 
 Motors::~Motors() {
     stop();
+}
+
+void Motors::set_steering_offset(float offset_deg) {
+    m_steering_offset = std::clamp(offset_deg, -15.0f, 15.0f);
+    if (m_driver) {
+        m_driver->set_steering_offset(m_steering_offset);
+    }
+    if (m_telemetry) {
+        pthread_mutex_lock(&(m_telemetry->mtx));
+        m_telemetry->steering_offset = m_steering_offset;
+        pthread_mutex_unlock(&(m_telemetry->mtx));
+    }
+}
+
+float Motors::get_steering_offset() const {
+    return m_driver ? m_driver->get_steering_offset() : m_steering_offset;
 }
 
 bool Motors::init() {
@@ -17,11 +34,24 @@ bool Motors::init() {
 
     m_driver = std::make_unique<PiCarHatsMotorDriver>(picar::i2c::ADDR_PCA9685, m_invert);
 
+    if (m_offset_specified) {
+        m_driver->set_steering_offset(m_steering_offset);
+        std::cout << "[Motors] Steering offset forcé via CLI : " << m_steering_offset << "°" << std::endl;
+    } else {
+        m_steering_offset = m_driver->get_steering_offset();
+        std::cout << "[Motors] Steering offset actif : " << m_steering_offset << "°" << std::endl;
+    }
+
     m_driver->emergency_stop();
 
     try {
         m_shm_mgr = std::make_unique<SharedMemoryManager>();
         m_telemetry = m_shm_mgr->open_shm(true);
+        if (m_telemetry) {
+            pthread_mutex_lock(&(m_telemetry->mtx));
+            m_telemetry->steering_offset = m_steering_offset;
+            pthread_mutex_unlock(&(m_telemetry->mtx));
+        }
     } catch (const std::exception& e) {
         std::cerr << "[Motors] Warning: Failed to open POSIX SHM: " << e.what() << std::endl;
         m_telemetry = nullptr;
@@ -63,6 +93,7 @@ void Motors::run() {
 
         float target_speed = 0.0f;
         float target_steering = 0.0f;
+        float shm_steering_offset = m_steering_offset;
         bool emergency_stop_requested = false;
         uint64_t current_heartbeat = 0;
 
@@ -70,9 +101,16 @@ void Motors::run() {
             pthread_mutex_lock(&(m_telemetry->mtx));
             target_speed = m_telemetry->target_speed;
             target_steering = m_telemetry->target_steering;
+            shm_steering_offset = m_telemetry->steering_offset;
             emergency_stop_requested = m_telemetry->emergency_stop;
             current_heartbeat = m_telemetry->heartbeat;
             pthread_mutex_unlock(&(m_telemetry->mtx));
+
+            // Si l'offset a été ajusté dynamiquement via SHM (ex: outil de télémétrie)
+            if (std::abs(shm_steering_offset - m_steering_offset) > 0.01f) {
+                m_steering_offset = std::clamp(shm_steering_offset, -15.0f, 15.0f);
+                if (m_driver) m_driver->set_steering_offset(m_steering_offset);
+            }
         }
 
         // Watchdog check
@@ -134,6 +172,7 @@ void Motors::run() {
         if (loop_count % m_hz == 0) {
             std::cout << "[Motors] Throttle: " << target_speed 
                       << "% | Steering: " << target_steering << " deg"
+                      << " (offset: " << m_steering_offset << " deg)"
                       << " | Watchdog misses: " << watchdog_starvation_cycles << std::endl;
         }
 

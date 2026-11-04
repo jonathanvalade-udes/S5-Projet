@@ -126,7 +126,7 @@ if [[ "${EMBEDDED_MODE}" == true ]]; then
 fi
 
 echo "==> Configuring with CMake (STATIC=${STATIC_FLAG})..."
-cmake -B "${BUILD_DIR}" -DSTATIC="${STATIC_FLAG}"
+cmake -B "${BUILD_DIR}" -S "${SCRIPT_DIR}" -DSTATIC="${STATIC_FLAG}"
 
 echo "==> Building target '${TARGET}'..."
 if [[ "${TARGET}" == "all" ]]; then
