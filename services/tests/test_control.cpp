@@ -2,6 +2,16 @@
 #include <cassert>
 #include <cmath>
 #include <vector>
+#include <cstring>
+#include <fcntl.h>
+#include <sys/stat.h>
+#if !defined(_WIN32)
+#include <unistd.h>
+#else
+#define O_NONBLOCK 0
+inline int mkfifo(const char*, int) { return 0; }
+inline int unlink(const char*) { return 0; }
+#endif
 
 #include "control/motion_profiler.hpp"
 #include "control/line_follower.hpp"
@@ -287,6 +297,22 @@ void test_dynamic_config_and_fallbacks() {
     }
     assert(out_lost.is_line_lost);
     std::cout << "  ✓ Sécurité perte de ligne (0 0 0 0 0) : transition arrêt/récupération confirmée." << std::endl;
+
+    // 5. Test de l'événement POSIX "trigger_start" via FIFO
+    std::string test_fifo = "/tmp/peripheral_test";
+    mkfifo(test_fifo.c_str(), 0666);
+    int read_fd = open(test_fifo.c_str(), O_RDWR | O_NONBLOCK);
+    int write_fd = open(test_fifo.c_str(), O_WRONLY);
+    const char* trigger_cmd = "trigger_start\n";
+    write(write_fd, trigger_cmd, strlen(trigger_cmd));
+    char read_buf[64] = {0};
+    ssize_t n_read = read(read_fd, read_buf, sizeof(read_buf) - 1);
+    assert(n_read > 0);
+    assert(std::string(read_buf).find("trigger_start") != std::string::npos);
+    close(read_fd);
+    close(write_fd);
+    unlink(test_fifo.c_str());
+    std::cout << "  ✓ Tube FIFO POSIX (trigger_start) validé." << std::endl;
 }
 
 void test_ackermann_curve_speed() {

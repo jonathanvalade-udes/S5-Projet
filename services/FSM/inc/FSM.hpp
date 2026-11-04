@@ -61,6 +61,10 @@ private:
     std::unique_ptr<SharedMemoryManager> m_shm_mgr;
     RobotTelemetry* m_telemetry{nullptr};
 
+    int m_event_pipe_fd{-1};
+    std::string m_event_pipe_path{"/tmp/peripheral"};
+    bool check_start_trigger();
+
     std::unique_ptr<shared::services::memory::MemoryShareComponentSubscriber> m_sensor_sub;
     std::unique_ptr<shared::services::memory::MemoryShareComponentServer> m_fsm_pub;
 };
