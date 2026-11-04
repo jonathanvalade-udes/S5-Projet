@@ -45,6 +45,7 @@ private:
     float filtered_d_error;
     float integral = 0.0f;              // terme intégral du braquage (normalisé), compense le biais des roues
     bool has_previous_error;
+    bool finish_detection_enabled = true;
     float analog_error_filtered = 0.0f; // erreur analogique filtrée (EMA) avant le terme dérivé
     bool has_analog_error = false;
     float last_d_error_dt = 0.0f;       // dérivée temporelle de l'erreur exposée pour le feedforward prédictif
@@ -64,6 +65,14 @@ public:
           line_lost_elapsed(0.0f),
           filtered_d_error(0.0f),
           has_previous_error(false) {}
+
+    /// Correction de braquage (normalisée) apprise par le terme intégral : sur une droite, elle compense le biais
+    /// des roues. Utilisée comme correction fixe pendant les manoeuvres en boucle ouverte (évitement).
+    float steering_trim() const { return integral; }
+
+    /// Désactive la détection de la barre d'arrivée (ex. juste après un évitement : la voiture recoupe la ligne en biais
+    /// et plusieurs capteurs voient du noir en même temps, ce qui ressemble à la barre).
+    void set_finish_detection(bool enabled) { finish_detection_enabled = enabled; }
 
     void reset() {
         last_error = 0.0f;
@@ -224,7 +233,7 @@ public:
             if (d > ANALOG_DARK_THRESHOLD) dark_count++;
         }
 
-        const bool is_t_stop = (dark_count >= 4 || total >= 3.6f);
+        const bool is_t_stop = finish_detection_enabled && (dark_count >= 4 || total >= 3.6f);
         const bool has_line = (total >= ANALOG_MIN_TOTAL_DARKNESS);
         float error = has_line ? (weighted / total) : 0.0f;
 
@@ -263,7 +272,7 @@ public:
             if (sensors[i] != 0) active_count++;
         }
 
-        bool is_t_stop = (active_count >= 4);
+        bool is_t_stop = finish_detection_enabled && (active_count >= 4);
         float error = 0.0f;
         bool has_line = compute_barycentric_error(sensors, error);
 

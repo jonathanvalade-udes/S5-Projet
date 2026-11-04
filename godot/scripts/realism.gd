@@ -2,12 +2,12 @@ class_name Realism
 extends RefCounted
 
 # Imperfections du vrai PiCar, pour que la simulation ne soit pas "trop parfaite".
-# - Touche R en jeu : active / désactive toutes les imperfections.
-# - Variables d'environnement (utile pour les tests) : REALISM=0 pour désactiver, REALISM_SEED=<entier>,
+# - Désactivé par défaut : la voiture est parfaite. Touche R en jeu : active / désactive toutes les imperfections.
+# - Variables d'environnement (utile pour les tests) : REALISM=1 pour démarrer avec les imperfections, REALISM_SEED=<entier>,
 #   et REALISM_<NOM_EN_MAJUSCULES>=<valeur> pour changer un réglage (ex. REALISM_STEER_BIAS_DEG=6).
 # Le tirage aléatoire est initialisé avec une graine fixe : deux lancements donnent le même parcours.
 
-static var enabled: bool = true
+static var enabled: bool = false
 static var rng: RandomNumberGenerator = RandomNumberGenerator.new()
 static var _configured: bool = false
 
@@ -49,7 +49,7 @@ static func setup() -> void:
 		var value: String = OS.get_environment("REALISM_" + String(key).to_upper())
 		if value != "":
 			p[key] = float(value)
-	print("[Realism] ", "ACTIF" if enabled else "désactivé", " (touche R pour basculer)")
+	print("[Realism] ", "ACTIF" if enabled else "désactivé", " (touche R pour ", "désactiver" if enabled else "activer", ")")
 
 static func toggle() -> void:
 	enabled = not enabled

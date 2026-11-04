@@ -1,5 +1,7 @@
 #include "FSM.hpp"
 #include <iostream>
+#include <cstdlib>
+#include <string>
 #include <chrono>
 #include <thread>
 #include <algorithm>
@@ -55,12 +57,18 @@ void FSM::transition_to(shared::fsm::MachineStates new_state) {
         m_dev_phase = 0;
         m_dev_phase_distance = 0.0f;
         m_dev_heading = 0.0f;
+<<<<<<< Updated upstream
 
         // Si on entre dans Armed, purger tout ancien événement résiduel dans le tube
         if (new_state == shared::fsm::MachineStates::Armed && m_event_pipe_fd >= 0) {
             char drain[128];
             while (read(m_event_pipe_fd, drain, sizeof(drain)) > 0) {}
         }
+=======
+        m_dev_steer_real = 0.0f;
+        m_dev_x = 0.0f;
+        m_dev_y = 0.0f;
+>>>>>>> Stashed changes
     }
 }
 
@@ -78,6 +86,15 @@ bool FSM::init() {
     m_line_kd               = cfg.line_kd;
     m_obstacle_stop_dist_cm = cfg.obstacle_stop_dist_cm;
     m_reverse_speed         = cfg.reverse_speed;
+
+    // Côté de contournement des obstacles : variable d'environnement AVOID_SIDE (gauche|droite|left|right)
+    if (const char* side_env = std::getenv("AVOID_SIDE")) {
+        const std::string side(side_env);
+        if (side == "gauche" || side == "left" || side == "g" || side == "l") m_avoid_side = -1.0f;
+        else if (side == "droite" || side == "right" || side == "d" || side == "r") m_avoid_side = 1.0f;
+        else std::cerr << "[FSM] AVOID_SIDE='" << side << "' inconnu (gauche|droite) -> droite par défaut" << std::endl;
+    }
+    std::cout << "[FSM] Contournement des obstacles par la " << (m_avoid_side < 0.0f ? "GAUCHE" : "DROITE") << std::endl;
 
     m_line_controller = std::make_unique<LineFollowerController>(m_line_kp, m_line_kd, m_straight_cruise_speed, m_min_curve_speed);
     m_motion_profiler = std::make_unique<MotionProfiler>(m_max_acceleration, m_straight_cruise_speed);
@@ -131,56 +148,99 @@ bool FSM::init() {
     return true;
 }
 
-// Contournement d'un obstacle posé sur la ligne (cube ~15 cm), en boucle ouverte sur l'odométrie :
-//   0. recul de 8 cm (le pare-chocs est trop près du cube pour braquer sans le toucher),
-//   1. arc à braquage maximal du côté `side` jusqu'à un cap de 70° (le cube est dépassé latéralement),
-//   2. arc inverse jusqu'à retrouver le cap initial (la voiture roule parallèle à la ligne, ~18 cm à côté),
-//   3. 15 cm en ligne droite, puis LineSearching ramène la voiture sur le ruban.
-// Géométrie validée par simulation : sans le recul ou avec un cap < 70°, le coin de la voiture touche le cube.
-// side = +1 : droite (RightDeviation), -1 : gauche. Retourne true quand la manoeuvre est terminée.
-bool FSM::run_obstacle_deviation(float side, float dt, float& steering_deg, float& velocity) {
-    constexpr float REVERSE_DISTANCE_M = 0.08f;
+// Contournement d'un obstacle posé sur la ligne, en boucle ouverte sur l'odométrie (aucun capteur de cap) :
+//   0. recul de 10 cm (le pare-chocs est trop près pour braquer sans toucher l'obstacle),
+//   1. arc à braquage maximal du côté `side` jusqu'à 75° de cap,
+//   2. arc inverse jusqu'au cap initial : la voiture roule parallèle à la ligne, ~20 cm à côté,
+//   3. ligne droite jusqu'à ce que l'arrière de la voiture ait dépassé l'obstacle,
+//   4. braquage vers la ligne jusqu'au premier ruban vu (la voiture arrive de l'extérieur : c'est la ligne d'origine).
+// L'estimation de cap suppose un servo un peu lent (STEER_LAG_S). Réglages validés en simulation pour une voiture
+// parfaite et pour la voiture "réaliste" (biais, jeu, latence) : en dessous de 70° ou sans recul, l'arrière de la
+// voiture touche l'obstacle ; plus loin, la voiture risque de s'accrocher à une autre branche du parcours.
+// side = +1 : droite (RightDeviation), -1 : gauche.
+FSM::DeviationResult FSM::run_obstacle_deviation(float side, float dt, const float darkness[5],
+                                                 float& steering_deg, float& velocity) {
+    constexpr float REVERSE_DISTANCE_M = 0.10f;
     constexpr float FORWARD_SPEED = 0.16f;
     constexpr float REVERSE_SPEED = 0.12f;
+    constexpr float RETURN_SPEED = 0.15f;
     constexpr float ARC_STEER_DEG = 45.0f;
-    constexpr float ARC_HEADING_DEG = 70.0f;
-    constexpr float PARALLEL_DISTANCE_M = 0.15f;
+    constexpr float ARC_HEADING_RAD = 75.0f * 3.14159265f / 180.0f;
     constexpr float WHEELBASE_M = 0.14f;
     constexpr float STEER_DEG_TO_REAL = 48.0f / 45.0f;   // le simulateur convertit 45° commandés en 48° de roue
-    constexpr float TIMEOUT_S = 10.0f;                   // sécurité : on laisse LineSearching reprendre la main
+    constexpr float STEER_LAG_S = 0.06f;                 // retard du servo de direction
+    constexpr float OBSTACLE_DEPTH_M = 0.15f;            // profondeur supposée de l'obstacle
+    constexpr float CAR_REAR_M = 0.15f;                  // distance de l'origine de la voiture à son arrière
+    constexpr float CLEARANCE_M = 0.03f;
+    constexpr float RETURN_TIMEOUT_S = 4.0f;             // sans ruban : on laisse LineSearching reprendre la main
+    constexpr float TIMEOUT_S = 14.0f;
 
     m_state_timer += dt;
     const float v = m_motion_profiler ? m_motion_profiler->get_current_speed() : 0.0f;
     m_dev_phase_distance += std::abs(v) * dt;
 
+    // Position estimée : x vers l'avant, cap en rad (+ = vers le côté de la déviation)
+    auto integrate = [&](float steer_deg) {
+        // Braquage réellement obtenu : commande + correction apprise, limitée à ±45°, puis biais des roues (= -correction)
+        const float applied = std::clamp(steer_deg + m_dev_trim_deg, -45.0f, 45.0f) - m_dev_trim_deg;
+        m_dev_steer_real += (applied - m_dev_steer_real) * std::min(1.0f, dt / STEER_LAG_S);
+        m_dev_heading += v / WHEELBASE_M * std::tan(m_dev_steer_real * STEER_DEG_TO_REAL * 3.14159265f / 180.0f) * dt * side;
+        m_dev_x += v * std::cos(m_dev_heading) * dt;
+        m_dev_y += v * std::sin(m_dev_heading) * dt;
+    };
+    auto next_phase = [&]() {
+        std::cout << "[FSM] Evitement phase " << m_dev_phase << " -> " << (m_dev_phase + 1) << " (x=" << m_dev_x << " y=" << m_dev_y
+                  << " cap=" << (m_dev_heading * 57.2958f) << " deg, t=" << m_state_timer << " s)" << std::endl;
+        m_dev_phase++;
+        m_dev_phase_distance = 0.0f;
+    };
+
     switch (m_dev_phase) {
-        case 0:
+        case 0:  // recul
             steering_deg = 0.0f;
             velocity = -REVERSE_SPEED;
-            if (m_dev_phase_distance >= REVERSE_DISTANCE_M) { m_dev_phase = 1; m_dev_phase_distance = 0.0f; }
+            integrate(steering_deg);
+            if (m_dev_phase_distance >= REVERSE_DISTANCE_M) {
+                m_dev_obstacle_far_x = m_dev_obstacle_dist + OBSTACLE_DEPTH_M;  // x = 0 : position à l'arrêt
+                next_phase();
+            }
             break;
-        case 1:
+        case 1:  // arc vers l'extérieur
             steering_deg = side * ARC_STEER_DEG;
             velocity = FORWARD_SPEED;
-            m_dev_heading += v / WHEELBASE_M * std::tan(steering_deg * STEER_DEG_TO_REAL * 3.14159265f / 180.0f) * dt * side;
-            if (m_dev_heading >= ARC_HEADING_DEG * 3.14159265f / 180.0f) { m_dev_phase = 2; m_dev_phase_distance = 0.0f; }
+            integrate(steering_deg);
+            if (m_dev_heading >= ARC_HEADING_RAD) next_phase();
             break;
-        case 2:
+        case 2:  // arc inverse : parallèle à la ligne
             steering_deg = -side * ARC_STEER_DEG;
             velocity = FORWARD_SPEED;
-            m_dev_heading += v / WHEELBASE_M * std::tan(steering_deg * STEER_DEG_TO_REAL * 3.14159265f / 180.0f) * dt * side;
-            if (m_dev_heading <= 0.0f) { m_dev_phase = 3; m_dev_phase_distance = 0.0f; }
+            integrate(steering_deg);
+            if (m_dev_heading <= 0.0f) next_phase();
             break;
-        default:
+        case 3:  // tout droit jusqu'à avoir dépassé l'obstacle
             steering_deg = 0.0f;
             velocity = FORWARD_SPEED;
-            if (m_dev_phase_distance >= PARALLEL_DISTANCE_M) return true;
+            integrate(steering_deg);
+            if (m_dev_x - CAR_REAR_M >= m_dev_obstacle_far_x + CLEARANCE_M) next_phase();
             break;
+        default: {  // retour : braquage vers la ligne jusqu'au premier ruban
+            steering_deg = -side * ARC_STEER_DEG;
+            velocity = RETURN_SPEED;
+            integrate(steering_deg);
+            const float total_darkness = darkness[0] + darkness[1] + darkness[2] + darkness[3] + darkness[4];
+            if (total_darkness >= 0.35f) return DeviationResult::LineFound;
+            if (m_dev_phase_distance >= RETURN_SPEED * RETURN_TIMEOUT_S) return DeviationResult::SearchLine;
+            break;
+        }
     }
-    return m_state_timer >= TIMEOUT_S;
+
+    // Correction du biais de direction apprise sur la ligne droite précédente (la position estimée suppose un braquage exact)
+    steering_deg = std::clamp(steering_deg + m_dev_trim_deg, -45.0f, 45.0f);
+    return m_state_timer >= TIMEOUT_S ? DeviationResult::SearchLine : DeviationResult::Running;
 }
 
 void FSM::run() {
+    constexpr float IGNORE_FINISH_AFTER_AVOIDANCE_S = 1.0f;  // décompté seulement pendant le suivi de ligne
     const auto period_ms = std::chrono::milliseconds(1000 / m_hz);
     const float dt = 1.0f / static_cast<float>(m_hz);
 
@@ -337,6 +397,9 @@ void FSM::run() {
             }
 
             case shared::fsm::MachineStates::LineFollowingForward: {
+                // Juste après un évitement, la barre d'arrivée est ignorée (la voiture recoupe la ligne en biais)
+                m_ignore_finish_s = std::max(0.0f, m_ignore_finish_s - dt);
+                if (m_line_controller) m_line_controller->set_finish_detection(m_ignore_finish_s <= 0.0f);
                 LineFollowerOutput line_out = m_line_controller ? m_line_controller->update_analog(line_darkness, dt)
                                                                 : LineFollowerOutput{0.0f, 0.0f, m_straight_cruise_speed, 0.0f, false, false};
                 desired_steering = line_out.steer_degrees;
@@ -415,7 +478,12 @@ void FSM::run() {
                     if (current_dist_cm <= 25.0f) {
                         // Obstacle confirmé -> Évitement autonome (S4 RightDeviation)
                         std::cout << "[FSM] Obstacle confirmé à " << current_dist_cm << " cm -> Démarrage évitement S4!" << std::endl;
-                        transition_to(shared::fsm::MachineStates::RightDeviation);
+                        transition_to(m_avoid_side < 0.0f ? shared::fsm::MachineStates::LeftDeviation
+                                                          : shared::fsm::MachineStates::RightDeviation);
+                        m_dev_obstacle_dist = current_dist_cm / 100.0f;
+                        m_dev_trim_deg = m_line_controller ? m_line_controller->steering_trim() * 45.0f : 0.0f;
+                        m_ignore_finish_s = IGNORE_FINISH_AFTER_AVOIDANCE_S;
+                        std::cout << "[FSM] Correction de braquage apprise (biais des roues) : " << m_dev_trim_deg << " deg" << std::endl;
                     } else {
                         // Obstacle retiré -> reprise immédiate
                         transition_to(shared::fsm::MachineStates::LineFollowingForward);
@@ -427,9 +495,17 @@ void FSM::run() {
             case shared::fsm::MachineStates::RightDeviation:
             case shared::fsm::MachineStates::LeftDeviation: {
                 const float side = (m_current_state == shared::fsm::MachineStates::RightDeviation) ? 1.0f : -1.0f;
-                if (run_obstacle_deviation(side, dt, desired_steering, desired_velocity)) {
-                    std::cout << "[FSM] Dégagement latéral achevé -> Recoupage (LineSearching)..." << std::endl;
-                    transition_to(shared::fsm::MachineStates::LineSearching);
+                switch (run_obstacle_deviation(side, dt, line_darkness, desired_steering, desired_velocity)) {
+                    case DeviationResult::LineFound:
+                        std::cout << "[FSM] Dégagement latéral achevé : ruban retrouvé -> LineDetected" << std::endl;
+                        transition_to(shared::fsm::MachineStates::LineDetected);
+                        break;
+                    case DeviationResult::SearchLine:
+                        std::cout << "[FSM] Dégagement latéral achevé -> Recoupage (LineSearching)..." << std::endl;
+                        transition_to(shared::fsm::MachineStates::LineSearching);
+                        break;
+                    case DeviationResult::Running:
+                        break;
                 }
                 break;
             }

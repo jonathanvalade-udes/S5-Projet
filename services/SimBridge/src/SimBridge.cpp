@@ -230,15 +230,19 @@ void SimBridge::run() {
                         float weighted_darkness = 0.0f;
                         constexpr float weights[5] = {-2.0f, -1.0f, 0.0f, 1.0f, 2.0f};
 
+                        // Godot est en miroir de la convention du robot (HAL : braquage + = droite, capteur D = droite) :
+                        // un braquage positif y tourne vers la gauche. On inverse donc l'ordre des capteurs et le signe
+                        // du braquage ici, pour que "gauche" et "droite" aient le meme sens en simulation et sur le robot.
                         for (int i = 0; i < 5; ++i) {
-                            float d = std::clamp(telem_in.line_darkness[i], 0.0f, 1.0f);
+                            const int j = 4 - i;
+                            float d = std::clamp(telem_in.line_darkness[j], 0.0f, 1.0f);
                             m_telemetry->line_darkness[i] = d;
                             total_darkness += d;
                             weighted_darkness += weights[i] * d;
                             // Vue binaire : dérivée de l'analogique si présent, sinon trame binaire brute
                             m_telemetry->line_sensors[i] = telem_in.has_analog
                                 ? static_cast<uint8_t>(d > 0.5f ? 1 : 0)
-                                : telem_in.line_sensors[i];
+                                : telem_in.line_sensors[j];
                         }
                         if (total_darkness >= 0.20f) {
                             m_telemetry->line_error = (weighted_darkness / (2.0f * total_darkness));
@@ -266,7 +270,7 @@ void SimBridge::run() {
                     // Vitesse physique réelle respectant STRAIGHT_CRUISE_SPEED dynamique de SHM
                     cmd_out.velocity = (target_spd / 50.0f) * cruise_cfg;
                     // Normalisation de l'angle de braquage [-1.0, 1.0] pour l'épure d'Ackermann de Godot (+-48°)
-                    cmd_out.direction = std::clamp(target_steer / 45.0f, -1.0f, 1.0f);
+                    cmd_out.direction = -std::clamp(target_steer / 45.0f, -1.0f, 1.0f);  // miroir Godot (voir plus haut)
                     cmd_out.brake = emergency;
 
                     if (!m_sim_mode) {

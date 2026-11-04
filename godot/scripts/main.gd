@@ -48,12 +48,28 @@ func _ready() -> void:
 	if circuit:
 		_set_collision_layer_recursive(circuit, 2)
 
+	# Obstacles : nœuds "obstacle*" (instances de obstacle.blend). Le mesh importé n'a pas de collision :
+	# on en génère une (enveloppe convexe, couche 1) pour que la voiture soit bloquée et que le capteur ultrason le voie.
+	for node in get_children():
+		if String(node.name).begins_with("obstacle"):
+			_add_obstacle_collision(node)
+
 	if is_optuna_mode:
 		print("[Optuna Godot] Headless runner actif (TimeScale=", Engine.time_scale, ", Timeout=", optuna_timeout, "s)")
 		if picar:
 			optuna_prev_pos = picar.global_position
 		# Connexion automatique au SimBridge TCP 127.0.0.1:9000
 		network_client.connect_to_server("127.0.0.1", 9000)
+
+func _add_obstacle_collision(node: Node) -> void:
+	for mesh in node.find_children("*", "MeshInstance3D", true, false):
+		var mi := mesh as MeshInstance3D
+		var has_body := false
+		for child in mi.get_children():
+			if child is StaticBody3D:
+				has_body = true
+		if not has_body:
+			mi.create_convex_collision()
 
 func _set_collision_layer_recursive(node: Node, layer: int) -> void:
 	if node is StaticBody3D:

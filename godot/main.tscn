@@ -6,6 +6,7 @@
 [ext_resource type="PackedScene" uid="uid://qg8kqiq61w7t" path="res://assets/robot.blend" id="8_cyber"]
 [ext_resource type="PackedScene" uid="uid://xroxh5wjbwp6" path="res://line_follower_sensor.tscn" id="9_a0528"]
 [ext_resource type="PackedScene" uid="uid://cxd40r75s18bp" path="res://assets/Roue.blend" id="9_kek77"]
+[ext_resource type="PackedScene" uid="uid://dw8264gchc35g" path="res://assets/obstacle.blend" id="10_4c57u"]
 [ext_resource type="Script" uid="uid://yia7brf1mnk5" path="res://scripts/ball_monitor.gd" id="10_bmon"]
 [ext_resource type="PackedScene" uid="uid://bioewyx1e7nuh" path="res://assets/plaquette_blender_scale.blend" id="11_plaq"]
 [ext_resource type="PackedScene" uid="uid://ee2o3ok3vl56" path="res://assets/parcours.blend" id="12_parcours"]
@@ -69,19 +70,20 @@ transform = Transform3D(-4.37114e-08, 0, -1, 0, 1, 0, 1, 0, -4.37114e-08, -0.125
 transform = Transform3D(-1.7484555e-09, 0, -0.04, 0, 0.04, 0, 0.04, 0, -1.7484555e-09, 0.05895132, 0.031622197, 0.0017511249)
 
 [node name="PlaquetteSupport" parent="PiCar" unique_id=1599129438 instance=ExtResource("11_plaq")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.07338458, 0.09961535, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0700019, 0.075148866, 0)
 
 [node name="Bille" type="RigidBody3D" parent="PiCar" unique_id=1804454935]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.075690806, 0.09271516, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.072184265, 0.08946782, 0)
 mass = 0.065
 script = ExtResource("10_bmon")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PiCar/Bille" unique_id=537514198]
-transform = Transform3D(0.025, 0, 0, 0, 0.025, 0, 0, 0, 0.025, 0, 0, 0)
+transform = Transform3D(0.02, 0, 0, 0, 0.02, 0, 0, 0, 0.02, 0, 0, 0)
 shape = SubResource("SphereShape3D_iys2i")
 
 [node name="CSGSphere3D" type="CSGSphere3D" parent="PiCar/Bille" unique_id=112168558]
-transform = Transform3D(0.025, 0, 0, 0, 0.025, 0, 0, 0, 0.025, 0.14907539, 0.024948731, 0)
+transform = Transform3D(0.025, 0, 0, 0, 0.025, 0, 0, 0, 0.025, 0, 0, 0)
+radius = 0.4
 radial_segments = 32
 rings = 32
 material = SubResource("StandardMaterial3D_ball")
@@ -137,6 +139,12 @@ text = "Start FSM"
 [node name="btn_StopFSM" type="Button" parent="GridContainer" unique_id=987123457]
 layout_mode = 2
 text = "Stop FSM"
+
+[node name="obstacle" parent="." unique_id=1514249519 instance=ExtResource("10_4c57u")]
+transform = Transform3D(-0.00060717657, 0, -0.9999998, 0, 1, 0, 0.9999998, 0, -0.00060717657, -0.0013141632, 0.10000006, 1.0050113)
+
+[node name="obstacle2" parent="." unique_id=104985700 instance=ExtResource("10_4c57u")]
+transform = Transform3D(0.9999916, 0, 0.0040991195, 0, 1, 0, -0.0040991195, 0, 0.9999916, -0.32261512, 0.10000006, -0.15249658)
 
 [connection signal="pressed" from="GridContainer/btn_Connect" to="." method="_on_connect_pressed"]
 [connection signal="pressed" from="GridContainer/btn_Quit" to="." method="_on_quit_pressed"]
