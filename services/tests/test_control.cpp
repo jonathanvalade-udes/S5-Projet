@@ -5,6 +5,8 @@
 
 #include "control/motion_profiler.hpp"
 #include "control/line_follower.hpp"
+#include "control/picar_constants.hpp"
+#include "control/picar_config.hpp"
 
 bool approx_equal(float a, float b, float epsilon = 0.01f) {
     return std::abs(a - b) <= epsilon;
@@ -226,6 +228,55 @@ void test_obstacle_avoidance_s4_and_s5() {
     std::cout << "  ✓ S5 Marche arrière guidée : Distance " << (reverse_dist * 1000.0f) << " mm (< 200 mm requis)." << std::endl;
 }
 
+void test_dynamic_config_and_fallbacks() {
+    std::cout << "[TEST] Configuration dynamique et Fallbacks..." << std::endl;
+
+    // 1. Test du fallback par défaut sur le .hpp (fichier inexistant)
+    auto cfg_default = config::PicarConfig::read_config("/chemin_inexistant/bogus.conf");
+    assert(approx_equal(cfg_default.max_acceleration, picar::constants::DEFAULT_MAX_ACCELERATION));
+    assert(approx_equal(cfg_default.cruise_speed, picar::constants::DEFAULT_STRAIGHT_CRUISE_SPEED));
+    assert(approx_equal(cfg_default.min_curve_speed, picar::constants::DEFAULT_MIN_CURVE_SPEED));
+    assert(approx_equal(cfg_default.line_kp, picar::constants::DEFAULT_LINE_KP));
+    std::cout << "  ✓ Fallback dur .hpp validé si le .config est absent." << std::endl;
+
+    // 2. Test d'écriture et de lecture dans un fichier .config temporaire
+    std::string test_conf = "test_picar.conf";
+    bool wrote1 = config::PicarConfig::write_config("MAX_ACCELERATION", 0.55f, test_conf);
+    bool wrote2 = config::PicarConfig::write_config("CRUISE_SPEED", 0.25f, test_conf);
+    assert(wrote1 && wrote2);
+
+    auto cfg_loaded = config::PicarConfig::read_config(test_conf);
+    assert(approx_equal(cfg_loaded.max_acceleration, 0.55f));
+    assert(approx_equal(cfg_loaded.cruise_speed, 0.25f));
+    // Les clés non modifiées doivent garder la valeur par défaut du .hpp
+    assert(approx_equal(cfg_loaded.min_curve_speed, picar::constants::DEFAULT_MIN_CURVE_SPEED));
+    unlink(test_conf.c_str());
+    std::cout << "  ✓ Écriture et relecture .config validées avec préservation des fallbacks." << std::endl;
+
+    // 3. Test de mise à jour dynamique sur MotionProfiler et LineFollowerController
+    MotionProfiler profiler(0.735f, 0.32f);
+    profiler.set_max_accel(0.50f);
+    profiler.set_max_speed(0.20f);
+    assert(approx_equal(profiler.get_max_accel(), 0.50f));
+    assert(approx_equal(profiler.get_max_speed(), 0.20f));
+
+    LineFollowerController controller;
+    controller.set_kp(0.80f);
+    controller.set_kd(0.10f);
+    controller.set_cruise_speed(0.22f);
+    controller.set_min_curve_speed(0.08f);
+
+    // 4. Test du fallback capteur: si aucun capteur actif [0,0,0,0,0], perte de ligne
+    uint8_t no_line[5] = {0, 0, 0, 0, 0};
+    // Sur 1.5s sans ligne (timeout = 1.2s), is_line_lost doit devenir true
+    LineFollowerOutput out_lost;
+    for (int i = 0; i < 75; ++i) {
+        out_lost = controller.update(no_line, 0.02f);
+    }
+    assert(out_lost.is_line_lost);
+    std::cout << "  ✓ Sécurité perte de ligne (0 0 0 0 0) : transition arrêt/récupération confirmée." << std::endl;
+}
+
 int main() {
     std::cout << "========================================" << std::endl;
     std::cout << "  PiCar C++17 - Tests Unitaires Contrôle" << std::endl;
@@ -235,6 +286,7 @@ int main() {
     test_line_follower_controller();
     test_line_follower_analog();
     test_obstacle_avoidance_s4_and_s5();
+    test_dynamic_config_and_fallbacks();
 
     std::cout << "========================================" << std::endl;
     std::cout << "  TOUS LES TESTS SONT PASSÉS AVEC SUCCÈS" << std::endl;

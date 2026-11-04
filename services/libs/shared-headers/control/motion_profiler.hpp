@@ -90,4 +90,5 @@ public:
     float get_max_accel() const { return max_accel; }
     float get_max_speed() const { return max_speed; }
     void set_max_speed(float speed) { max_speed = speed; }
+    void set_max_accel(float accel) { max_accel = std::max(0.05f, accel); }
 };

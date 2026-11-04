@@ -52,7 +52,7 @@ public:
 class MockSensorDriver : public ISensorDriver {
 private:
     float simulated_dist = 50.0f;
-    uint8_t simulated_line[5] = {0, 0, 1, 0, 0}; // Ligne centrée par défaut
+    uint8_t simulated_line[5] = {0, 0, 0, 0, 0}; // Par défaut, aucune ligne si non initialisé
     size_t counter = 0;
 
 public:
@@ -101,8 +101,9 @@ private:
                                 picar::i2c::line_follower::DEFAULT_THRESHOLD,
                                 picar::i2c::line_follower::DEFAULT_THRESHOLD,
                                 picar::i2c::line_follower::DEFAULT_THRESHOLD};
-    uint8_t m_last_sensors[5] = {0, 0, 1, 0, 0};
-    float m_last_darkness[5] = {0.0f, 0.0f, 1.0f, 0.0f, 0.0f};
+    uint8_t m_last_sensors[5] = {0, 0, 0, 0, 0};
+    float m_last_darkness[5] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+    int m_consecutive_i2c_errors = 0;
 
     float m_black_adc = env_float("PICAR_LINE_BLACK_ADC", picar::i2c::line_follower::DEFAULT_BLACK_ADC);
     float m_white_adc = env_float("PICAR_LINE_WHITE_ADC", picar::i2c::line_follower::DEFAULT_WHITE_ADC);
@@ -270,20 +271,38 @@ public:
         return -1.0f; // Panne matérielle ou GPIO inaccessibles
     }
 
+    bool is_line_sensor_connected() const {
+        return m_line_device.is_connected() && (m_consecutive_i2c_errors < 5);
+    }
+
     void read_line_sensors(uint8_t out_sensors[5]) override {
         if (m_line_device.is_connected()) {
             uint8_t buffer[picar::i2c::line_follower::RAW_BUFFER_SIZE] = {0};
             if (m_line_device.read_block_data(picar::i2c::line_follower::REG_START, 
                                               buffer, 
                                               picar::i2c::line_follower::RAW_BUFFER_SIZE)) {
+                m_consecutive_i2c_errors = 0;
                 uint16_t raw_adc[5];
                 picar::i2c::line_follower::parse_raw_adc(buffer, raw_adc);
                 picar::i2c::line_follower::binarize_sensors(raw_adc, m_thresholds, m_last_sensors);
                 for (int i = 0; i < 5; ++i) {
                     m_last_darkness[i] = picar::i2c::line_follower::adc_to_darkness(raw_adc[i], m_black_adc, m_white_adc);
                 }
+            } else {
+                m_consecutive_i2c_errors++;
+            }
+        } else {
+            m_consecutive_i2c_errors++;
+        }
+
+        // Si l'I2C échoue plus de 3 cycles (~60 ms), fallback strict sur 0 0 0 0 0 (ligne perdue)
+        if (m_consecutive_i2c_errors >= 3) {
+            for (int i = 0; i < 5; ++i) {
+                m_last_sensors[i] = 0;
+                m_last_darkness[i] = 0.0f;
             }
         }
+
         for (int i = 0; i < 5; ++i) {
             out_sensors[i] = m_last_sensors[i];
         }

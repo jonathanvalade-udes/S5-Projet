@@ -1,4 +1,5 @@
 #include "SimBridge.hpp"
+#include "control/picar_config.hpp"
 #include <iostream>
 #include <cstring>
 #include <vector>
@@ -116,20 +117,25 @@ void SimBridge::run() {
         char recv_buf[1024];
         ssize_t bytes_read = recv(client_fd, recv_buf, sizeof(recv_buf) - 1, 0);
 
-        if (bytes_read < 0) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
+        if (bytes_read <= 0) {
+            if (bytes_read < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)) {
                 continue;
             }
-            std::cout << "[SimBridge] Socket read error / timeout: " << strerror(errno) << std::endl;
+            if (bytes_read == 0) {
+                std::cout << "[SimBridge] Client disconnected (EOF)." << std::endl;
+            } else {
+                std::cout << "[SimBridge] Socket read error / timeout: " << strerror(errno) << std::endl;
+            }
             close(client_fd);
             client_fd = -1;
-            continue;
-        }
 
-        if (bytes_read == 0) {
-            std::cout << "[SimBridge] Client disconnected (EOF)." << std::endl;
-            close(client_fd);
-            client_fd = -1;
+            // Arrêt sécuritaire immédiat dès déconnexion
+            if (m_telemetry) {
+                pthread_mutex_lock(&(m_telemetry->mtx));
+                m_telemetry->target_speed = 0.0f;
+                m_telemetry->emergency_stop = true;
+                pthread_mutex_unlock(&(m_telemetry->mtx));
+            }
             continue;
         }
 
@@ -142,6 +148,35 @@ void SimBridge::run() {
             rx_buffer.erase(0, newline_pos + 1);
 
             if (line.empty()) continue;
+
+            // Commande de modification de constante par WiFi (format "PARAM=valeur" ou "set_param")
+            if (line.find('=') != std::string::npos && line.find("line_follower") == std::string::npos && line.find("distance") == std::string::npos) {
+                size_t eq = line.find('=');
+                std::string k = line.substr(0, eq);
+                std::string v = line.substr(eq + 1);
+                k.erase(std::remove_if(k.begin(), k.end(), ::isspace), k.end());
+                v.erase(std::remove_if(v.begin(), v.end(), ::isspace), v.end());
+                try {
+                    float fval = std::stof(v);
+                    // 1. Écriture persistante dans le fichier .config
+                    config::PicarConfig::write_config(k, fval);
+                    // 2. Application immédiate en mémoire POSIX
+                    if (m_telemetry) {
+                        pthread_mutex_lock(&(m_telemetry->mtx));
+                        if (k == "MAX_ACCELERATION") m_telemetry->cfg_max_acceleration = fval;
+                        else if (k == "STRAIGHT_CRUISE_SPEED" || k == "CRUISE_SPEED") m_telemetry->cfg_cruise_speed = fval;
+                        else if (k == "MIN_CURVE_SPEED") m_telemetry->cfg_min_curve_speed = fval;
+                        else if (k == "LINE_KP" || k == "KP") m_telemetry->cfg_line_kp = fval;
+                        else if (k == "LINE_KD" || k == "KD") m_telemetry->cfg_line_kd = fval;
+                        m_telemetry->cfg_version++;
+                        pthread_mutex_unlock(&(m_telemetry->mtx));
+                    }
+                    std::cout << "[SimBridge WiFi] Paramètre mis à jour : " << k << " = " << fval << std::endl;
+                    std::string ack = "{\"status\":\"ok\",\"param\":\"" + k + "\",\"value\":" + std::to_string(fval) + "}\n";
+                    send(client_fd, ack.c_str(), ack.size(), 0);
+                    continue;
+                } catch (...) {}
+            }
 
             packet_count++;
 

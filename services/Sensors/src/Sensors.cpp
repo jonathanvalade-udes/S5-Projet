@@ -1,4 +1,5 @@
 #include "Sensors.hpp"
+#include "control/picar_config.hpp"
 #include <iostream>
 #include <chrono>
 #include <thread>
@@ -44,6 +45,10 @@ bool Sensors::init() {
     try {
         m_shm_mgr = std::make_unique<SharedMemoryManager>();
         m_telemetry = m_shm_mgr->open_shm(true);
+        if (m_telemetry) {
+            auto initial_cfg = config::PicarConfig::read_config();
+            config::PicarConfig::apply_to_shm(initial_cfg, m_telemetry);
+        }
     } catch (const std::exception& e) {
         std::cerr << "[Sensors] Warning: Failed to open POSIX SHM: " << e.what() << std::endl;
         m_telemetry = nullptr;
@@ -70,8 +75,15 @@ void Sensors::run() {
         auto start_time = std::chrono::steady_clock::now();
 
         float raw_dist = m_driver ? m_driver->read_raw_ultrasonic_cm() : 100.0f;
-        // Lecture analogique (noirceur continue [0,1]) ; le binaire n'en est qu'une vue dérivée
-        float line_darkness[5] = {0.0f, 0.0f, 1.0f, 0.0f, 0.0f};
+        static int consecutive_us_errors = 0;
+        if (raw_dist < 0.0f) {
+            consecutive_us_errors++;
+        } else {
+            consecutive_us_errors = 0;
+        }
+
+        // Lecture analogique (noirceur continue [0,1]) ; fallback strict sur 0.0 si aucun capteur
+        float line_darkness[5] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
         if (m_driver) {
             m_driver->read_line_darkness(line_darkness);
         }
@@ -119,6 +131,13 @@ void Sensors::run() {
             telem.lineFollower.flags = has_line ? shared::sensors::lineFollower::flags::LINE_FOLLOWED
                                                 : shared::sensors::lineFollower::flags::LINE_LOST;
             telem.flags = shared::sensors::flags::DISCOVERABLE;
+            if (consecutive_us_errors >= 5) {
+                telem.flags |= shared::sensors::flags::DRIVER_ERROR;
+                telem.ultrasonicSensor.flags = shared::sensors::ultrasonic::flags::ANOMALIES_DETECTED;
+            }
+            if (!has_line) {
+                telem.flags |= shared::sensors::flags::WARNING_DETECTED;
+            }
             m_mem_server->publish(telem);
         }
 

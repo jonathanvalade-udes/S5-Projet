@@ -1,4 +1,5 @@
 #include "TelemetryService.hpp"
+#include "control/picar_config.hpp"
 #include <iostream>
 #include <iomanip>
 #include <sstream>
@@ -227,9 +228,38 @@ bool TelemetryService::handle_ping_pong() {
         return false;
     }
 
-    // Vérifier s'il s'agit d'une commande (ex: Ping)
-    bool is_ping = (hdr.type == shared::headers::HeadersType::Command);
-    if (is_ping) {
+    // Vérifier s'il s'agit d'une commande
+    if (hdr.type == shared::headers::HeadersType::Command) {
+        // Commande texte de configuration (ex: "MAX_ACCELERATION=0.55")
+        if (!payload.empty()) {
+            std::string payload_str(payload.begin(), payload.end());
+            size_t eq = payload_str.find('=');
+            if (eq != std::string::npos) {
+                std::string k = payload_str.substr(0, eq);
+                std::string v = payload_str.substr(eq + 1);
+                k.erase(std::remove_if(k.begin(), k.end(), ::isspace), k.end());
+                v.erase(std::remove_if(v.begin(), v.end(), ::isspace), v.end());
+                try {
+                    float fval = std::stof(v);
+                    // 1. Écriture dans le .config
+                    config::PicarConfig::write_config(k, fval);
+                    // 2. Application dans la mémoire partagée POSIX
+                    if (m_telemetry) {
+                        pthread_mutex_lock(&(m_telemetry->mtx));
+                        if (k == "MAX_ACCELERATION") m_telemetry->cfg_max_acceleration = fval;
+                        else if (k == "STRAIGHT_CRUISE_SPEED" || k == "CRUISE_SPEED") m_telemetry->cfg_cruise_speed = fval;
+                        else if (k == "MIN_CURVE_SPEED") m_telemetry->cfg_min_curve_speed = fval;
+                        else if (k == "LINE_KP" || k == "KP") m_telemetry->cfg_line_kp = fval;
+                        else if (k == "LINE_KD" || k == "KD") m_telemetry->cfg_line_kd = fval;
+                        m_telemetry->cfg_version++;
+                        pthread_mutex_unlock(&(m_telemetry->mtx));
+                    }
+                    std::cout << "[Telemetry WiFi] Paramètre mis à jour : " << k << " = " << fval << std::endl;
+                    return true;
+                } catch (...) {}
+            }
+        }
+
         std::cout << "[TelemetryService] Received Ping command (seq=" << hdr.seqNumber << "). Sending Pong response..." << std::endl;
 
         // Préparer la réponse Pong avec CRC calculé
