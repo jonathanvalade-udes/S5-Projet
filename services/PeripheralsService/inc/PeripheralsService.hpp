@@ -22,6 +22,7 @@ enum class BuzzerSound {
     None,
     Init,
     Wifi,
+    WifiDisconnect,
     Start
 };
 
@@ -57,6 +58,7 @@ public:
 
     // Buzzer sounds
     void wifi_buzzer();
+    void wifi_disconnect_buzzer();
     void start_buzzer();
     void init_buzzer();
     void set_buzzer(bool on);

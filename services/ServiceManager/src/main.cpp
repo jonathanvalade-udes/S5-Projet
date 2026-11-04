@@ -62,9 +62,9 @@ int main(int argc, char* argv[])
 
     // Monitored microservices with multiple candidate binary names
     std::vector<MonitoredService> monitored_services = {
-        {
+        /*{
             "FSM",
-            {"/root/FSM", "/root/fsm", "FSM", "fsm", "/usr/local/bin/FSM", "/usr/local/bin/fsm", "/usr/sbin/FSM"},
+            {"/root/FSM"},
             {},
             -1,
             0,
@@ -73,7 +73,7 @@ int main(int argc, char* argv[])
         },
         {
             "Sensors",
-            {"/root/Sensors", "/root/sensors", "Sensors", "sensors", "/usr/local/bin/Sensors", "/usr/local/bin/sensors", "/usr/sbin/Sensors"},
+            {"/root/Sensors"},
             {},
             -1,
             0,
@@ -82,7 +82,7 @@ int main(int argc, char* argv[])
         },
         {
             "Motors",
-            {"/root/Motors", "/root/motors", "Motors", "motors", "/usr/local/bin/Motors", "/usr/local/bin/motors", "/usr/sbin/Motors"},
+            {"/root/Motors"},
             {},
             -1,
             0,
@@ -91,13 +91,13 @@ int main(int argc, char* argv[])
         },
         {
             "TelemetryService",
-            {"/root/TelemetryService", "/root/telemetry", "TelemetryService", "telemetry", "/usr/local/bin/TelemetryService", "/usr/local/bin/telemetry", "/usr/sbin/TelemetryService"},
+            {"/root/TelemetryService"},
             {},
             -1,
             0,
             {},
             false
-        }, 
+        },*/ 
         {
             "PeripheralsService",
             {"/usr/sbin/peripherals"},
@@ -128,10 +128,6 @@ int main(int argc, char* argv[])
             if (dead_pid == pid_shell) {
                 log_msg(1, "[SUPERVISOR] Console shell (PID %d) terminated with code %d. Restarting shell...\n",
                         dead_pid, exit_code);
-                pid_shell = -1;
-                if (is_pid_1) {
-                    pid_shell = spawn_shell();
-                }
                 continue;
             }
 

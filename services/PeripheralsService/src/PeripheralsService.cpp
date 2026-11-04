@@ -328,17 +328,82 @@ void PeripheralsService::cleanup_socket() {
     }
 }
 
+static void prepare_wifi_environment() {
+    // 1. Kill any existing wpa_supplicant instance to avoid conflicts
+    [[maybe_unused]] auto _k = system("killall -q -9 wpa_supplicant 2>/dev/null");
+
+    // 2. Unblock wifi if rfkill is present
+    [[maybe_unused]] auto _rf = system("rfkill unblock wifi 2>/dev/null");
+
+    // 3. Ensure runtime directories exist with full permissions
+    mkdir("/run", 0755);
+    mkdir("/run/wpa_supplicant", 0777);
+    chmod("/run/wpa_supplicant", 0777);
+
+    mkdir("/var/run", 0755);
+    mkdir("/var/run/wpa_supplicant", 0777);
+    chmod("/var/run/wpa_supplicant", 0777);
+
+    // 4. CRITICAL: Remove stale control socket files left by unclean termination
+    unlink("/var/run/wpa_supplicant/wlan0");
+    unlink("/run/wpa_supplicant/wlan0");
+    unlink("/var/run/wpa_supplicant/global");
+    unlink("/run/wpa_supplicant/global");
+
+    // 5. Bring interface wlan0 UP before wpa_supplicant attaches
+    [[maybe_unused]] auto _up = system("ip link set wlan0 up 2>/dev/null || ifconfig wlan0 up 2>/dev/null");
+
+    // 6. Ensure default /etc/wpa_supplicant.conf exists if missing
+    struct stat st{};
+    const char* conf_path = "/etc/wpa_supplicant.conf";
+    if (stat(conf_path, &st) != 0 || st.st_size == 0) {
+        int fd = open(conf_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (fd >= 0) {
+            const char* default_conf =
+                "ctrl_interface=/var/run/wpa_supplicant\n"
+                "ctrl_interface_group=0\n"
+                "update_config=1\n";
+            [[maybe_unused]] auto _w = write(fd, default_conf, strlen(default_conf));
+            close(fd);
+        }
+    }
+}
+
+static void cleanup_wifi_environment(pid_t& wifi_pid) {
+    if (wifi_pid > 0) {
+        kill(wifi_pid, SIGTERM);
+        int status = 0;
+        for (int i = 0; i < 5; ++i) {
+            if (waitpid(wifi_pid, &status, WNOHANG) > 0) break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
+        kill(wifi_pid, SIGKILL);
+        waitpid(wifi_pid, &status, WNOHANG);
+        wifi_pid = -1;
+    }
+
+    [[maybe_unused]] auto _k1 = system("killall -q -9 wpa_supplicant 2>/dev/null");
+    [[maybe_unused]] auto _k2 = system("killall -q -9 udhcpc 2>/dev/null");
+    [[maybe_unused]] auto _down = system("ip link set wlan0 down 2>/dev/null || ifconfig wlan0 down 2>/dev/null");
+
+    // Always clean up control socket files
+    unlink("/var/run/wpa_supplicant/wlan0");
+    unlink("/run/wpa_supplicant/wlan0");
+    unlink("/var/run/wpa_supplicant/global");
+    unlink("/run/wpa_supplicant/global");
+}
+
 void PeripheralsService::stop() {
     if (m_running.exchange(false)) {
         std::cout << "[PeripheralsService] Stopping service..." << std::endl;
         stop_buzzer_worker();
+        cleanup_wifi_environment(m_wifi_pid);
         cleanup_socket();
     }
 }
 
 void PeripheralsService::trig_wifi() {
     std::cout << "[PeripheralsService] Triggering WiFi..." << std::endl;
-    wifi_buzzer();
 
     if (m_wifi_callback) {
         m_wifi_callback();
@@ -347,31 +412,38 @@ void PeripheralsService::trig_wifi() {
     // 1. If WiFi is currently running, toggle it OFF
     if (m_wifi_pid > 0) {
         std::cout << "[PeripheralsService] Stopping WiFi (PID " << m_wifi_pid << ")..." << std::endl;
-        kill(m_wifi_pid, SIGTERM);
-        
-        // Wait for child to exit to prevent zombie process
-        int status = 0;
-        waitpid(m_wifi_pid, &status, 0);
-        m_wifi_pid = -1;
-
-        // Clean up DHCP client and bring down wlan0
-        [[maybe_unused]] auto _k = system("killall -q udhcpc");
-        [[maybe_unused]] auto _d = system("ip link set wlan0 down 2>/dev/null");
+        wifi_disconnect_buzzer();
+        cleanup_wifi_environment(m_wifi_pid);
     } 
     // 2. If WiFi is currently stopped, toggle it ON
     else {
         std::cout << "[PeripheralsService] Starting WiFi..." << std::endl;
+        wifi_buzzer();
         
+        // Prepare directories, clean stale sockets, bring interface up
+        prepare_wifi_environment();
+
+        struct stat net_st{};
+        bool has_wlan0 = (stat("/sys/class/net/wlan0", &net_st) == 0);
+        if (!has_wlan0) {
+            std::cerr << "[PeripheralsService] Warning: wlan0 interface not found on system." << std::endl;
+            if (m_mock_gpio) {
+                // In mock test mode, simulate successful startup
+                m_wifi_pid = 9999;
+                broadcast("TRIGGER_WIFI");
+                return;
+            }
+        }
+
         pid_t pid = fork();
         if (pid < 0) {
-            std::cerr << "[PeripheralsService] Failed to fork WiFi process!" << std::endl;
+            std::cerr << "[PeripheralsService] Failed to fork WiFi process: " << std::strerror(errno) << std::endl;
             play_buzzer_pattern({{50, 80}, {50, 80}, {50, 80}, {50, 80}});
             return;
         }
 
         if (pid == 0) {
             // === CHILD PROCESS ONLY ===
-            // Start wpa_supplicant in foreground (-s for syslog/kmsg)
             char* const args[] = {
                 (char*)"wpa_supplicant",
                 (char*)"-i", (char*)"wlan0",
@@ -388,10 +460,13 @@ void PeripheralsService::trig_wifi() {
         m_wifi_pid = pid;
 
         // Launch DHCP lease acquisition in the background after wpa_supplicant starts
-        std::thread([]() {
+        std::thread([pid]() {
             // Wait 2 seconds for wpa_supplicant association
             std::this_thread::sleep_for(std::chrono::seconds(2));
-            [[maybe_unused]] auto _dhcp = system("udhcpc -i wlan0 -b -R -t 5 >/dev/null 2>&1");
+            int status = 0;
+            if (waitpid(pid, &status, WNOHANG) == 0) {
+                [[maybe_unused]] auto _dhcp = system("udhcpc -i wlan0 -b -R -t 5 >/dev/null 2>&1");
+            }
         }).detach();
     }
 
@@ -401,6 +476,9 @@ void PeripheralsService::trig_wifi() {
 void PeripheralsService::trig_start() {
     std::cout << "[PeripheralsService] Triggering Start..." << std::endl;
     start_buzzer();
+    if (m_start_callback) {
+        m_start_callback();
+    }
     broadcast("TRIGGER_START");
 }
 
@@ -484,8 +562,15 @@ void PeripheralsService::init_buzzer() {
 
 void PeripheralsService::wifi_buzzer() {
     m_last_buzzer_sound.store(BuzzerSound::Wifi);
-    std::cout << "[PeripheralsService] Buzzer: WiFi trigger sound (3 fast chirps)" << std::endl;
+    std::cout << "[PeripheralsService] Buzzer: WiFi connected sound (3 fast chirps)" << std::endl;
     play_buzzer_pattern({{50, 40}, {50, 40}, {120, 0}});
+}
+
+void PeripheralsService::wifi_disconnect_buzzer() {
+    m_last_buzzer_sound.store(BuzzerSound::WifiDisconnect);
+    std::cout << "[PeripheralsService] Buzzer: WiFi disconnected sound (2 descending beeps)" << std::endl;
+    // Descending power-down pattern: long tone followed by short drop blip
+    play_buzzer_pattern({{150, 80}, {60, 0}});
 }
 
 void PeripheralsService::start_buzzer() {

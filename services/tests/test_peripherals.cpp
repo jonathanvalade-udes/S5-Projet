@@ -109,6 +109,10 @@ void test_peripherals_buzzer_sounds() {
     assert(service.get_last_buzzer_sound() == services::BuzzerSound::Wifi);
     std::cout << "  ✓ WiFi buzzer sound verified." << std::endl;
 
+    service.wifi_disconnect_buzzer();
+    assert(service.get_last_buzzer_sound() == services::BuzzerSound::WifiDisconnect);
+    std::cout << "  ✓ WiFi disconnect buzzer sound verified." << std::endl;
+
     service.start_buzzer();
     assert(service.get_last_buzzer_sound() == services::BuzzerSound::Start);
     std::cout << "  ✓ Start buzzer sound verified." << std::endl;
@@ -144,7 +148,7 @@ void test_button_debounce_and_triggers() {
     assert(wifi_trigger_count.load() == 0);
     std::cout << "  ✓ Debounce: Short press (< 10ms) did NOT trigger WiFi." << std::endl;
 
-    // 2. Appui valide (>= 10 ms) sur le bouton WiFi -> déclenchement unique
+    // 2. Appui valide (>= 10 ms) sur le bouton WiFi -> déclenchement unique et son WiFi connecté
     service.set_mock_button_state(services::WIFI_BTN_PIN, true);
     service.poll_buttons();
     std::this_thread::sleep_for(std::chrono::milliseconds(15)); // 15 ms (>= 10 ms)
@@ -152,13 +156,27 @@ void test_button_debounce_and_triggers() {
 
     assert(wifi_trigger_count.load() == 1);
     assert(service.get_last_buzzer_sound() == services::BuzzerSound::Wifi);
-    std::cout << "  ✓ Valid press (>= 10ms) triggered WiFi and WiFi buzzer sound." << std::endl;
+    std::cout << "  ✓ Valid press (>= 10ms) triggered WiFi and WiFi connected buzzer sound." << std::endl;
 
     // 3. Maintien prolongé du bouton WiFi -> pas de déclenchements multiples répétés
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
     service.poll_buttons();
     assert(wifi_trigger_count.load() == 1);
     std::cout << "  ✓ Continuous hold does not repeat trigger." << std::endl;
+
+    // Relâchement du bouton
+    service.set_mock_button_state(services::WIFI_BTN_PIN, false);
+    service.poll_buttons();
+
+    // 3b. Deuxième appui valide (>= 10 ms) sur le bouton WiFi -> déconnexion et son WiFi déconnecté
+    service.set_mock_button_state(services::WIFI_BTN_PIN, true);
+    service.poll_buttons();
+    std::this_thread::sleep_for(std::chrono::milliseconds(15));
+    service.poll_buttons();
+
+    assert(wifi_trigger_count.load() == 2);
+    assert(service.get_last_buzzer_sound() == services::BuzzerSound::WifiDisconnect);
+    std::cout << "  ✓ Toggle WiFi OFF triggered WiFi disconnect buzzer sound." << std::endl;
 
     // Relâchement du bouton
     service.set_mock_button_state(services::WIFI_BTN_PIN, false);
