@@ -323,6 +323,40 @@ void test_tcp_server_ping_pong_and_stream() {
     if (th.joinable()) th.join();
 }
 
+void test_local_csv_and_usb_export() {
+    std::cout << "[TEST] TelemetryService - Enregistrement local CSV et Export USB..." << std::endl;
+
+    services::TelemetryService telem_service(20, false, 0, 0);
+    assert(telem_service.init());
+
+    std::thread th([&]() {
+        telem_service.run();
+    });
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+    telem_service.stop();
+    if (th.joinable()) th.join();
+
+    // Vérifier que le fichier CSV local existe et contient des données
+    std::ifstream csv_file("/tmp/telemetry.csv");
+    assert(csv_file.is_open());
+    std::string header_line;
+    assert(std::getline(csv_file, header_line));
+    assert(header_line.find("timestamp_ms") != std::string::npos);
+    assert(header_line.find("fsm_state") != std::string::npos);
+    assert(header_line.find("speed_ms") != std::string::npos);
+
+    std::string sample_line;
+    assert(std::getline(csv_file, sample_line));
+    assert(!sample_line.empty());
+    csv_file.close();
+
+    std::cout << "  ✓ Header CSV validé : " << header_line << std::endl;
+    std::cout << "  ✓ Échantillon enregistré : " << sample_line << std::endl;
+    std::cout << "  ✓ Enregistrement continu en local (/tmp/telemetry.csv) validé." << std::endl;
+}
+
 int main() {
     std::cout << "===============================================" << std::endl;
     std::cout << "   PiCar C++17 - Tests Unitaires Télémétrie   " << std::endl;
@@ -332,6 +366,7 @@ int main() {
     test_telemetry_metrics_and_watchdog();
     test_telemetry_acceleration_alert();
     test_tcp_server_ping_pong_and_stream();
+    test_local_csv_and_usb_export();
 
     std::cout << "===============================================" << std::endl;
     std::cout << "   TOUS LES TESTS DE TÉLÉMÉTRIE ONT RÉUSSI !   " << std::endl;

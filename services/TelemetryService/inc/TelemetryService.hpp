@@ -8,6 +8,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <vector>
+#include <fstream>
 
 // Shared headers from libs
 #include "header/header.hpp"
@@ -63,6 +64,11 @@ private:
     void broadcast_udp();
     void render_dashboard();
 
+    // Enregistrement continu en local CSV & Export automatique USB
+    void log_csv_sample();
+    bool export_to_usb();
+    std::string detect_usb_mount_point();
+
     // TCP Server
     bool init_tcp_server();
     void tcp_worker();
@@ -111,6 +117,12 @@ private:
     std::mutex m_stream_mutex;
     std::condition_variable m_stream_cv;
     std::atomic<bool> m_new_data_available{false};
+
+    // Fichier CSV local et gestion export USB
+    std::string m_local_csv_path{"/tmp/telemetry.csv"};
+    std::ofstream m_csv_stream;
+    bool m_was_running_course{false};
+    uint64_t m_csv_samples_count{0};
 };
 
 } // namespace services
