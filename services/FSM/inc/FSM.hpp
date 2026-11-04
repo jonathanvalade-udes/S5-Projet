@@ -63,7 +63,7 @@ private:
     RobotTelemetry* m_telemetry{nullptr};
 
     int m_event_pipe_fd{-1};
-    std::string m_event_pipe_path{"/tmp/peripheral"};
+    std::string m_event_pipe_path{"/tmp/peripherals.sock"};
     bool check_start_trigger();
 
     std::unique_ptr<shared::services::memory::MemoryShareComponentSubscriber> m_sensor_sub;
