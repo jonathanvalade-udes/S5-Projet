@@ -55,6 +55,12 @@ void FSM::transition_to(shared::fsm::MachineStates new_state) {
         m_dev_phase = 0;
         m_dev_phase_distance = 0.0f;
         m_dev_heading = 0.0f;
+
+        // Si on entre dans Armed, purger tout ancien événement résiduel dans le tube
+        if (new_state == shared::fsm::MachineStates::Armed && m_event_pipe_fd >= 0) {
+            char drain[128];
+            while (read(m_event_pipe_fd, drain, sizeof(drain)) > 0) {}
+        }
     }
 }
 
@@ -113,6 +119,8 @@ bool FSM::init() {
     mkfifo(m_event_pipe_path.c_str(), 0666);
     m_event_pipe_fd = open(m_event_pipe_path.c_str(), O_RDWR | O_NONBLOCK);
     if (m_event_pipe_fd >= 0) {
+        char drain[128];
+        while (read(m_event_pipe_fd, drain, sizeof(drain)) > 0) {}
         std::cout << "[FSM] Écoute des événements POSIX prête sur " << m_event_pipe_path << std::endl;
     } else {
         std::cerr << "[FSM] Attention : impossible d'ouvrir le tube d'événements " << m_event_pipe_path << std::endl;

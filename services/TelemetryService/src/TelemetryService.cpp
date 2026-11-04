@@ -642,7 +642,18 @@ void TelemetryService::update_metrics(float dt) {
                              m_metrics.fsm_state == static_cast<uint32_t>(shared::fsm::MachineStates::LineDetected));
 
     if (is_course_active) {
-        m_was_running_course = true;
+        if (!m_was_running_course) {
+            m_was_running_course = true;
+            if (m_csv_stream.is_open()) {
+                m_csv_stream.close();
+            }
+            m_csv_stream.open(m_local_csv_path, std::ios::out | std::ios::trunc);
+            if (m_csv_stream.is_open()) {
+                m_csv_stream << "timestamp_ms,uptime_s,fsm_state,speed_ms,accel_ms2,steer_deg,steer_offset_deg,dist_us_cm,line_0,line_1,line_2,line_3,line_4,odometry_m,emergency_stop,accel_violations\n";
+                m_csv_stream.flush();
+            }
+            std::cout << "\n[TelemetryService] Début d'une nouvelle course -> Initialisation du log " << m_local_csv_path << std::endl;
+        }
     } else if (m_was_running_course && (m_metrics.fsm_state == static_cast<uint32_t>(shared::fsm::MachineStates::Stopped) ||
                                        m_metrics.fsm_state == static_cast<uint32_t>(shared::fsm::MachineStates::Armed) ||
                                        m_metrics.fsm_state == static_cast<uint32_t>(shared::fsm::MachineStates::Failure) ||
@@ -917,6 +928,12 @@ bool TelemetryService::export_to_usb() {
 
     dst << src.rdbuf();
     dst.flush();
+    if (!dst.good()) {
+        std::cerr << "[TelemetryService] Erreur : écriture incomplète sur la clé USB (espace disque insuffisant ?)" << std::endl;
+        dst.close();
+        src.close();
+        return false;
+    }
     dst.close();
     src.close();
 
