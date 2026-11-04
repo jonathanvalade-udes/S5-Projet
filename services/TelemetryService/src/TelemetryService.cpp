@@ -99,22 +99,11 @@ bool TelemetryService::init() {
         }
     }
 
-    // 5. Initialiser le fichier CSV local dans /tmp/telemetry.csv
-    try {
-        m_csv_stream.open(m_local_csv_path, std::ios::out | std::ios::trunc);
-        if (m_csv_stream.is_open()) {
-            m_csv_stream << "timestamp_ms,uptime_s,fsm_state,speed_ms,accel_ms2,steer_deg,steer_offset_deg,dist_us_cm,line_0,line_1,line_2,line_3,line_4,odometry_m,emergency_stop,accel_violations\n";
-            m_csv_stream.flush();
-            std::cout << "[TelemetryService] Enregistrement continu en local initialisé : " << m_local_csv_path << std::endl;
-        } else {
-            std::cerr << "[TelemetryService] Attention : impossible d'ouvrir " << m_local_csv_path << std::endl;
-        }
-    } catch (const std::exception& e) {
-        std::cerr << "[TelemetryService] Erreur init CSV : " << e.what() << std::endl;
-    }
-
     m_start_time = std::chrono::steady_clock::now();
     m_running.store(true);
+
+    // 5. Lancer le thread USB d'arrière-plan (Consommateur FIFO direct en continu, 0 écriture carte SD)
+    m_usb_thread = std::thread(&TelemetryService::usb_worker, this);
 
     // Lancer le thread TCP pour écouter et streamer vers le client
     if (m_tcp_server_fd >= 0) {
@@ -279,9 +268,9 @@ bool TelemetryService::handle_ping_pong() {
                 return true;
             }
 
-            // Commande d'export vers clé USB
-            if (payload_str.find("export_usb") != std::string::npos || payload_str == "export") {
-                export_to_usb();
+            // Commande de synchronisation USB
+            if (payload_str.find("export_usb") != std::string::npos || payload_str == "export" || payload_str == "flush") {
+                m_fifo_cv.notify_one();
                 return true;
             }
 
@@ -629,41 +618,32 @@ void TelemetryService::update_metrics(float dt) {
     auto now = std::chrono::steady_clock::now();
     m_metrics.uptime_seconds = std::chrono::duration_cast<std::chrono::seconds>(now - m_start_time).count();
 
-    // 1. Écriture continue du point de mesure dans /tmp/telemetry.csv
-    log_csv_sample();
+    // Envoi instantané dans la file FIFO (ZÉRO DÉLAI, ZÉRO ÉCRITURE CARTE SD)
+    auto now_epoch = now.time_since_epoch();
+    uint64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now_epoch).count();
 
-    // 2. Détection de fin de course ou arrêt d'urgence pour export automatique sur clé USB
-    bool is_course_active = (m_metrics.fsm_state == static_cast<uint32_t>(shared::fsm::MachineStates::LineFollowingForward) ||
-                             m_metrics.fsm_state == static_cast<uint32_t>(shared::fsm::MachineStates::CollisionRisk) ||
-                             m_metrics.fsm_state == static_cast<uint32_t>(shared::fsm::MachineStates::RightDeviation) ||
-                             m_metrics.fsm_state == static_cast<uint32_t>(shared::fsm::MachineStates::LeftDeviation) ||
-                             m_metrics.fsm_state == static_cast<uint32_t>(shared::fsm::MachineStates::Reverse) ||
-                             m_metrics.fsm_state == static_cast<uint32_t>(shared::fsm::MachineStates::LineSearching) ||
-                             m_metrics.fsm_state == static_cast<uint32_t>(shared::fsm::MachineStates::LineDetected));
+    std::ostringstream ss;
+    ss << now_ms << ","
+       << m_metrics.uptime_seconds << ","
+       << state_to_string(m_metrics.fsm_state) << ","
+       << std::fixed << std::setprecision(3)
+       << m_metrics.current_speed_ms << ","
+       << m_metrics.current_accel_ms2 << ","
+       << std::setprecision(1)
+       << m_metrics.target_steering_deg << ","
+       << m_metrics.steering_offset_deg << ","
+       << m_metrics.filtered_dist_cm << ","
+       << static_cast<int>(m_metrics.line_sensors[0]) << ","
+       << static_cast<int>(m_metrics.line_sensors[1]) << ","
+       << static_cast<int>(m_metrics.line_sensors[2]) << ","
+       << static_cast<int>(m_metrics.line_sensors[3]) << ","
+       << static_cast<int>(m_metrics.line_sensors[4]) << ","
+       << std::setprecision(2)
+       << m_metrics.total_distance_m << ","
+       << (m_metrics.emergency_stop ? 1 : 0) << ","
+       << m_metrics.accel_violations << "\n";
 
-    if (is_course_active) {
-        if (!m_was_running_course) {
-            m_was_running_course = true;
-            if (m_csv_stream.is_open()) {
-                m_csv_stream.close();
-            }
-            m_csv_stream.open(m_local_csv_path, std::ios::out | std::ios::trunc);
-            if (m_csv_stream.is_open()) {
-                m_csv_stream << "timestamp_ms,uptime_s,fsm_state,speed_ms,accel_ms2,steer_deg,steer_offset_deg,dist_us_cm,line_0,line_1,line_2,line_3,line_4,odometry_m,emergency_stop,accel_violations\n";
-                m_csv_stream.flush();
-            }
-            std::cout << "\n[TelemetryService] Début d'une nouvelle course -> Initialisation du log " << m_local_csv_path << std::endl;
-        }
-    } else if (m_was_running_course && (m_metrics.fsm_state == static_cast<uint32_t>(shared::fsm::MachineStates::Stopped) ||
-                                       m_metrics.fsm_state == static_cast<uint32_t>(shared::fsm::MachineStates::Armed) ||
-                                       m_metrics.fsm_state == static_cast<uint32_t>(shared::fsm::MachineStates::Failure) ||
-                                       m_metrics.fsm_state == static_cast<uint32_t>(shared::fsm::MachineStates::Abort) ||
-                                       m_metrics.fsm_state == static_cast<uint32_t>(shared::fsm::MachineStates::LineSearchingTimedOut) ||
-                                       m_metrics.emergency_stop)) {
-        std::cout << "\n[TelemetryService] Fin de parcours ou anomalie/arrêt détecté -> Export automatique sur la clé USB..." << std::endl;
-        export_to_usb();
-        m_was_running_course = false;
-    }
+    push_to_usb_fifo(ss.str());
 }
 
 void TelemetryService::publish_ipc() {
@@ -795,58 +775,33 @@ void TelemetryService::stop() {
         m_running.store(false);
     }
     m_stream_cv.notify_all();
+    m_fifo_cv.notify_all(); // Réveil immédiat du worker USB pour vider la FIFO
     close_tcp_server();
     if (m_tcp_thread.joinable()) {
         m_tcp_thread.join();
     }
-    if (m_csv_samples_count > 0) {
-        if (m_was_running_course) {
-            export_to_usb();
-            m_was_running_course = false;
-        }
-        if (m_csv_stream.is_open()) {
-            m_csv_stream.flush();
-            m_csv_stream.close();
-        }
+    if (m_usb_thread.joinable()) {
+        m_usb_thread.join();
     }
 }
 
-void TelemetryService::log_csv_sample() {
-    if (!m_csv_stream.is_open()) {
-        m_csv_stream.open(m_local_csv_path, std::ios::out | std::ios::app);
-        if (!m_csv_stream.is_open()) return;
+void TelemetryService::push_to_usb_fifo(const std::string& line) {
+    std::lock_guard<std::mutex> lock(m_fifo_mutex);
+    // Politique FIFO stricte avec borne de sécurité pour ne pas overwork la RAM (First-In, First-Out)
+    if (m_usb_fifo.size() >= MAX_FIFO_SIZE) {
+        m_usb_fifo.pop();
     }
-
-    auto now = std::chrono::steady_clock::now().time_since_epoch();
-    uint64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
-
-    m_csv_stream << now_ms << ","
-                 << m_metrics.uptime_seconds << ","
-                 << state_to_string(m_metrics.fsm_state) << ","
-                 << std::fixed << std::setprecision(3)
-                 << m_metrics.current_speed_ms << ","
-                 << m_metrics.current_accel_ms2 << ","
-                 << std::setprecision(1)
-                 << m_metrics.target_steering_deg << ","
-                 << m_metrics.steering_offset_deg << ","
-                 << m_metrics.filtered_dist_cm << ","
-                 << static_cast<int>(m_metrics.line_sensors[0]) << ","
-                 << static_cast<int>(m_metrics.line_sensors[1]) << ","
-                 << static_cast<int>(m_metrics.line_sensors[2]) << ","
-                 << static_cast<int>(m_metrics.line_sensors[3]) << ","
-                 << static_cast<int>(m_metrics.line_sensors[4]) << ","
-                 << std::setprecision(2)
-                 << m_metrics.total_distance_m << ","
-                 << (m_metrics.emergency_stop ? 1 : 0) << ","
-                 << m_metrics.accel_violations << "\n";
-
-    m_csv_samples_count++;
-    if (m_csv_samples_count % 20 == 0) {
-        m_csv_stream.flush();
-    }
+    m_usb_fifo.push(line);
+    m_fifo_cv.notify_one();
 }
 
 std::string TelemetryService::detect_usb_mount_point() {
+    // 0. Variable d'environnement prioritaire (utile pour tests et configurations spécifiques)
+    const char* env_path = std::getenv("PICAR_USB_PATH");
+    if (env_path && env_path[0] != '\0') {
+        return std::string(env_path);
+    }
+
     // 1. Analyse de /proc/mounts pour détecter une clé USB montée automatiquement
     std::ifstream mounts("/proc/mounts");
     if (mounts.is_open()) {
@@ -889,65 +844,76 @@ std::string TelemetryService::detect_usb_mount_point() {
     return "";
 }
 
-bool TelemetryService::export_to_usb() {
-    if (m_csv_stream.is_open()) {
-        m_csv_stream.flush();
-    }
+void TelemetryService::usb_worker() {
+    std::cout << "[TelemetryService] Worker USB actif : Streaming direct continu via FIFO (0 écriture carte SD)." << std::endl;
 
-    std::string usb_mount = detect_usb_mount_point();
-    if (usb_mount.empty()) {
-        std::cout << "[TelemetryService] Clé USB non détectée. Les données restent sauvegardées dans " 
-                  << m_local_csv_path << std::endl;
-        return false;
-    }
+    const std::string csv_header = "timestamp_ms,uptime_s,fsm_state,speed_ms,accel_ms2,steer_deg,steer_offset_deg,dist_us_cm,line_0,line_1,line_2,line_3,line_4,odometry_m,emergency_stop,accel_violations\n";
+    std::string current_mount = "";
 
-    auto now = std::chrono::system_clock::now();
-    std::time_t now_c = std::chrono::system_clock::to_time_t(now);
-    std::tm now_tm{};
+    while (m_running.load() || !m_usb_fifo.empty()) {
+        std::vector<std::string> batch;
+        {
+            std::unique_lock<std::mutex> lock(m_fifo_mutex);
+            m_fifo_cv.wait_for(lock, std::chrono::milliseconds(50), [&]() {
+                return !m_usb_fifo.empty() || !m_running.load();
+            });
+
+            // Extraire en bloc toutes les trames accumulées
+            while (!m_usb_fifo.empty()) {
+                batch.push_back(std::move(m_usb_fifo.front()));
+                m_usb_fifo.pop();
+            }
+        }
+
+        if (batch.empty()) {
+            continue;
+        }
+
+        // Si la clé USB n'a pas encore de fichier ouvert, détection automatique du point de montage
+        if (!m_usb_stream.is_open()) {
+            current_mount = detect_usb_mount_point();
+            if (!current_mount.empty()) {
+                auto now = std::chrono::system_clock::now();
+                std::time_t now_c = std::chrono::system_clock::to_time_t(now);
+                std::tm now_tm{};
 #if defined(_WIN32)
-    localtime_s(&now_tm, &now_c);
+                localtime_s(&now_tm, &now_c);
 #else
-    localtime_r(&now_c, &now_tm);
+                localtime_r(&now_c, &now_tm);
 #endif
-    char time_str[32];
-    std::strftime(time_str, sizeof(time_str), "%Y%m%d_%H%M%S", &now_tm);
+                char time_str[32];
+                std::strftime(time_str, sizeof(time_str), "%Y%m%d_%H%M%S", &now_tm);
 
-    std::string dest_path = usb_mount + "/telemetry_run_" + std::string(time_str) + ".csv";
+                m_active_usb_file_path = current_mount + "/telemetry_run_" + std::string(time_str) + ".csv";
+                m_usb_stream.open(m_active_usb_file_path, std::ios::out | std::ios::app);
+                if (m_usb_stream.is_open()) {
+                    m_usb_stream << csv_header;
+                    m_usb_stream.flush();
+                    std::cout << "\n==================================================================" << std::endl;
+                    std::cout << "[TelemetryService] ✓ CLÉ USB DÉTECTÉE : Streaming direct activé !" << std::endl;
+                    std::cout << "[TelemetryService] Cible : " << m_active_usb_file_path << std::endl;
+                    std::cout << "==================================================================\n" << std::endl;
+                }
+            }
+        }
 
-    std::ifstream src(m_local_csv_path, std::ios::binary);
-    if (!src.is_open()) {
-        std::cerr << "[TelemetryService] Erreur : impossible d'ouvrir " << m_local_csv_path << std::endl;
-        return false;
+        // Écriture directe et continue sur la clé USB (AUCUNE écriture sur la carte SD)
+        if (m_usb_stream.is_open()) {
+            for (const auto& line : batch) {
+                m_usb_stream << line;
+            }
+            m_usb_stream.flush();
+        }
     }
 
-    std::ofstream dst(dest_path, std::ios::binary);
-    if (!dst.is_open()) {
-        std::cerr << "[TelemetryService] Erreur : impossible d'écrire sur la clé USB à " << dest_path << std::endl;
-        return false;
-    }
-
-    dst << src.rdbuf();
-    dst.flush();
-    if (!dst.good()) {
-        std::cerr << "[TelemetryService] Erreur : écriture incomplète sur la clé USB (espace disque insuffisant ?)" << std::endl;
-        dst.close();
-        src.close();
-        return false;
-    }
-    dst.close();
-    src.close();
-
+    if (m_usb_stream.is_open()) {
+        m_usb_stream.flush();
 #if !defined(_WIN32)
-    sync();
+        sync();
 #endif
-
-    std::cout << "\n==================================================================" << std::endl;
-    std::cout << "[TelemetryService] ✓ SUCCÈS : Télémétrie exportée sur la clé USB !" << std::endl;
-    std::cout << "[TelemetryService] Fichier : " << dest_path << std::endl;
-    std::cout << "[TelemetryService] La clé USB peut être retirée en toute sécurité." << std::endl;
-    std::cout << "==================================================================\n" << std::endl;
-
-    return true;
+        m_usb_stream.close();
+        std::cout << "[TelemetryService] Fichier clé USB clôturé proprement (" << m_active_usb_file_path << ")." << std::endl;
+    }
 }
 
 } // namespace services

@@ -8,6 +8,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <vector>
+#include <queue>
 #include <fstream>
 
 // Shared headers from libs
@@ -64,9 +65,9 @@ private:
     void broadcast_udp();
     void render_dashboard();
 
-    // Enregistrement continu en local CSV & Export automatique USB
-    void log_csv_sample();
-    bool export_to_usb();
+    // Enregistrement direct continu sur Clé USB via file FIFO (Zero lag, zero écriture carte SD)
+    void push_to_usb_fifo(const std::string& line);
+    void usb_worker();
     std::string detect_usb_mount_point();
 
     // TCP Server
@@ -118,11 +119,14 @@ private:
     std::condition_variable m_stream_cv;
     std::atomic<bool> m_new_data_available{false};
 
-    // Fichier CSV local et gestion export USB
-    std::string m_local_csv_path{"/tmp/telemetry.csv"};
-    std::ofstream m_csv_stream;
-    bool m_was_running_course{false};
-    uint64_t m_csv_samples_count{0};
+    // File FIFO et Thread d'arrière-plan pour clé USB
+    std::queue<std::string> m_usb_fifo;
+    std::mutex m_fifo_mutex;
+    std::condition_variable m_fifo_cv;
+    std::thread m_usb_thread;
+    std::string m_active_usb_file_path;
+    std::ofstream m_usb_stream;
+    static constexpr size_t MAX_FIFO_SIZE = 5000; // Protection overwork : borne max en RAM
 };
 
 } // namespace services
