@@ -149,6 +149,42 @@ void SimBridge::run() {
 
             if (line.empty()) continue;
 
+            // Commande de déclenchement FSM : "trigger_start" ou "start"
+            if (line == "trigger_start" || line == "start" || line.find("trigger_start") != std::string::npos) {
+                int fifo_fd = open("/tmp/peripherals.sock", O_WRONLY | O_NONBLOCK);
+                if (fifo_fd >= 0) {
+                    const char* cmd = "trigger_start\n";
+                    ssize_t w = write(fifo_fd, cmd, strlen(cmd));
+                    (void)w;
+                    close(fifo_fd);
+                    std::cout << "[SimBridge] Transmis 'trigger_start' vers /tmp/peripherals.sock" << std::endl;
+                } else {
+                    std::cerr << "[SimBridge] Note: FIFO /tmp/peripherals.sock (" << strerror(errno) << ")" << std::endl;
+                }
+                if (m_telemetry) {
+                    pthread_mutex_lock(&(m_telemetry->mtx));
+                    m_telemetry->emergency_stop = false;
+                    pthread_mutex_unlock(&(m_telemetry->mtx));
+                }
+                std::string ack = "{\"status\":\"ok\",\"event\":\"trigger_start\"}\n";
+                send(client_fd, ack.c_str(), ack.size(), 0);
+                continue;
+            }
+
+            // Commande d'arrêt d'urgence : "emergency_stop" ou "stop"
+            if (line == "emergency_stop" || line == "stop" || line.find("emergency_stop") != std::string::npos) {
+                if (m_telemetry) {
+                    pthread_mutex_lock(&(m_telemetry->mtx));
+                    m_telemetry->emergency_stop = true;
+                    m_telemetry->target_speed = 0.0f;
+                    pthread_mutex_unlock(&(m_telemetry->mtx));
+                }
+                std::cout << "[SimBridge] Arrêt d'urgence déclenché depuis Godot !" << std::endl;
+                std::string ack = "{\"status\":\"ok\",\"event\":\"emergency_stop\"}\n";
+                send(client_fd, ack.c_str(), ack.size(), 0);
+                continue;
+            }
+
             // Commande de modification de constante par WiFi (format "PARAM=valeur" ou "set_param")
             if (line.find('=') != std::string::npos && line.find("line_follower") == std::string::npos && line.find("distance") == std::string::npos) {
                 size_t eq = line.find('=');
@@ -167,6 +203,7 @@ void SimBridge::run() {
                         else if (k == "STRAIGHT_CRUISE_SPEED" || k == "CRUISE_SPEED") m_telemetry->cfg_cruise_speed = fval;
                         else if (k == "MIN_CURVE_SPEED") m_telemetry->cfg_min_curve_speed = fval;
                         else if (k == "CURVE_SAFETY_FACTOR") m_telemetry->cfg_curve_safety_factor = fval;
+                        else if (k == "PREDICTIVE_BRAKE_GAIN") m_telemetry->cfg_predictive_brake_gain = fval;
                         else if (k == "LINE_KP" || k == "KP") m_telemetry->cfg_line_kp = fval;
                         else if (k == "LINE_KD" || k == "KD") m_telemetry->cfg_line_kd = fval;
                         m_telemetry->cfg_version++;
@@ -193,15 +230,19 @@ void SimBridge::run() {
                         float weighted_darkness = 0.0f;
                         constexpr float weights[5] = {-2.0f, -1.0f, 0.0f, 1.0f, 2.0f};
 
+                        // Godot est en miroir de la convention du robot (HAL : braquage + = droite, capteur D = droite) :
+                        // un braquage positif y tourne vers la gauche. On inverse donc l'ordre des capteurs et le signe
+                        // du braquage ici, pour que "gauche" et "droite" aient le meme sens en simulation et sur le robot.
                         for (int i = 0; i < 5; ++i) {
-                            float d = std::clamp(telem_in.line_darkness[i], 0.0f, 1.0f);
+                            const int j = 4 - i;
+                            float d = std::clamp(telem_in.line_darkness[j], 0.0f, 1.0f);
                             m_telemetry->line_darkness[i] = d;
                             total_darkness += d;
                             weighted_darkness += weights[i] * d;
                             // Vue binaire : dérivée de l'analogique si présent, sinon trame binaire brute
                             m_telemetry->line_sensors[i] = telem_in.has_analog
                                 ? static_cast<uint8_t>(d > 0.5f ? 1 : 0)
-                                : telem_in.line_sensors[i];
+                                : telem_in.line_sensors[j];
                         }
                         if (total_darkness >= 0.20f) {
                             m_telemetry->line_error = (weighted_darkness / (2.0f * total_darkness));
@@ -218,6 +259,7 @@ void SimBridge::run() {
                     float target_steer = m_telemetry->target_steering;
                     bool emergency = m_telemetry->emergency_stop;
                     float current_dist = m_telemetry->filtered_dist;
+                    float cruise_cfg = (m_telemetry->cfg_cruise_speed > 0.05f) ? m_telemetry->cfg_cruise_speed : 0.40f;
                     uint8_t current_lines[5];
                     for (int i = 0; i < 5; ++i) {
                         current_lines[i] = m_telemetry->line_sensors[i];
@@ -225,11 +267,10 @@ void SimBridge::run() {
                     pthread_mutex_unlock(&(m_telemetry->mtx));
 
                     GodotCommandOut cmd_out;
-                    // Harmonisation stricte avec FSM::STRAIGHT_CRUISE_SPEED = 0.32 m/s :
-                    // (target_spd / 50.0f) * 0.32f produit exactement la vitesse physique en m/s
-                    cmd_out.velocity = (target_spd / 50.0f) * 0.32f;
+                    // Vitesse physique réelle respectant STRAIGHT_CRUISE_SPEED dynamique de SHM
+                    cmd_out.velocity = (target_spd / 50.0f) * cruise_cfg;
                     // Normalisation de l'angle de braquage [-1.0, 1.0] pour l'épure d'Ackermann de Godot (+-48°)
-                    cmd_out.direction = std::clamp(target_steer / 45.0f, -1.0f, 1.0f);
+                    cmd_out.direction = -std::clamp(target_steer / 45.0f, -1.0f, 1.0f);  // miroir Godot (voir plus haut)
                     cmd_out.brake = emergency;
 
                     if (!m_sim_mode) {

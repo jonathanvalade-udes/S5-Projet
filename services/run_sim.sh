@@ -12,7 +12,23 @@
 #   PORT        port TCP du SimBridge (defaut: 9000)
 #   TELEMETRY=1 lance aussi TelemetryService (--no-ui)
 #   REBUILD=1   force la recompilation
+#   AVOID_SIDE  cote de contournement des obstacles : gauche | droite (defaut: droite)
+#
+# Options :
+#   --direction gauche|droite   (ou -d) cote par lequel la voiture contourne les obstacles
+#   --rebuild                   force la recompilation
 set -u
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --direction|-d) AVOID_SIDE="${2:-}"; shift 2 ;;
+        --direction=*)  AVOID_SIDE="${1#*=}"; shift ;;
+        --rebuild)      REBUILD=1; shift ;;
+        -h|--help)      sed -n '2,/^set -u/p' "$0" | sed 's/^# \{0,1\}//' | head -n -1; exit 0 ;;
+        *) echo "[run_sim] option inconnue : $1 (voir --help)"; exit 1 ;;
+    esac
+done
+export AVOID_SIDE="${AVOID_SIDE:-droite}"
 
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="${BUILD_DIR:-$HOME/picar-build}"

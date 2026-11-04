@@ -10,6 +10,8 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <poll.h>
+#include <dirent.h>
+#include <sys/stat.h>
 
 #include "ipc/shared_memory.hpp"
 #include "../TelemetryService/inc/TelemetryService.hpp"
@@ -46,8 +48,8 @@ void test_telemetry_metrics_and_watchdog() {
     telem->line_sensors[4] = 0;
     pthread_mutex_unlock(&(telem->mtx));
 
-    // Instance de TelemetryService à 20 Hz, sans affichage UI console, tcp_port=0 (désactivé)
-    services::TelemetryService telem_service(20, false, 0, 0);
+    // Instance de TelemetryService à 50 Hz, sans affichage UI console, tcp_port=0 (désactivé)
+    services::TelemetryService telem_service(50, false, 0, 0);
     assert(telem_service.init());
 
     // Lance le service en arrière-plan
@@ -103,7 +105,7 @@ void test_telemetry_acceleration_alert() {
     telem->heartbeat = 1;
     pthread_mutex_unlock(&(telem->mtx));
 
-    services::TelemetryService telem_service(20, false, 0, 0);
+    services::TelemetryService telem_service(50, false, 0, 0);
     assert(telem_service.init());
 
     std::thread th([&]() {
@@ -196,7 +198,7 @@ void test_tcp_server_ping_pong_and_stream() {
 
     // Utiliser un port de test TCP unprivileged
     const int test_port = 9191;
-    services::TelemetryService telem_service(20, false, test_port, 0);
+    services::TelemetryService telem_service(50, false, test_port, 0);
     assert(telem_service.init());
 
     std::thread th([&]() {
@@ -323,6 +325,80 @@ void test_tcp_server_ping_pong_and_stream() {
     if (th.joinable()) th.join();
 }
 
+void test_usb_fifo_direct_streaming() {
+    std::cout << "[TEST] TelemetryService - File FIFO et Streaming direct continu sur Clé USB (0 écriture carte SD)..." << std::endl;
+
+    // Configurer un dossier de test simulant la clé USB
+    const char* mock_usb = "/tmp/mock_usb";
+#if !defined(_WIN32)
+    mkdir(mock_usb, 0777);
+    setenv("PICAR_USB_PATH", mock_usb, 1);
+#else
+    _mkdir(mock_usb);
+    _putenv("PICAR_USB_PATH=/tmp/mock_usb");
+#endif
+
+    // S'assurer que /tmp/telemetry.csv n'existe pas
+    unlink("/tmp/telemetry.csv");
+
+    services::TelemetryService telem_service(20, false, 0, 0);
+    assert(telem_service.init());
+
+    std::thread th([&]() {
+        telem_service.run();
+    });
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+
+    telem_service.stop();
+    if (th.joinable()) th.join();
+
+    // 1. Validation stricte : ZÉRO écriture sur carte SD (/tmp/telemetry.csv ne doit PAS exister)
+    std::ifstream sd_file("/tmp/telemetry.csv");
+    assert(!sd_file.is_open());
+    std::cout << "  ✓ Sécurité carte SD : Aucune écriture locale effectuée." << std::endl;
+
+    // 2. Validation Clé USB : Un fichier telemetry_run_*.csv a été écrit directement sur la clé
+    bool found_usb_file = false;
+    std::string found_path;
+#if !defined(_WIN32)
+    DIR* dir = opendir(mock_usb);
+    if (dir) {
+        struct dirent* ent;
+        while ((ent = readdir(dir)) != nullptr) {
+            std::string name(ent->d_name);
+            if (name.find("telemetry_run_") != std::string::npos && name.find(".csv") != std::string::npos) {
+                found_usb_file = true;
+                found_path = std::string(mock_usb) + "/" + name;
+                break;
+            }
+        }
+        closedir(dir);
+    }
+#endif
+    assert(found_usb_file);
+    std::cout << "  ✓ Fichier USB créé directement : " << found_path << std::endl;
+
+    // 3. Vérifier le contenu du fichier USB
+    std::ifstream usb_file(found_path);
+    assert(usb_file.is_open());
+    std::string header_line;
+    assert(std::getline(usb_file, header_line));
+    assert(header_line.find("timestamp") != std::string::npos);
+    assert(header_line.find("speed_ms") != std::string::npos);
+
+    std::string sample_line;
+    assert(std::getline(usb_file, sample_line));
+    assert(!sample_line.empty());
+    usb_file.close();
+
+    std::cout << "  ✓ Entête et trames FIFO validées en continu sur la clé USB." << std::endl;
+
+    // Nettoyage
+    unlink(found_path.c_str());
+    rmdir(mock_usb);
+}
+
 int main() {
     std::cout << "===============================================" << std::endl;
     std::cout << "   PiCar C++17 - Tests Unitaires Télémétrie   " << std::endl;
@@ -332,6 +408,7 @@ int main() {
     test_telemetry_metrics_and_watchdog();
     test_telemetry_acceleration_alert();
     test_tcp_server_ping_pong_and_stream();
+    test_usb_fifo_direct_streaming();
 
     std::cout << "===============================================" << std::endl;
     std::cout << "   TOUS LES TESTS DE TÉLÉMÉTRIE ONT RÉUSSI !   " << std::endl;

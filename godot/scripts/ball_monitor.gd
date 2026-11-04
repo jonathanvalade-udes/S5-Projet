@@ -20,6 +20,7 @@ var last_speed: float = 0.0
 var has_last_speed: bool = false
 
 var fall_vel_y: float = 0.0            # Vitesse verticale de chute hors de la voiture
+var max_accel_observed: float = 0.0    # Accélération totale max observée (m/s²)
 
 # Position de repos au fond de la cuvette = position placée dans l'éditeur (repère local du PiCar).
 # Ne PAS la coder en dur : elle doit suivre la plaquette telle que positionnée dans la scène.
@@ -74,6 +75,10 @@ func _physics_process(delta: float):
 	# Accélération centripète : a_centri = v * omega, dirigée vers l'extérieur du virage
 	var angular_vel = (rx_speed / 0.14) * tan(steer_rad)
 	var a_lat = rx_speed * angular_vel
+
+	var a_tot = sqrt(a_long * a_long + a_lat * a_lat)
+	if a_tot > max_accel_observed:
+		max_accel_observed = a_tot
 
 	# 2. Forces d'inertie fictives dans le repère local du véhicule :
 	# Avancer = axe -X local => a_long > 0 pousse vers +X (arrière du véhicule)

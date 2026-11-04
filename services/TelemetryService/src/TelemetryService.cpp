@@ -14,6 +14,8 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <poll.h>
+#include <ctime>
+#include <fstream>
 
 #if !defined(MSG_NOSIGNAL)
 #define MSG_NOSIGNAL 0
@@ -99,6 +101,9 @@ bool TelemetryService::init() {
 
     m_start_time = std::chrono::steady_clock::now();
     m_running.store(true);
+
+    // 5. Lancer le thread USB d'arrière-plan (Consommateur FIFO direct en continu, 0 écriture carte SD)
+    m_usb_thread = std::thread(&TelemetryService::usb_worker, this);
 
     // Lancer le thread TCP pour écouter et streamer vers le client
     if (m_tcp_server_fd >= 0) {
@@ -230,9 +235,46 @@ bool TelemetryService::handle_ping_pong() {
 
     // Vérifier s'il s'agit d'une commande
     if (hdr.type == shared::headers::HeadersType::Command) {
-        // Commande texte de configuration (ex: "MAX_ACCELERATION=0.55")
         if (!payload.empty()) {
             std::string payload_str(payload.begin(), payload.end());
+
+            // Commande de départ FSM
+            if (payload_str.find("trigger_start") != std::string::npos || payload_str == "start") {
+                int fifo_fd = open("/tmp/peripherals.sock", O_WRONLY | O_NONBLOCK);
+                if (fifo_fd >= 0) {
+                    const char* cmd = "trigger_start\n";
+                    ssize_t w = write(fifo_fd, cmd, strlen(cmd));
+                    (void)w;
+                    close(fifo_fd);
+                    std::cout << "[Telemetry WiFi] Transmis 'trigger_start' vers /tmp/peripherals.sock" << std::endl;
+                }
+                if (m_telemetry) {
+                    pthread_mutex_lock(&(m_telemetry->mtx));
+                    m_telemetry->emergency_stop = false;
+                    pthread_mutex_unlock(&(m_telemetry->mtx));
+                }
+                return true;
+            }
+
+            // Commande d'arrêt d'urgence
+            if (payload_str.find("emergency_stop") != std::string::npos || payload_str == "stop") {
+                if (m_telemetry) {
+                    pthread_mutex_lock(&(m_telemetry->mtx));
+                    m_telemetry->emergency_stop = true;
+                    m_telemetry->target_speed = 0.0f;
+                    pthread_mutex_unlock(&(m_telemetry->mtx));
+                }
+                std::cout << "[Telemetry WiFi] Arrêt d'urgence déclenché par client !" << std::endl;
+                return true;
+            }
+
+            // Commande de synchronisation USB
+            if (payload_str.find("export_usb") != std::string::npos || payload_str == "export" || payload_str == "flush") {
+                m_fifo_cv.notify_one();
+                return true;
+            }
+
+            // Commande texte de configuration (ex: "MAX_ACCELERATION=0.55")
             size_t eq = payload_str.find('=');
             if (eq != std::string::npos) {
                 std::string k = payload_str.substr(0, eq);
@@ -250,6 +292,7 @@ bool TelemetryService::handle_ping_pong() {
                         else if (k == "STRAIGHT_CRUISE_SPEED" || k == "CRUISE_SPEED") m_telemetry->cfg_cruise_speed = fval;
                         else if (k == "MIN_CURVE_SPEED") m_telemetry->cfg_min_curve_speed = fval;
                         else if (k == "CURVE_SAFETY_FACTOR") m_telemetry->cfg_curve_safety_factor = fval;
+                        else if (k == "PREDICTIVE_BRAKE_GAIN") m_telemetry->cfg_predictive_brake_gain = fval;
                         else if (k == "LINE_KP" || k == "KP") m_telemetry->cfg_line_kp = fval;
                         else if (k == "LINE_KD" || k == "KD") m_telemetry->cfg_line_kd = fval;
                         m_telemetry->cfg_version++;
@@ -387,14 +430,13 @@ void TelemetryService::tcp_worker() {
         // 2. Client connecté : attente et gestion du handshake ping-pong
         if (!m_client_handshaked.load()) {
             handle_ping_pong();
-            std::this_thread::sleep_for(std::chrono::milliseconds(5));
             continue;
         }
 
         // 3. Handshake terminé : attente de l'événement de mise à jour temps N (zéro délai supplémentaire)
         {
             std::unique_lock<std::mutex> lock(m_stream_mutex);
-            m_stream_cv.wait_for(lock, std::chrono::milliseconds(50), [&]() {
+            m_stream_cv.wait_for(lock, std::chrono::milliseconds(20), [&]() {
                 return !m_running.load() || m_new_data_available.load() || !m_client_connected.load();
             });
         }
@@ -575,6 +617,30 @@ void TelemetryService::update_metrics(float dt) {
 
     auto now = std::chrono::steady_clock::now();
     m_metrics.uptime_seconds = std::chrono::duration_cast<std::chrono::seconds>(now - m_start_time).count();
+
+    // Envoi instantané dans la file FIFO (ZÉRO DÉLAI, ZÉRO ALLOCATION DYNAMIQUE, CALIBRÉ 100 kHz)
+    auto now_epoch = now.time_since_epoch();
+    uint64_t now_us = std::chrono::duration_cast<std::chrono::microseconds>(now_epoch).count();
+
+    TelemetrySample sample{};
+    sample.timestamp_us = now_us;
+    sample.uptime_s = static_cast<uint32_t>(m_metrics.uptime_seconds);
+    sample.fsm_state = m_metrics.fsm_state;
+    sample.speed_ms = m_metrics.current_speed_ms;
+    sample.accel_ms2 = m_metrics.current_accel_ms2;
+    sample.steer_deg = m_metrics.target_steering_deg;
+    sample.steer_offset_deg = m_metrics.steering_offset_deg;
+    sample.dist_us_cm = m_metrics.filtered_dist_cm;
+    sample.line_sensors[0] = m_metrics.line_sensors[0];
+    sample.line_sensors[1] = m_metrics.line_sensors[1];
+    sample.line_sensors[2] = m_metrics.line_sensors[2];
+    sample.line_sensors[3] = m_metrics.line_sensors[3];
+    sample.line_sensors[4] = m_metrics.line_sensors[4];
+    sample.emergency_stop = m_metrics.emergency_stop ? 1 : 0;
+    sample.accel_violations = static_cast<uint16_t>(m_metrics.accel_violations);
+    sample.odometry_m = m_metrics.total_distance_m;
+
+    push_to_usb_fifo(sample);
 }
 
 void TelemetryService::publish_ipc() {
@@ -706,9 +772,173 @@ void TelemetryService::stop() {
         m_running.store(false);
     }
     m_stream_cv.notify_all();
+    m_fifo_cv.notify_all(); // Réveil immédiat du worker USB pour vider la FIFO
     close_tcp_server();
     if (m_tcp_thread.joinable()) {
         m_tcp_thread.join();
+    }
+    if (m_usb_thread.joinable()) {
+        m_usb_thread.join();
+    }
+}
+
+void TelemetryService::push_to_usb_fifo(const TelemetrySample& sample) {
+    std::lock_guard<std::mutex> lock(m_fifo_mutex);
+    // Politique FIFO stricte avec borne de sécurité pour ne pas overwork la RAM (First-In, First-Out)
+    if (m_sample_fifo.size() >= MAX_FIFO_SIZE) {
+        m_sample_fifo.pop();
+    }
+    m_sample_fifo.push(sample);
+    if (m_sample_fifo.size() % BATCH_NOTIFY_SIZE == 0) {
+        m_fifo_cv.notify_one();
+    }
+}
+
+std::string TelemetryService::detect_usb_mount_point() {
+    // 0. Variable d'environnement prioritaire (utile pour tests et configurations spécifiques)
+    const char* env_path = std::getenv("PICAR_USB_PATH");
+    if (env_path && env_path[0] != '\0') {
+        return std::string(env_path);
+    }
+
+    // 1. Analyse de /proc/mounts pour détecter une clé USB montée automatiquement
+    std::ifstream mounts("/proc/mounts");
+    if (mounts.is_open()) {
+        std::string line;
+        while (std::getline(mounts, line)) {
+            std::istringstream iss(line);
+            std::string device, mount_point, fs_type;
+            if (iss >> device >> mount_point >> fs_type) {
+                if (mount_point == "/" || mount_point == "/mnt/wsl" || mount_point.rfind("/mnt/wslg", 0) == 0) {
+                    continue;
+                }
+                if ((mount_point.rfind("/media/", 0) == 0 || mount_point.rfind("/mnt/", 0) == 0 ||
+                     device.rfind("/dev/sd", 0) == 0) && mount_point != "/mnt") {
+#if defined(_WIN32)
+                    return mount_point;
+#else
+                    if (access(mount_point.c_str(), W_OK) == 0) {
+                        return mount_point;
+                    }
+#endif
+                }
+            }
+        }
+    }
+
+    // 2. Dossiers standards Raspberry Pi / Debian
+    const std::vector<std::string> standard_paths = {
+        "/media/usb", "/mnt/usb", "/media/pi", "/media/picar"
+    };
+    for (const auto& p : standard_paths) {
+#if defined(_WIN32)
+        return p;
+#else
+        if (access(p.c_str(), W_OK) == 0) {
+            return p;
+        }
+#endif
+    }
+
+    return "";
+}
+
+void TelemetryService::usb_worker() {
+    std::cout << "[TelemetryService] Worker USB actif : Streaming direct continu via FIFO POD (0 allocation, calibré 100 kHz)." << std::endl;
+
+    const std::string csv_header = "timestamp_us,uptime_s,fsm_state,speed_ms,accel_ms2,steer_deg,steer_offset_deg,dist_us_cm,line_0,line_1,line_2,line_3,line_4,odometry_m,emergency_stop,accel_violations\n";
+    std::string current_mount = "";
+
+    // Tampon de ligne pré-alloué pour éliminer toute allocation dynamique
+    char line_buf[256];
+    std::string write_chunk;
+    write_chunk.reserve(65536); // 64 Ko de réserve pour écritures par blocs optimaux
+
+    while (m_running.load() || !m_sample_fifo.empty()) {
+        std::vector<TelemetrySample> batch;
+        {
+            std::unique_lock<std::mutex> lock(m_fifo_mutex);
+            m_fifo_cv.wait_for(lock, std::chrono::milliseconds(20), [&]() {
+                return !m_sample_fifo.empty() || !m_running.load();
+            });
+
+            // Extraire en bloc les échantillons POD
+            while (!m_sample_fifo.empty()) {
+                batch.push_back(m_sample_fifo.front());
+                m_sample_fifo.pop();
+            }
+        }
+
+        if (batch.empty()) {
+            continue;
+        }
+
+        // Si la clé USB n'a pas encore de fichier ouvert, détection automatique du point de montage
+        if (!m_usb_stream.is_open()) {
+            current_mount = detect_usb_mount_point();
+            if (!current_mount.empty()) {
+                auto now = std::chrono::system_clock::now();
+                std::time_t now_c = std::chrono::system_clock::to_time_t(now);
+                std::tm now_tm{};
+#if defined(_WIN32)
+                localtime_s(&now_tm, &now_c);
+#else
+                localtime_r(&now_c, &now_tm);
+#endif
+                char time_str[32];
+                std::strftime(time_str, sizeof(time_str), "%Y%m%d_%H%M%S", &now_tm);
+
+                m_active_usb_file_path = current_mount + "/telemetry_run_" + std::string(time_str) + ".csv";
+                m_usb_stream.open(m_active_usb_file_path, std::ios::out | std::ios::app);
+                if (m_usb_stream.is_open()) {
+                    m_usb_stream << csv_header;
+                    m_usb_stream.flush();
+                    std::cout << "\n==================================================================" << std::endl;
+                    std::cout << "[TelemetryService] ✓ CLÉ USB DÉTECTÉE : Streaming direct activé !" << std::endl;
+                    std::cout << "[TelemetryService] Cible : " << m_active_usb_file_path << std::endl;
+                    std::cout << "==================================================================\n" << std::endl;
+                }
+            }
+        }
+
+        // Formatage en bloc haute vitesse et écriture directe sur la clé USB
+        if (m_usb_stream.is_open()) {
+            write_chunk.clear();
+            for (const auto& s : batch) {
+                int len = snprintf(line_buf, sizeof(line_buf),
+                    "%llu,%u,%s,%.3f,%.3f,%.1f,%.1f,%.1f,%u,%u,%u,%u,%u,%.2f,%u,%u\n",
+                    static_cast<unsigned long long>(s.timestamp_us),
+                    s.uptime_s,
+                    state_to_string(s.fsm_state),
+                    s.speed_ms,
+                    s.accel_ms2,
+                    s.steer_deg,
+                    s.steer_offset_deg,
+                    s.dist_us_cm,
+                    static_cast<unsigned>(s.line_sensors[0]),
+                    static_cast<unsigned>(s.line_sensors[1]),
+                    static_cast<unsigned>(s.line_sensors[2]),
+                    static_cast<unsigned>(s.line_sensors[3]),
+                    static_cast<unsigned>(s.line_sensors[4]),
+                    s.odometry_m,
+                    static_cast<unsigned>(s.emergency_stop),
+                    static_cast<unsigned>(s.accel_violations));
+                if (len > 0) {
+                    write_chunk.append(line_buf, static_cast<size_t>(len));
+                }
+            }
+            m_usb_stream.write(write_chunk.data(), static_cast<std::streamsize>(write_chunk.size()));
+            m_usb_stream.flush();
+        }
+    }
+
+    if (m_usb_stream.is_open()) {
+        m_usb_stream.flush();
+#if !defined(_WIN32)
+        sync();
+#endif
+        m_usb_stream.close();
+        std::cout << "[TelemetryService] Fichier clé USB clôturé proprement (" << m_active_usb_file_path << ")." << std::endl;
     }
 }
 

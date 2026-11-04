@@ -2,6 +2,16 @@
 #include <cassert>
 #include <cmath>
 #include <vector>
+#include <cstring>
+#include <fcntl.h>
+#include <sys/stat.h>
+#if !defined(_WIN32)
+#include <unistd.h>
+#else
+#define O_NONBLOCK 0
+inline int mkfifo(const char*, int) { return 0; }
+inline int unlink(const char*) { return 0; }
+#endif
 
 #include "control/motion_profiler.hpp"
 #include "control/line_follower.hpp"
@@ -13,9 +23,9 @@ bool approx_equal(float a, float b, float epsilon = 0.01f) {
 }
 
 void test_motion_profiler() {
-    std::cout << "[TEST] MotionProfiler - Respect strict a <= 0.735 m/s² à vitesse optimisée 0.32 m/s..." << std::endl;
+    std::cout << "[TEST] MotionProfiler - Respect strict a <= 0.735 m/s² à vitesse optimisée 0.40 m/s..." << std::endl;
     const float max_a = 0.735f;
-    const float cruise_v = 0.32f; // Vitesse de croisière augmentée (+45%)
+    const float cruise_v = 0.40f; // Vitesse de croisière augmentée 0.32->0.40 m/s
     MotionProfiler profiler(max_a, cruise_v);
 
     // 1. Test de limite en virage R = 120 mm (0.12 m)
@@ -23,14 +33,14 @@ void test_motion_profiler() {
     float v_curve = profiler.calculate_curve_speed_limit(0.12f);
     assert(approx_equal(v_curve, 0.297f, 0.005f));
 
-    // 2. Test d'accélération par paliers de 20 ms (50 Hz) de 0 à 0.32 m/s
+    // 2. Test d'accélération par paliers de 20 ms (50 Hz) de 0 à 0.40 m/s
     float dt = 0.02f;
     float max_delta_v = max_a * dt; // 0.0147 m/s par cycle max
 
     float current_v = 0.0f;
     float target_v = cruise_v;
 
-    for (int step = 0; step < 60; ++step) {
+    for (int step = 0; step < 80; ++step) {
         float next_v = profiler.update(target_v, dt);
         float delta_v = std::abs(next_v - current_v);
         // L'accélération instantanée ne doit JAMAIS dépasser a_max + tolérance flottante
@@ -40,9 +50,9 @@ void test_motion_profiler() {
 
     assert(approx_equal(current_v, target_v, 0.01f));
 
-    // 3. Test de décélération progressive de 0.32 m/s à 0.0 m/s
+    // 3. Test de décélération progressive de 0.40 m/s à 0.0 m/s
     target_v = 0.0f;
-    for (int step = 0; step < 60; ++step) {
+    for (int step = 0; step < 80; ++step) {
         float next_v = profiler.update(target_v, dt);
         float delta_v = std::abs(next_v - current_v);
         assert(delta_v <= max_delta_v + 1e-4f);
@@ -50,7 +60,7 @@ void test_motion_profiler() {
     }
 
     assert(approx_equal(current_v, 0.0f, 0.01f));
-    std::cout << "  ✓ MotionProfiler : Accélération toujours <= 0.735 m/s² jusqu'à 0.32 m/s." << std::endl;
+    std::cout << "  ✓ MotionProfiler : Accélération toujours <= 0.735 m/s² jusqu'à 0.40 m/s." << std::endl;
 }
 
 void test_line_follower_controller() {
@@ -287,6 +297,22 @@ void test_dynamic_config_and_fallbacks() {
     }
     assert(out_lost.is_line_lost);
     std::cout << "  ✓ Sécurité perte de ligne (0 0 0 0 0) : transition arrêt/récupération confirmée." << std::endl;
+
+    // 5. Test de l'événement POSIX "trigger_start" via FIFO
+    std::string test_fifo = "/tmp/peripheral_test";
+    mkfifo(test_fifo.c_str(), 0666);
+    int read_fd = open(test_fifo.c_str(), O_RDWR | O_NONBLOCK);
+    int write_fd = open(test_fifo.c_str(), O_WRONLY);
+    const char* trigger_cmd = "trigger_start\n";
+    write(write_fd, trigger_cmd, strlen(trigger_cmd));
+    char read_buf[64] = {0};
+    ssize_t n_read = read(read_fd, read_buf, sizeof(read_buf) - 1);
+    assert(n_read > 0);
+    assert(std::string(read_buf).find("trigger_start") != std::string::npos);
+    close(read_fd);
+    close(write_fd);
+    unlink(test_fifo.c_str());
+    std::cout << "  ✓ Tube FIFO POSIX (trigger_start) validé." << std::endl;
 }
 
 void test_ackermann_curve_speed() {
@@ -325,6 +351,34 @@ void test_ackermann_curve_speed() {
     std::cout << "  ✓ Vitesse en virage Ackermann : Maintien en ligne droite et décélération physique validées." << std::endl;
 }
 
+void test_predictive_brake() {
+    std::cout << "[TEST] MotionProfiler - Freinage anticipatif prédictif (feedforward d_error/dt)..." << std::endl;
+    MotionProfiler profiler(0.735f, 0.40f);
+
+    const float cruise = 0.40f;
+    const float gain = 0.06f;
+
+    // 1. Erreur constante (d_error/dt = 0) : aucune réduction prédictive
+    float v0 = profiler.apply_predictive_brake(0.0f, cruise, gain);
+    assert(approx_equal(v0, cruise, 1e-4f));
+
+    // 2. Erreur qui varie (entrée de virage) : d_error/dt = 2.0 pas/s
+    // Réduction : 0.06 * 2.0 = 0.12 m/s -> v = 0.28 m/s
+    float v_entry = profiler.apply_predictive_brake(2.0f, cruise, gain);
+    assert(approx_equal(v_entry, 0.28f, 1e-3f));
+
+    // 3. Symétrie entrée virage gauche vs droite
+    float v_neg = profiler.apply_predictive_brake(-2.0f, cruise, gain);
+    assert(approx_equal(v_entry, v_neg, 1e-4f));
+
+    // 4. Plafond max de réduction (35% de la vitesse) lors d'un choc ou décrochage violent (d_error/dt = 8.0)
+    // 0.06 * 8.0 = 0.48 m/s > 0.35 * 0.40 = 0.14 m/s -> v = 0.40 - 0.14 = 0.26 m/s
+    float v_extreme = profiler.apply_predictive_brake(8.0f, cruise, gain);
+    assert(approx_equal(v_extreme, cruise * 0.65f, 1e-3f));
+
+    std::cout << "  ✓ Feedforward prédictif : Anticipation fluide de virage sans saccade validée." << std::endl;
+}
+
 int main() {
     std::cout << "========================================" << std::endl;
     std::cout << "  PiCar C++17 - Tests Unitaires Contrôle" << std::endl;
@@ -332,6 +386,7 @@ int main() {
 
     test_motion_profiler();
     test_ackermann_curve_speed();
+    test_predictive_brake();
     test_line_follower_controller();
     test_line_follower_analog();
     test_obstacle_avoidance_s4_and_s5();

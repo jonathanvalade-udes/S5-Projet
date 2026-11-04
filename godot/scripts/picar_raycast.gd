@@ -38,6 +38,14 @@ var _cmd_queue: Array = []                # ordres reçus [temps, vitesse, direc
 var _clock: float = 0.0
 var _next_kick: float = 0.0               # secondes avant le prochain petit choc
 
+# Collision : la voiture est déplacée à la main (ce n'est pas un CharacterBody3D). Avant chaque mouvement, on
+# teste la boîte qu'elle occuperait ; si elle entre dans un obstacle (couche 1), le mouvement est annulé.
+const OBSTACLE_MASK: int = 1
+var _body_shape := BoxShape3D.new()
+var _body_center := Vector3.ZERO          # centre de la boîte, en repère de la voiture
+var _has_body_box: bool = false
+var _own_bodies: Array[RID] = []          # corps de la voiture elle-même (bille, plaquette) : ignorés
+
 func _ready() -> void:
 	Realism.setup()
 	_next_kick = Realism.rng.randf_range(0.5, 1.5) * Realism.p["kick_interval_s"]
@@ -47,6 +55,7 @@ func _ready() -> void:
 		lfs = lfs_node.get_child(0)
 	network = get_node_or_null("/root/Main/NetworkClient")
 	_find_wheels()
+	_build_collision_box()
 
 # Repère les roues ("Roue*", enfants de PiCar) et les petits axes de roue du modèle (pièces de 0,5 à 0,8 unités)
 func _find_wheels() -> void:
@@ -173,6 +182,44 @@ func _apply_kick(delta: float) -> void:
 	_next_kick = Realism.rng.randf_range(0.5, 1.5) * Realism.p["kick_interval_s"]
 	rotate_y(deg_to_rad(Realism.rng.randf_range(-1.0, 1.0) * Realism.noise("kick_yaw_deg")))
 
+# Boîte de collision = encombrement du châssis et des roues (sans la plaquette ni la bille)
+func _build_collision_box() -> void:
+	var to_car: Transform3D = global_transform.affine_inverse()
+	var meshes: Array = []
+	if model != null:
+		meshes.append_array(model.find_children("*", "MeshInstance3D", true, false))
+	for child in get_children():
+		if String(child.name).begins_with("Roue"):
+			meshes.append_array(child.find_children("*", "MeshInstance3D", true, false))
+	var box := AABB()
+	var first := true
+	for n in meshes:
+		var mi := n as MeshInstance3D
+		var b: AABB = (to_car * mi.global_transform) * mi.get_aabb()
+		box = b if first else box.merge(b)
+		first = false
+	if first:
+		return
+	_body_shape.size = box.size
+	_has_body_box = true
+	_body_center = box.get_center()
+	for body in find_children("*", "CollisionObject3D", true, false):
+		_own_bodies.append((body as CollisionObject3D).get_rid())
+
+# true si la voiture entrerait dans un obstacle en faisant ce mouvement (avance `step`, puis rotation `yaw`)
+func _would_collide(step: Vector3, yaw: float) -> bool:
+	if not _has_body_box:
+		return false
+	var t: Transform3D = global_transform
+	t.origin += t.basis * step
+	t.basis = Basis(Vector3.UP, yaw) * t.basis
+	var params := PhysicsShapeQueryParameters3D.new()
+	params.shape = _body_shape
+	params.transform = t * Transform3D(Basis.IDENTITY, _body_center)
+	params.collision_mask = OBSTACLE_MASK
+	params.exclude = _own_bodies
+	return not get_world_3d().direct_space_state.intersect_shape(params, 1).is_empty()
+
 func _process(delta: float) -> void:
 	if network == null:
 		network = get_node_or_null("/root/Main/NetworkClient")
@@ -193,11 +240,16 @@ func _process(delta: float) -> void:
 
 	# Cinématique métrique d'Ackermann, avec le mouvement réel
 	var angular_velocity: float = (actual_speed / 0.14) * tan(actual_steer_rad)
-	translate(Vector3(-actual_speed * delta, 0, 0))
-	rotate_y(angular_velocity * delta)
-	_apply_kick(delta)
+	var step := Vector3(-actual_speed * delta, 0, 0)
+	var moved: float = actual_speed * delta
+	if _would_collide(step, angular_velocity * delta):
+		moved = 0.0  # bloquée par un obstacle : la voiture ne bouge pas (les roues ne roulent pas non plus)
+	else:
+		translate(step)
+		rotate_y(angular_velocity * delta)
+		_apply_kick(delta)
 	# Roues : roulement + braquage des roues avant (on voit donc les roues désalignées)
-	_animate_wheels(actual_speed * delta, actual_steer_rad, delta)
+	_animate_wheels(moved, actual_steer_rad, delta)
 
 	# Feedback télémesure vers Python
 	network.data_to_send["velocity"] = rx_speed

@@ -19,6 +19,7 @@ struct PicarConfig {
     float cruise_speed          = picar::constants::DEFAULT_STRAIGHT_CRUISE_SPEED;
     float min_curve_speed       = picar::constants::DEFAULT_MIN_CURVE_SPEED;
     float curve_safety_factor   = picar::constants::DEFAULT_CURVE_SAFETY_FACTOR;
+    float predictive_brake_gain = picar::constants::DEFAULT_PREDICTIVE_BRAKE_GAIN;
     float line_kp               = picar::constants::DEFAULT_LINE_KP;
     float line_kd               = picar::constants::DEFAULT_LINE_KD;
     float obstacle_stop_dist_cm = picar::constants::DEFAULT_OBSTACLE_STOP_DIST_CM;
@@ -80,6 +81,7 @@ struct PicarConfig {
                 else if (key == "STRAIGHT_CRUISE_SPEED" || key == "CRUISE_SPEED") cfg.cruise_speed = std::max(0.05f, std::min(fval, 0.60f));
                 else if (key == "MIN_CURVE_SPEED") cfg.min_curve_speed = std::max(0.05f, std::min(fval, 0.40f));
                 else if (key == "CURVE_SAFETY_FACTOR") cfg.curve_safety_factor = std::max(0.30f, std::min(fval, 1.20f));
+                else if (key == "PREDICTIVE_BRAKE_GAIN") cfg.predictive_brake_gain = std::max(0.0f, std::min(fval, 0.30f));
                 else if (key == "LINE_KP" || key == "KP") cfg.line_kp = std::max(0.0f, std::min(fval, 2.0f));
                 else if (key == "LINE_KD" || key == "KD") cfg.line_kd = std::max(0.0f, std::min(fval, 1.0f));
                 else if (key == "OBSTACLE_STOP_DIST_CM") cfg.obstacle_stop_dist_cm = std::max(10.0f, std::min(fval, 80.0f));
@@ -158,6 +160,7 @@ struct PicarConfig {
         file << "STRAIGHT_CRUISE_SPEED=" << cfg.cruise_speed << "\n";
         file << "MIN_CURVE_SPEED=" << cfg.min_curve_speed << "\n";
         file << "CURVE_SAFETY_FACTOR=" << cfg.curve_safety_factor << "\n";
+        file << "PREDICTIVE_BRAKE_GAIN=" << cfg.predictive_brake_gain << "\n";
         file << "LINE_KP=" << cfg.line_kp << "\n";
         file << "LINE_KD=" << cfg.line_kd << "\n";
         file << "OBSTACLE_STOP_DIST_CM=" << cfg.obstacle_stop_dist_cm << "\n";
@@ -175,6 +178,7 @@ struct PicarConfig {
         shm->cfg_cruise_speed     = cfg.cruise_speed;
         shm->cfg_min_curve_speed  = cfg.min_curve_speed;
         shm->cfg_curve_safety_factor = cfg.curve_safety_factor;
+        shm->cfg_predictive_brake_gain = cfg.predictive_brake_gain;
         shm->cfg_line_kp          = cfg.line_kp;
         shm->cfg_line_kd          = cfg.line_kd;
         shm->cfg_version++;

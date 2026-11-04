@@ -68,6 +68,28 @@ func disconnect_from_server() -> void:
 	emit_signal("disconnected_from_server")
 	print("[NetworkClient] Déconnecté du serveur.")
 
+## Envoie l'ordre de top départ au FSM via le pont C++ (/tmp/peripherals.sock)
+func send_trigger_start() -> void:
+	if is_tcp_mode and tcp_socket and is_connected:
+		var cmd = "trigger_start\n"
+		tcp_socket.put_data(cmd.to_utf8_buffer())
+		print("[NetworkClient TCP] Commande 'trigger_start' envoyée au pont C++.")
+	elif not is_tcp_mode and ws_socket and is_connected:
+		var payload = JSON.stringify({"command": "trigger_start"}).to_utf8_buffer()
+		ws_socket.send(payload)
+		print("[NetworkClient WS] Commande 'trigger_start' envoyée.")
+
+## Envoie un arrêt d'urgence au robot / simulateur
+func send_emergency_stop() -> void:
+	if is_tcp_mode and tcp_socket and is_connected:
+		var cmd = "emergency_stop\n"
+		tcp_socket.put_data(cmd.to_utf8_buffer())
+		print("[NetworkClient TCP] Commande 'emergency_stop' envoyée.")
+	elif not is_tcp_mode and ws_socket and is_connected:
+		var payload = JSON.stringify({"command": "emergency_stop"}).to_utf8_buffer()
+		ws_socket.send(payload)
+		print("[NetworkClient WS] Commande 'emergency_stop' envoyée.")
+
 func _process(delta: float) -> void:
 	if is_tcp_mode:
 		_process_tcp(delta)

@@ -13,7 +13,7 @@ static void signal_handler(int sig) {
 }
 
 int main(int argc, char* argv[]) {
-    int hz = 20;
+    int hz = 50;
     bool enable_ui = true;
     int tcp_port = 91;
     int udp_port = 9002;
