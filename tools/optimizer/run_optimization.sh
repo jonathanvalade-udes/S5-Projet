@@ -15,8 +15,8 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 if [ ! -d "${SCRIPT_DIR}/.venv" ]; then
     echo "==> Création de l'environnement virtuel Python (.venv)..."
     python3 -m venv "${SCRIPT_DIR}/.venv"
-    echo "==> Installation d'Optuna..."
-    "${SCRIPT_DIR}/.venv/bin/pip" install --quiet optuna
+    echo "==> Installation d'Optuna et CMA-ES..."
+    "${SCRIPT_DIR}/.venv/bin/pip" install --quiet optuna cmaes
 fi
 
 PYTHON="${SCRIPT_DIR}/.venv/bin/python3"

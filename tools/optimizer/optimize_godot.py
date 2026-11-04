@@ -250,14 +250,19 @@ def main():
     parser = argparse.ArgumentParser(description="Optimiseur Bayésien Optuna pour PiCar-S")
     parser.add_argument("--mode", choices=["fast", "godot"], default="fast",
                         help="fast: simulateur Python pur (~5s); godot: boucle fermée 3D headless (~2m)")
+    parser.add_argument("--sampler", choices=["cmaes", "tpe"], default="cmaes",
+                        help="cmaes: Covariance Matrix Adaptation (recommandé contrôle PID); tpe: Tree Parzen Estimator")
     parser.add_argument("--trials", type=int, default=300, help="Nombre d'essais (défaut: 300)")
     parser.add_argument("--time-scale", type=float, default=5.0, help="Échelle de temps Godot (défaut: 5.0)")
     parser.add_argument("--timeout", type=float, default=30.0, help="Timeout par run en secondes (défaut: 30.0)")
     args = parser.parse_args()
 
+    sampler_name = "CMA-ES (Covariance Matrix Adaptation)" if args.sampler == "cmaes" else "TPE (Bayesian)"
+
     print("=" * 70)
-    print("      FASTDRINK S5-GI : OPTIMISEUR BAYÉSIEN MULTI-VARIABLES (OPTUNA)")
-    print(f"      Mode: {args.mode.upper()} | Essais: {args.trials} | Limite: a <= {MAX_ACCELERATION} m/s²")
+    print("      FASTDRINK S5-GI : OPTIMISEUR MULTI-VARIABLES (OPTUNA)")
+    print(f"      Mode: {args.mode.upper()} | Sampler: {sampler_name}")
+    print(f"      Essais: {args.trials} | Limite stricte: a <= {MAX_ACCELERATION} m/s²")
     print("=" * 70)
 
     fast_sim = FastSimulator() if args.mode == "fast" else None
@@ -290,7 +295,28 @@ def main():
         return score
 
     optuna.logging.set_verbosity(optuna.logging.WARNING)
-    study = optuna.create_study(direction="minimize")
+
+    # Initialisation du Sampler (CMA-ES pour paramètres corrélés ou TPE)
+    if args.sampler == "cmaes":
+        sampler = optuna.samplers.CmaEsSampler()
+    else:
+        sampler = optuna.samplers.TPESampler()
+
+    study = optuna.create_study(direction="minimize", sampler=sampler)
+
+    # Enqueue le jeu de paramètres actuels comme point de départ
+    baseline_params = {
+        'cruise': 0.40,
+        'min_curve': 0.14,
+        'safety': 0.85,
+        'brake_gain': 0.06,
+        'kp': 0.65,
+        'kd': 0.05,
+        'ki': 0.30,
+        'alpha': 0.40,
+        'knee': 0.15,
+    }
+    study.enqueue_trial(baseline_params)
     
     start_time = time.time()
     study.optimize(objective, n_trials=args.trials, show_progress_bar=True)
