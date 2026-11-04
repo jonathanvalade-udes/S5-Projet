@@ -1,0 +1,10 @@
+build/
+build-*/
+build-embedded/
+build-docker/
+.git/
+.venv/
+__pycache__/
+*.o
+*.a
+*.so

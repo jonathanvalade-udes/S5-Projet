@@ -1,0 +1,25 @@
+# ==============================================================================
+# Docker Compose pour TelemetryClient & Dashboard Web FastDrink
+# ==============================================================================
+# Lancement direct :
+#   docker compose up --build
+#
+# Avec IP spécifique du PiCar physique :
+#   PICAR_HOST=192.168.1.42 docker compose up
+# ==============================================================================
+
+services:
+  telemetry-client:
+    build:
+      context: ../..
+      dockerfile: tools/telemetryClient/Dockerfile
+    image: fastdrink-telemetry-client:latest
+    container_name: fastdrink-telemetry-client
+    ports:
+      - "8080:8080"
+    environment:
+      - PICAR_HOST=${PICAR_HOST:-host.docker.internal}
+      - PICAR_PORT=${PICAR_PORT:-91}
+      - WEB_PORT=8080
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
