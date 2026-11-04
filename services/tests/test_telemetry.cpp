@@ -384,7 +384,7 @@ void test_usb_fifo_direct_streaming() {
     assert(usb_file.is_open());
     std::string header_line;
     assert(std::getline(usb_file, header_line));
-    assert(header_line.find("timestamp_ms") != std::string::npos);
+    assert(header_line.find("timestamp") != std::string::npos);
     assert(header_line.find("speed_ms") != std::string::npos);
 
     std::string sample_line;

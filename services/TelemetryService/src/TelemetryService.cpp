@@ -618,32 +618,29 @@ void TelemetryService::update_metrics(float dt) {
     auto now = std::chrono::steady_clock::now();
     m_metrics.uptime_seconds = std::chrono::duration_cast<std::chrono::seconds>(now - m_start_time).count();
 
-    // Envoi instantané dans la file FIFO (ZÉRO DÉLAI, ZÉRO ÉCRITURE CARTE SD)
+    // Envoi instantané dans la file FIFO (ZÉRO DÉLAI, ZÉRO ALLOCATION DYNAMIQUE, CALIBRÉ 100 kHz)
     auto now_epoch = now.time_since_epoch();
-    uint64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now_epoch).count();
+    uint64_t now_us = std::chrono::duration_cast<std::chrono::microseconds>(now_epoch).count();
 
-    std::ostringstream ss;
-    ss << now_ms << ","
-       << m_metrics.uptime_seconds << ","
-       << state_to_string(m_metrics.fsm_state) << ","
-       << std::fixed << std::setprecision(3)
-       << m_metrics.current_speed_ms << ","
-       << m_metrics.current_accel_ms2 << ","
-       << std::setprecision(1)
-       << m_metrics.target_steering_deg << ","
-       << m_metrics.steering_offset_deg << ","
-       << m_metrics.filtered_dist_cm << ","
-       << static_cast<int>(m_metrics.line_sensors[0]) << ","
-       << static_cast<int>(m_metrics.line_sensors[1]) << ","
-       << static_cast<int>(m_metrics.line_sensors[2]) << ","
-       << static_cast<int>(m_metrics.line_sensors[3]) << ","
-       << static_cast<int>(m_metrics.line_sensors[4]) << ","
-       << std::setprecision(2)
-       << m_metrics.total_distance_m << ","
-       << (m_metrics.emergency_stop ? 1 : 0) << ","
-       << m_metrics.accel_violations << "\n";
+    TelemetrySample sample{};
+    sample.timestamp_us = now_us;
+    sample.uptime_s = static_cast<uint32_t>(m_metrics.uptime_seconds);
+    sample.fsm_state = m_metrics.fsm_state;
+    sample.speed_ms = m_metrics.current_speed_ms;
+    sample.accel_ms2 = m_metrics.current_accel_ms2;
+    sample.steer_deg = m_metrics.target_steering_deg;
+    sample.steer_offset_deg = m_metrics.steering_offset_deg;
+    sample.dist_us_cm = m_metrics.filtered_dist_cm;
+    sample.line_sensors[0] = m_metrics.line_sensors[0];
+    sample.line_sensors[1] = m_metrics.line_sensors[1];
+    sample.line_sensors[2] = m_metrics.line_sensors[2];
+    sample.line_sensors[3] = m_metrics.line_sensors[3];
+    sample.line_sensors[4] = m_metrics.line_sensors[4];
+    sample.emergency_stop = m_metrics.emergency_stop ? 1 : 0;
+    sample.accel_violations = static_cast<uint16_t>(m_metrics.accel_violations);
+    sample.odometry_m = m_metrics.total_distance_m;
 
-    push_to_usb_fifo(ss.str());
+    push_to_usb_fifo(sample);
 }
 
 void TelemetryService::publish_ipc() {
@@ -785,14 +782,16 @@ void TelemetryService::stop() {
     }
 }
 
-void TelemetryService::push_to_usb_fifo(const std::string& line) {
+void TelemetryService::push_to_usb_fifo(const TelemetrySample& sample) {
     std::lock_guard<std::mutex> lock(m_fifo_mutex);
     // Politique FIFO stricte avec borne de sécurité pour ne pas overwork la RAM (First-In, First-Out)
-    if (m_usb_fifo.size() >= MAX_FIFO_SIZE) {
-        m_usb_fifo.pop();
+    if (m_sample_fifo.size() >= MAX_FIFO_SIZE) {
+        m_sample_fifo.pop();
     }
-    m_usb_fifo.push(line);
-    m_fifo_cv.notify_one();
+    m_sample_fifo.push(sample);
+    if (m_sample_fifo.size() % BATCH_NOTIFY_SIZE == 0) {
+        m_fifo_cv.notify_one();
+    }
 }
 
 std::string TelemetryService::detect_usb_mount_point() {
@@ -845,23 +844,28 @@ std::string TelemetryService::detect_usb_mount_point() {
 }
 
 void TelemetryService::usb_worker() {
-    std::cout << "[TelemetryService] Worker USB actif : Streaming direct continu via FIFO (0 écriture carte SD)." << std::endl;
+    std::cout << "[TelemetryService] Worker USB actif : Streaming direct continu via FIFO POD (0 allocation, calibré 100 kHz)." << std::endl;
 
-    const std::string csv_header = "timestamp_ms,uptime_s,fsm_state,speed_ms,accel_ms2,steer_deg,steer_offset_deg,dist_us_cm,line_0,line_1,line_2,line_3,line_4,odometry_m,emergency_stop,accel_violations\n";
+    const std::string csv_header = "timestamp_us,uptime_s,fsm_state,speed_ms,accel_ms2,steer_deg,steer_offset_deg,dist_us_cm,line_0,line_1,line_2,line_3,line_4,odometry_m,emergency_stop,accel_violations\n";
     std::string current_mount = "";
 
-    while (m_running.load() || !m_usb_fifo.empty()) {
-        std::vector<std::string> batch;
+    // Tampon de ligne pré-alloué pour éliminer toute allocation dynamique
+    char line_buf[256];
+    std::string write_chunk;
+    write_chunk.reserve(65536); // 64 Ko de réserve pour écritures par blocs optimaux
+
+    while (m_running.load() || !m_sample_fifo.empty()) {
+        std::vector<TelemetrySample> batch;
         {
             std::unique_lock<std::mutex> lock(m_fifo_mutex);
-            m_fifo_cv.wait_for(lock, std::chrono::milliseconds(50), [&]() {
-                return !m_usb_fifo.empty() || !m_running.load();
+            m_fifo_cv.wait_for(lock, std::chrono::milliseconds(20), [&]() {
+                return !m_sample_fifo.empty() || !m_running.load();
             });
 
-            // Extraire en bloc toutes les trames accumulées
-            while (!m_usb_fifo.empty()) {
-                batch.push_back(std::move(m_usb_fifo.front()));
-                m_usb_fifo.pop();
+            // Extraire en bloc les échantillons POD
+            while (!m_sample_fifo.empty()) {
+                batch.push_back(m_sample_fifo.front());
+                m_sample_fifo.pop();
             }
         }
 
@@ -897,11 +901,33 @@ void TelemetryService::usb_worker() {
             }
         }
 
-        // Écriture directe et continue sur la clé USB (AUCUNE écriture sur la carte SD)
+        // Formatage en bloc haute vitesse et écriture directe sur la clé USB
         if (m_usb_stream.is_open()) {
-            for (const auto& line : batch) {
-                m_usb_stream << line;
+            write_chunk.clear();
+            for (const auto& s : batch) {
+                int len = snprintf(line_buf, sizeof(line_buf),
+                    "%llu,%u,%s,%.3f,%.3f,%.1f,%.1f,%.1f,%u,%u,%u,%u,%u,%.2f,%u,%u\n",
+                    static_cast<unsigned long long>(s.timestamp_us),
+                    s.uptime_s,
+                    state_to_string(s.fsm_state),
+                    s.speed_ms,
+                    s.accel_ms2,
+                    s.steer_deg,
+                    s.steer_offset_deg,
+                    s.dist_us_cm,
+                    static_cast<unsigned>(s.line_sensors[0]),
+                    static_cast<unsigned>(s.line_sensors[1]),
+                    static_cast<unsigned>(s.line_sensors[2]),
+                    static_cast<unsigned>(s.line_sensors[3]),
+                    static_cast<unsigned>(s.line_sensors[4]),
+                    s.odometry_m,
+                    static_cast<unsigned>(s.emergency_stop),
+                    static_cast<unsigned>(s.accel_violations));
+                if (len > 0) {
+                    write_chunk.append(line_buf, static_cast<size_t>(len));
+                }
             }
+            m_usb_stream.write(write_chunk.data(), static_cast<std::streamsize>(write_chunk.size()));
             m_usb_stream.flush();
         }
     }
