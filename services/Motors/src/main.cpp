@@ -45,6 +45,8 @@ static void signal_handler(int sig) {
 int main(int argc, char* argv[]) {
     int hz = 50;
     bool invert = false;
+    float steering_offset = 0.0f;
+    bool offset_specified = false;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -52,16 +54,25 @@ int main(int argc, char* argv[]) {
             hz = std::atoi(argv[++i]);
         } else if (arg == "--invert" || arg == "--reverse") {
             invert = true;
+        } else if ((arg == "--offset" || arg == "--steering-offset") && i + 1 < argc) {
+            steering_offset = static_cast<float>(std::atof(argv[++i]));
+            offset_specified = true;
         }
     }
 
-    log_msg(1, "[Motors] Starting up (Hz=%d, Invert=%s)...\n", hz, invert ? "true" : "false");
+    if (offset_specified) {
+        log_msg(1, "[Motors] Starting up (Hz=%d, Invert=%s, CLI Offset=%.2f°)...\n", 
+                hz, invert ? "true" : "false", steering_offset);
+    } else {
+        log_msg(1, "[Motors] Starting up (Hz=%d, Invert=%s, Offset=Auto)...\n", 
+                hz, invert ? "true" : "false");
+    }
 
     // Register POSIX signal handlers
     std::signal(SIGINT, signal_handler);
     std::signal(SIGTERM, signal_handler);
 
-    services::Motors service(hz, invert);
+    services::Motors service(hz, invert, steering_offset, offset_specified);
     g_service_instance = &service;
 
     if (!service.init()) {

@@ -478,6 +478,7 @@ void TelemetryService::collect_shared_memories() {
         }
         m_metrics.emergency_stop = m_telemetry->emergency_stop;
         m_metrics.heartbeat = m_telemetry->heartbeat;
+        m_metrics.steering_offset_deg = m_telemetry->steering_offset;
         pthread_mutex_unlock(&(m_telemetry->mtx));
     }
 
@@ -572,6 +573,7 @@ void TelemetryService::broadcast_udp() {
          << "\"speed_pct\":" << m_metrics.target_speed_percent << ","
          << "\"accel_ms2\":" << m_metrics.current_accel_ms2 << ","
          << "\"steer_deg\":" << m_metrics.target_steering_deg << ","
+         << "\"steer_offset_deg\":" << m_metrics.steering_offset_deg << ","
          << "\"dist_cm\":" << m_metrics.filtered_dist_cm << ","
          << "\"odometry_m\":" << m_metrics.total_distance_m << ","
          << "\"fsm_state\":\"" << state_to_string(m_metrics.fsm_state) << "\","
@@ -612,7 +614,7 @@ void TelemetryService::render_dashboard() {
               << "FSM: " << std::left << std::setw(20) << state_to_string(m_metrics.fsm_state)
               << " | V: " << std::fixed << std::setprecision(2) << m_metrics.current_speed_ms << " m/s"
               << " | A: " << m_metrics.current_accel_ms2 << " m/s² (" << accel_status << ")"
-              << " | Steer: " << m_metrics.target_steering_deg << "°"
+              << " | Steer: " << m_metrics.target_steering_deg << "° (" << m_metrics.steering_offset_deg << "°)"
               << " | US: " << m_metrics.filtered_dist_cm << " cm"
               << " | Line: " << line_bar
               << " | Odo: " << m_metrics.total_distance_m << " m"

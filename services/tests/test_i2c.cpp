@@ -138,6 +138,16 @@ void test_hal_driver_instantiation() {
 
     // PiCarHatsMotorDriver
     PiCarHatsMotorDriver motor_driver;
+    motor_driver.set_steering_offset(5.0f);
+    assert(std::abs(motor_driver.get_steering_offset() - 5.0f) < 0.001f);
+
+    // Saturation sécuritaire de l'offset à +-15°
+    motor_driver.set_steering_offset(25.0f);
+    assert(std::abs(motor_driver.get_steering_offset() - 15.0f) < 0.001f);
+    motor_driver.set_steering_offset(-30.0f);
+    assert(std::abs(motor_driver.get_steering_offset() - (-15.0f)) < 0.001f);
+
+    motor_driver.set_steering_offset(3.0f);
     motor_driver.set_steering(15.0f);
     motor_driver.set_speed(30.0f);
     motor_driver.emergency_stop();

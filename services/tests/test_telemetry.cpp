@@ -35,6 +35,7 @@ void test_telemetry_metrics_and_watchdog() {
     telem->filtered_dist = 42.5f;
     telem->target_speed = 50.0f;     // 50% = 0.32 m/s
     telem->target_steering = -12.0f; // Braquage -12°
+    telem->steering_offset = 3.5f;   // Trim offset +3.5°
     telem->state = 3;               // LineFollowingForward
     telem->emergency_stop = false;
     telem->heartbeat = 100;
@@ -62,6 +63,7 @@ void test_telemetry_metrics_and_watchdog() {
     assert(approx_equal(metrics.target_speed_percent, 50.0f));
     assert(approx_equal(metrics.current_speed_ms, 0.32f));
     assert(approx_equal(metrics.target_steering_deg, -12.0f));
+    assert(approx_equal(metrics.steering_offset_deg, 3.5f));
     assert(metrics.fsm_state == 3);
     assert(metrics.line_sensors[1] == 1 && metrics.line_sensors[2] == 1);
     std::cout << "  ✓ Agrégation des capteurs et états SHM validée." << std::endl;

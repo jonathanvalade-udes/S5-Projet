@@ -29,6 +29,7 @@ struct TelemetryMetrics {
     float filtered_dist_cm{100.0f};
     float target_speed_percent{0.0f};
     float target_steering_deg{0.0f};
+    float steering_offset_deg{0.0f};
     uint32_t fsm_state{0};
     uint8_t line_sensors[5]{0, 0, 0, 0, 0};
     bool emergency_stop{false};

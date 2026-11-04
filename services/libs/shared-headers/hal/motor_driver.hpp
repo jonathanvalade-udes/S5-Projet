@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cstring>
 #include <cstdlib>
+#include <fstream>
 #include <fcntl.h>
 #include <unistd.h>
 #include <dirent.h>
@@ -34,6 +35,16 @@ public:
     virtual void set_steering(float angle_degrees) = 0;
 
     /**
+     * @brief Définit un décalage (trim/offset) logiciel de direction en degrés.
+     */
+    virtual void set_steering_offset(float /*offset_deg*/) {}
+
+    /**
+     * @brief Récupère l'offset de direction actuellement appliqué.
+     */
+    virtual float get_steering_offset() const { return 0.0f; }
+
+    /**
      * @brief Coupe immédiatement l'alimentation des ponts en H et place les PWM à 0 V (Failsafe).
      */
     virtual void emergency_stop() = 0;
@@ -46,6 +57,7 @@ class MockMotorDriver : public IMotorDriver {
 private:
     float current_speed = 0.0f;
     float current_steering = 0.0f;
+    float current_offset = 0.0f;
     bool stopped = true;
     bool verbose = false;
 
@@ -61,10 +73,19 @@ public:
     }
 
     void set_steering(float angle_degrees) override {
-        current_steering = std::clamp(angle_degrees, -45.0f, 45.0f);
+        current_steering = std::clamp(angle_degrees + current_offset, -45.0f, 45.0f);
         if (verbose) {
-            std::cout << "[MOCK_MOTOR] Direction fixée à : " << current_steering << "°" << std::endl;
+            std::cout << "[MOCK_MOTOR] Direction fixée à : " << current_steering 
+                      << "° (offset=" << current_offset << "°)" << std::endl;
         }
+    }
+
+    void set_steering_offset(float offset_deg) override {
+        current_offset = std::clamp(offset_deg, -15.0f, 15.0f);
+    }
+
+    float get_steering_offset() const override {
+        return current_offset;
     }
 
     void emergency_stop() override {
@@ -93,6 +114,7 @@ private:
     int dir_a_fd = -1;
     int dir_b_fd = -1;
     bool m_invert_direction = false;
+    float m_steering_offset = picar::i2c::calibration::DEFAULT_STEERING_OFFSET_DEG;
 
     static int detect_gpio_base() {
         DIR* dir = opendir("/sys/class/gpio");
@@ -189,6 +211,17 @@ public:
         std::cout << "[INFO] Pont en H TB6612 configuré (DirA=GPIO" << actual_dir_a 
                   << ", DirB=GPIO" << actual_dir_b << ", Invert=" << (m_invert_direction ? "true" : "false") << ")" << std::endl;
 
+        // Lecture automatique de l'offset persistant (/etc/picar_steering_offset)
+        std::ifstream offset_file("/etc/picar_steering_offset");
+        if (offset_file.is_open()) {
+            float val = 0.0f;
+            if (offset_file >> val) {
+                m_steering_offset = std::clamp(val, -15.0f, 15.0f);
+                std::cout << "[INFO] Offset de direction chargé (/etc/picar_steering_offset) : " 
+                          << m_steering_offset << "°" << std::endl;
+            }
+        }
+
         if (m_i2c.is_connected()) {
             // 1. Mise en veille pour autoriser la configuration du prescaler
             m_i2c.write_byte_data(picar::i2c::pca9685::MODE1, picar::i2c::pca9685::SLEEP);
@@ -254,10 +287,19 @@ public:
     }
 
     void set_steering(float angle_degrees) override {
-        uint16_t pwm_ticks = picar::i2c::pca9685::steering_angle_to_pwm(angle_degrees);
+        float effective_angle = std::clamp(angle_degrees + m_steering_offset, -45.0f, 45.0f);
+        uint16_t pwm_ticks = picar::i2c::pca9685::steering_angle_to_pwm(effective_angle);
 
         // Pilotage du servo de direction (Canal 0)
         write_channel_pwm(picar::i2c::pca9685::CH_STEERING_SERVO, 0, pwm_ticks);
+    }
+
+    void set_steering_offset(float offset_deg) override {
+        m_steering_offset = std::clamp(offset_deg, -15.0f, 15.0f);
+    }
+
+    float get_steering_offset() const override {
+        return m_steering_offset;
     }
 
     void emergency_stop() override {
