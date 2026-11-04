@@ -49,7 +49,7 @@ public:
      * R = L / tan(|delta|)
      * v_max = safety_factor * sqrt(a_max * R)
      */
-    float calculate_curve_speed_ackermann(float steer_deg, float cruise_spd, float min_spd, float safety_factor = 0.75f) const {
+    float calculate_curve_speed_ackermann(float steer_deg, float cruise_spd, float min_spd, float safety_factor = 0.85f) const {
         constexpr float DEG_TO_RAD = 3.14159265358979323846f / 180.0f;
         float abs_steer_rad = std::abs(steer_deg) * DEG_TO_RAD;
 
@@ -67,6 +67,26 @@ public:
         // Limite physique critique a_c = v² / R <= a_max pondérée par le facteur de sécurité
         float v_phys = safety_factor * calculate_curve_speed_limit(radius);
         return std::clamp(v_phys, min_spd, cruise_spd);
+    }
+
+    /**
+     * @brief Calcule la réduction de vitesse prédictive basée sur le taux de variation de l'erreur de ligne.
+     *
+     * Feedforward anticipatif : si l'erreur augmente rapidement (robot qui entre dans un virage),
+     * on réduit la vitesse AVANT que l'angle de braquage soit maximal. Ceci compense la latence
+     * systémique (~60 ms moteurs + 20 ms capteurs) et permet d'aborder les virages plus tôt.
+     *
+     * @param d_error_dt   Dérivée temporelle de l'erreur de ligne [pas_capteur/s], ex: [-8.0, +8.0]
+     * @param current_spd  Vitesse actuelle avant ajustement (m/s)
+     * @param brake_gain   Gain feedforward [m/s par unité d'erreur/s], default: 0.06
+     * @return Vitesse plafonnée après correction prédictive (>= 0)
+     */
+    float apply_predictive_brake(float d_error_dt, float current_spd, float brake_gain = 0.06f) const {
+        // |d_error/dt| mesure la vitesse d'entrée en virage : plus ça change vite, plus on freine tôt
+        float brake_reduction = brake_gain * std::abs(d_error_dt);
+        // Limitation : ne réduit jamais à plus de 35% de la vitesse cible (évite micro-saccades sur droites)
+        brake_reduction = std::min(brake_reduction, 0.35f * current_spd);
+        return std::max(0.0f, current_spd - brake_reduction);
     }
 
     /**

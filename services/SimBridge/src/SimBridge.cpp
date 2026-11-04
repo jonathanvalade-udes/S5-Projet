@@ -149,6 +149,42 @@ void SimBridge::run() {
 
             if (line.empty()) continue;
 
+            // Commande de déclenchement FSM : "trigger_start" ou "start"
+            if (line == "trigger_start" || line == "start" || line.find("trigger_start") != std::string::npos) {
+                int fifo_fd = open("/tmp/peripherals.sock", O_WRONLY | O_NONBLOCK);
+                if (fifo_fd >= 0) {
+                    const char* cmd = "trigger_start\n";
+                    ssize_t w = write(fifo_fd, cmd, strlen(cmd));
+                    (void)w;
+                    close(fifo_fd);
+                    std::cout << "[SimBridge] Transmis 'trigger_start' vers /tmp/peripherals.sock" << std::endl;
+                } else {
+                    std::cerr << "[SimBridge] Note: FIFO /tmp/peripherals.sock (" << strerror(errno) << ")" << std::endl;
+                }
+                if (m_telemetry) {
+                    pthread_mutex_lock(&(m_telemetry->mtx));
+                    m_telemetry->emergency_stop = false;
+                    pthread_mutex_unlock(&(m_telemetry->mtx));
+                }
+                std::string ack = "{\"status\":\"ok\",\"event\":\"trigger_start\"}\n";
+                send(client_fd, ack.c_str(), ack.size(), 0);
+                continue;
+            }
+
+            // Commande d'arrêt d'urgence : "emergency_stop" ou "stop"
+            if (line == "emergency_stop" || line == "stop" || line.find("emergency_stop") != std::string::npos) {
+                if (m_telemetry) {
+                    pthread_mutex_lock(&(m_telemetry->mtx));
+                    m_telemetry->emergency_stop = true;
+                    m_telemetry->target_speed = 0.0f;
+                    pthread_mutex_unlock(&(m_telemetry->mtx));
+                }
+                std::cout << "[SimBridge] Arrêt d'urgence déclenché depuis Godot !" << std::endl;
+                std::string ack = "{\"status\":\"ok\",\"event\":\"emergency_stop\"}\n";
+                send(client_fd, ack.c_str(), ack.size(), 0);
+                continue;
+            }
+
             // Commande de modification de constante par WiFi (format "PARAM=valeur" ou "set_param")
             if (line.find('=') != std::string::npos && line.find("line_follower") == std::string::npos && line.find("distance") == std::string::npos) {
                 size_t eq = line.find('=');
@@ -167,6 +203,7 @@ void SimBridge::run() {
                         else if (k == "STRAIGHT_CRUISE_SPEED" || k == "CRUISE_SPEED") m_telemetry->cfg_cruise_speed = fval;
                         else if (k == "MIN_CURVE_SPEED") m_telemetry->cfg_min_curve_speed = fval;
                         else if (k == "CURVE_SAFETY_FACTOR") m_telemetry->cfg_curve_safety_factor = fval;
+                        else if (k == "PREDICTIVE_BRAKE_GAIN") m_telemetry->cfg_predictive_brake_gain = fval;
                         else if (k == "LINE_KP" || k == "KP") m_telemetry->cfg_line_kp = fval;
                         else if (k == "LINE_KD" || k == "KD") m_telemetry->cfg_line_kd = fval;
                         m_telemetry->cfg_version++;

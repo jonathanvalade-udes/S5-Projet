@@ -7,7 +7,8 @@
 struct LineFollowerOutput {
     float steer_normalized; // [-1.0f, +1.0f] (-1 = gauche max, +1 = droite max)
     float steer_degrees;    // [-45.0f, +45.0f] pour la HAL moteur
-    float target_velocity;  // m/s
+    float target_velocity;  // m/s (calculé par le régulateur interne — utilisé si Ackermann non disponible)
+    float d_error_dt;       // Dérivée temporelle de l'erreur de ligne [pas/s] pour le feedforward prédictif
     bool is_finished;       // true si barre en T détectée (fin de parcours)
     bool is_line_lost;      // true si ligne perdue au-delà du timeout
 };
@@ -23,7 +24,7 @@ public:
     static constexpr float DEFAULT_KI = 0.30f;         // Compense le biais fixe des roues (alignement), voir INTEGRAL_*
     static constexpr float INTEGRAL_LIMIT = 0.15f;     // Contribution max de l'intégrale au braquage normalisé (~7°)
     static constexpr float INTEGRAL_ACTIVE_BELOW = 0.6f; // N'intègre que près du centre (|erreur| en pas de capteur) : pas dans les virages
-    static constexpr float CRUISE_SPEED = 0.22f;       // m/s en ligne droite
+    static constexpr float CRUISE_SPEED = 0.22f;       // m/s fallback interne (le FSM utilise picar.conf via set_cruise_speed)
     static constexpr float MIN_CURVE_SPEED = 0.10f;     // m/s en virage serré (R = 120 mm)
     static constexpr float SPEED_REDUCTION_GAIN = 0.08f;
     static constexpr float LINE_LOSS_TIMEOUT = 1.20f;   // Secondes avant arrêt d'urgence
@@ -46,6 +47,7 @@ private:
     bool has_previous_error;
     float analog_error_filtered = 0.0f; // erreur analogique filtrée (EMA) avant le terme dérivé
     bool has_analog_error = false;
+    float last_d_error_dt = 0.0f;       // dérivée temporelle de l'erreur exposée pour le feedforward prédictif
 
     const float weights[5] = {-2.0f, -1.0f, 0.0f, 1.0f, 2.0f};
 
@@ -72,6 +74,7 @@ public:
         has_previous_error = false;
         analog_error_filtered = 0.0f;
         has_analog_error = false;
+        last_d_error_dt = 0.0f;
     }
 
     void set_kp(float p) { kp = std::max(0.0f, p); }
@@ -117,12 +120,14 @@ public:
         LineFollowerOutput out{};
         out.is_finished = false;
         out.is_line_lost = false;
+        out.d_error_dt = last_d_error_dt; // Exposé pour le feedforward prédictif dans le FSM
 
         // Cas 0 : Ligne d'arrêt terminale en T
         if (is_t_stop) {
             out.steer_normalized = 0.0f;
             out.steer_degrees = 0.0f;
             out.target_velocity = 0.0f;
+            out.d_error_dt = 0.0f;
             out.is_finished = true;
             return out;
         }
@@ -144,6 +149,7 @@ public:
                 filtered_d_error = 0.0f;
             }
             last_error = error;
+            last_d_error_dt = d_error; // Mémorisé pour être exposé dans la prochaine sortie
 
             // Intégrale : seulement près du centre (ligne droite), limitée ; relâchée doucement dans les virages
             if (std::abs(error) < INTEGRAL_ACTIVE_BELOW) {
@@ -165,7 +171,8 @@ public:
 
             out.steer_normalized = steer;
             out.steer_degrees = steer * 45.0f;
-            out.target_velocity = target_v;
+            out.target_velocity = target_v; // Vitesse régulée interne (le FSM applique Ackermann par-dessus)
+            out.d_error_dt = d_error;
             return out;
         }
 

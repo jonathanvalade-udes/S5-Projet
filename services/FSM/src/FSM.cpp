@@ -3,6 +3,14 @@
 #include <chrono>
 #include <thread>
 #include <algorithm>
+#include <sys/stat.h>
+#include <fcntl.h>
+#if !defined(_WIN32)
+#include <unistd.h>
+#else
+#define O_NONBLOCK 0
+inline int mkfifo(const char*, int) { return 0; }
+#endif
 
 namespace services {
 
@@ -10,6 +18,28 @@ FSM::FSM(int hz) : m_running(false), m_hz(hz) {}
 
 FSM::~FSM() {
     stop();
+}
+
+bool FSM::check_start_trigger() {
+    if (m_event_pipe_fd < 0) {
+        m_event_pipe_fd = open(m_event_pipe_path.c_str(), O_RDWR | O_NONBLOCK);
+        if (m_event_pipe_fd < 0) return false;
+    }
+
+    char buf[128];
+    ssize_t n = read(m_event_pipe_fd, buf, sizeof(buf) - 1);
+    if (n > 0) {
+        buf[n] = '\0';
+        std::string msg(buf);
+        msg.erase(std::remove_if(msg.begin(), msg.end(), ::isspace), msg.end());
+        if (msg.find("trigger_start") != std::string::npos || 
+            msg.find("start") != std::string::npos ||
+            msg == "1") {
+            std::cout << "[FSM] Événement POSIX '" << msg << "' reçu sur " << m_event_pipe_path << " -> Déclenchement du départ !" << std::endl;
+            return true;
+        }
+    }
+    return false;
 }
 
 void FSM::transition_to(shared::fsm::MachineStates new_state) {
@@ -37,6 +67,7 @@ bool FSM::init() {
     m_straight_cruise_speed = cfg.cruise_speed;
     m_min_curve_speed       = cfg.min_curve_speed;
     m_curve_safety_factor   = cfg.curve_safety_factor;
+    m_predictive_brake_gain = cfg.predictive_brake_gain;
     m_line_kp               = cfg.line_kp;
     m_line_kd               = cfg.line_kd;
     m_obstacle_stop_dist_cm = cfg.obstacle_stop_dist_cm;
@@ -58,6 +89,7 @@ bool FSM::init() {
                 m_telemetry->cfg_cruise_speed     = m_straight_cruise_speed;
                 m_telemetry->cfg_min_curve_speed  = m_min_curve_speed;
                 m_telemetry->cfg_curve_safety_factor = m_curve_safety_factor;
+                m_telemetry->cfg_predictive_brake_gain = m_predictive_brake_gain;
                 m_telemetry->cfg_line_kp          = m_line_kp;
                 m_telemetry->cfg_line_kd          = m_line_kd;
                 m_telemetry->cfg_version          = 1;
@@ -75,6 +107,15 @@ bool FSM::init() {
         m_fsm_pub = std::make_unique<shared::services::memory::MemoryShareComponentServer>("FSM");
     } catch (const std::exception& e) {
         std::cerr << "[FSM] Warning: MemoryShare subscriber/publisher: " << e.what() << std::endl;
+    }
+
+    // Préparation du tube d'événements POSIX (FIFO /tmp/peripheral)
+    mkfifo(m_event_pipe_path.c_str(), 0666);
+    m_event_pipe_fd = open(m_event_pipe_path.c_str(), O_RDWR | O_NONBLOCK);
+    if (m_event_pipe_fd >= 0) {
+        std::cout << "[FSM] Écoute des événements POSIX prête sur " << m_event_pipe_path << std::endl;
+    } else {
+        std::cerr << "[FSM] Attention : impossible d'ouvrir le tube d'événements " << m_event_pipe_path << std::endl;
     }
 
     transition_to(shared::fsm::MachineStates::Init);
@@ -162,6 +203,9 @@ void FSM::run() {
                 m_curve_safety_factor   = (m_telemetry->cfg_curve_safety_factor > 0.1f) 
                                             ? m_telemetry->cfg_curve_safety_factor 
                                             : m_curve_safety_factor;
+                m_predictive_brake_gain = (m_telemetry->cfg_predictive_brake_gain >= 0.0f)
+                                            ? m_telemetry->cfg_predictive_brake_gain
+                                            : m_predictive_brake_gain;
                 m_line_kp               = m_telemetry->cfg_line_kp;
                 m_line_kd               = m_telemetry->cfg_line_kd;
 
@@ -272,9 +316,13 @@ void FSM::run() {
                 desired_velocity = 0.0f;
                 desired_steering = 0.0f;
                 m_state_timer += dt;
-                // Prêt pour engagement nominal
-                if (m_state_timer >= 0.3f) {
-                    std::cout << "[FSM] Armed -> Top départ de suivi de ligne!" << std::endl;
+
+                // Attente explicite de l'événement POSIX "trigger_start" dans /tmp/peripheral
+                if (check_start_trigger()) {
+                    std::cout << "[FSM] Événement 'trigger_start' reçu -> Top départ de suivi de ligne!" << std::endl;
+                    if (m_line_controller) m_line_controller->reset();
+                    if (m_motion_profiler) m_motion_profiler->reset(0.0f);
+                    m_course_finished = false;
                     transition_to(shared::fsm::MachineStates::LineFollowingForward);
                 }
                 break;
@@ -282,7 +330,7 @@ void FSM::run() {
 
             case shared::fsm::MachineStates::LineFollowingForward: {
                 LineFollowerOutput line_out = m_line_controller ? m_line_controller->update_analog(line_darkness, dt)
-                                                                : LineFollowerOutput{0.0f, 0.0f, m_straight_cruise_speed, false, false};
+                                                                : LineFollowerOutput{0.0f, 0.0f, m_straight_cruise_speed, 0.0f, false, false};
                 desired_steering = line_out.steer_degrees;
 
                 // Vitesse adaptative basée sur la physique centrifuge d'Ackermann :
@@ -292,6 +340,15 @@ void FSM::run() {
                     ? m_motion_profiler->calculate_curve_speed_ackermann(
                           desired_steering, m_straight_cruise_speed, m_min_curve_speed, m_curve_safety_factor)
                     : m_straight_cruise_speed;
+
+                // Feedforward prédictif : si l'erreur de ligne évolue rapidement (entrée de virage imminente),
+                // on freine AVANT que l'angle d'Ackermann soit au maximum — compense la latence ~60-80 ms.
+                // Sans lui, le robot est déjà en plein virage quand le MotionProfiler ralentit.
+                if (m_motion_profiler && m_predictive_brake_gain > 0.0f) {
+                    adaptive_velocity = m_motion_profiler->apply_predictive_brake(
+                        line_out.d_error_dt, adaptive_velocity, m_predictive_brake_gain);
+                }
+
                 desired_velocity = adaptive_velocity;
 
                 if (line_out.is_finished) {
@@ -335,8 +392,13 @@ void FSM::run() {
                 desired_steering = 0.0f;
                 m_state_timer += dt;
 
-                // Fin de parcours : on reste à l'arrêt, sans reprise du suivi de ligne
+                // Fin de parcours au T : arrêt progressif (~0.5s) puis réarmement automatique vers Armed
                 if (m_course_finished) {
+                    if (m_state_timer >= 0.5f) {
+                        std::cout << "[FSM] Fin de parcours au T achevée -> Réarmement automatique (Armed). En attente d'un nouveau 'trigger_start'..." << std::endl;
+                        m_course_finished = false;
+                        transition_to(shared::fsm::MachineStates::Armed);
+                    }
                     break;
                 }
 
@@ -505,6 +567,10 @@ void FSM::stop() {
     if (m_running.load()) {
         std::cout << "[FSM] Stopping service..." << std::endl;
         m_running.store(false);
+    }
+    if (m_event_pipe_fd >= 0) {
+        close(m_event_pipe_fd);
+        m_event_pipe_fd = -1;
     }
 }
 

@@ -230,9 +230,40 @@ bool TelemetryService::handle_ping_pong() {
 
     // Vérifier s'il s'agit d'une commande
     if (hdr.type == shared::headers::HeadersType::Command) {
-        // Commande texte de configuration (ex: "MAX_ACCELERATION=0.55")
         if (!payload.empty()) {
             std::string payload_str(payload.begin(), payload.end());
+
+            // Commande de départ FSM
+            if (payload_str.find("trigger_start") != std::string::npos || payload_str == "start") {
+                int fifo_fd = open("/tmp/peripherals.sock", O_WRONLY | O_NONBLOCK);
+                if (fifo_fd >= 0) {
+                    const char* cmd = "trigger_start\n";
+                    ssize_t w = write(fifo_fd, cmd, strlen(cmd));
+                    (void)w;
+                    close(fifo_fd);
+                    std::cout << "[Telemetry WiFi] Transmis 'trigger_start' vers /tmp/peripherals.sock" << std::endl;
+                }
+                if (m_telemetry) {
+                    pthread_mutex_lock(&(m_telemetry->mtx));
+                    m_telemetry->emergency_stop = false;
+                    pthread_mutex_unlock(&(m_telemetry->mtx));
+                }
+                return true;
+            }
+
+            // Commande d'arrêt d'urgence
+            if (payload_str.find("emergency_stop") != std::string::npos || payload_str == "stop") {
+                if (m_telemetry) {
+                    pthread_mutex_lock(&(m_telemetry->mtx));
+                    m_telemetry->emergency_stop = true;
+                    m_telemetry->target_speed = 0.0f;
+                    pthread_mutex_unlock(&(m_telemetry->mtx));
+                }
+                std::cout << "[Telemetry WiFi] Arrêt d'urgence déclenché par client !" << std::endl;
+                return true;
+            }
+
+            // Commande texte de configuration (ex: "MAX_ACCELERATION=0.55")
             size_t eq = payload_str.find('=');
             if (eq != std::string::npos) {
                 std::string k = payload_str.substr(0, eq);
@@ -250,6 +281,7 @@ bool TelemetryService::handle_ping_pong() {
                         else if (k == "STRAIGHT_CRUISE_SPEED" || k == "CRUISE_SPEED") m_telemetry->cfg_cruise_speed = fval;
                         else if (k == "MIN_CURVE_SPEED") m_telemetry->cfg_min_curve_speed = fval;
                         else if (k == "CURVE_SAFETY_FACTOR") m_telemetry->cfg_curve_safety_factor = fval;
+                        else if (k == "PREDICTIVE_BRAKE_GAIN") m_telemetry->cfg_predictive_brake_gain = fval;
                         else if (k == "LINE_KP" || k == "KP") m_telemetry->cfg_line_kp = fval;
                         else if (k == "LINE_KD" || k == "KD") m_telemetry->cfg_line_kd = fval;
                         m_telemetry->cfg_version++;
