@@ -18,6 +18,11 @@ find_package(Threads REQUIRED)
 option(STATIC "Build with static linking (-static)" OFF)
 option(STATIC_BUILD "Build with static linking (-static)" OFF)
 
+if(STATIC OR STATIC_BUILD)
+    add_link_options(-static -no-pie)
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static -no-pie")
+endif()
+
 enable_testing()
 
 # Set global libs directory
