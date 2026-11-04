@@ -268,16 +268,17 @@ def main():
     fast_sim = FastSimulator() if args.mode == "fast" else None
 
     def objective(trial: optuna.Trial) -> float:
+        # Plages élargies pour chercher la limite physique absolue ("on the edge")
         p = {
-            'cruise': trial.suggest_float("cruise", 0.32, 0.52),
-            'min_curve': trial.suggest_float("min_curve", 0.10, 0.20),
-            'safety': trial.suggest_float("safety", 0.70, 0.95),
-            'brake_gain': trial.suggest_float("brake_gain", 0.02, 0.12),
-            'kp': trial.suggest_float("kp", 0.45, 0.95),
-            'kd': trial.suggest_float("kd", 0.02, 0.12),
-            'ki': trial.suggest_float("ki", 0.00, 0.40),
-            'alpha': trial.suggest_float("alpha", 0.25, 0.65),
-            'knee': trial.suggest_float("knee", 0.08, 0.25),
+            'cruise': trial.suggest_float("cruise", 0.35, 0.55),
+            'min_curve': trial.suggest_float("min_curve", 0.14, 0.28),
+            'safety': trial.suggest_float("safety", 0.80, 0.98),
+            'brake_gain': trial.suggest_float("brake_gain", 0.03, 0.15),
+            'kp': trial.suggest_float("kp", 0.50, 1.20),
+            'kd': trial.suggest_float("kd", 0.02, 0.15),
+            'ki': trial.suggest_float("ki", 0.00, 0.35),
+            'alpha': trial.suggest_float("alpha", 0.25, 0.70),
+            'knee': trial.suggest_float("knee", 0.05, 0.20),
         }
 
         if args.mode == "fast":
@@ -289,10 +290,9 @@ def main():
             penalty = 1000.0 if reason == "ball_dropped" else 500.0
             return penalty + (max_accel * 50.0)
 
-        # Fonction de coût : Minimiser le temps de tour avec marge de sécurité sur 0.735 m/s²
-        safety_violation = max(0.0, max_accel - (MAX_ACCELERATION * 0.95))
-        score = lap_time + (safety_violation * 100.0)
-        return score
+        # Mode "ON THE EDGE" : Zéro pénalité tant que la bille ne tombe pas !
+        # Le score est purement le temps de tour minimal absolu.
+        return lap_time
 
     optuna.logging.set_verbosity(optuna.logging.WARNING)
 
