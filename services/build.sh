@@ -5,6 +5,9 @@
 
 set -euo pipefail
 
+# cmake peut vivre dans un venv utilisateur si apt n'est pas disponible (comme dans run_sim.sh)
+[ -d "$HOME/.picar-venv/bin" ] && export PATH="$HOME/.picar-venv/bin:$PATH"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STATIC_FLAG="OFF"
 EMBEDDED_MODE=false
@@ -126,7 +129,7 @@ if [[ "${EMBEDDED_MODE}" == true ]]; then
 fi
 
 echo "==> Configuring with CMake (STATIC=${STATIC_FLAG})..."
-cmake -B "${BUILD_DIR}" -DSTATIC="${STATIC_FLAG}"
+cmake -B "${BUILD_DIR}" -S "${SCRIPT_DIR}" -DSTATIC="${STATIC_FLAG}"
 
 echo "==> Building target '${TARGET}'..."
 if [[ "${TARGET}" == "all" ]]; then

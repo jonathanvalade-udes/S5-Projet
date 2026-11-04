@@ -11,6 +11,9 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <dirent.h>
+#include <fstream>
+#include <sstream>
+#include <string>
 
 #include "picar_i2c_registers.hpp"
 #include "i2c_device.hpp"
@@ -52,7 +55,7 @@ public:
 class MockSensorDriver : public ISensorDriver {
 private:
     float simulated_dist = 50.0f;
-    uint8_t simulated_line[5] = {0, 0, 1, 0, 0}; // Ligne centrée par défaut
+    uint8_t simulated_line[5] = {0, 0, 0, 0, 0}; // Par défaut, aucune ligne si non initialisé
     size_t counter = 0;
 
 public:
@@ -96,23 +99,107 @@ private:
     int actual_trig = 12;
     int actual_echo = 16;
     picar::hal::I2CDevice m_line_device;
+    picar::i2c::line_follower::CalibrationData m_calibration;
     uint16_t m_thresholds[5] = {picar::i2c::line_follower::DEFAULT_THRESHOLD,
                                 picar::i2c::line_follower::DEFAULT_THRESHOLD,
                                 picar::i2c::line_follower::DEFAULT_THRESHOLD,
                                 picar::i2c::line_follower::DEFAULT_THRESHOLD,
                                 picar::i2c::line_follower::DEFAULT_THRESHOLD};
-    uint8_t m_last_sensors[5] = {0, 0, 1, 0, 0};
-    float m_last_darkness[5] = {0.0f, 0.0f, 1.0f, 0.0f, 0.0f};
-
-    float m_black_adc = env_float("PICAR_LINE_BLACK_ADC", picar::i2c::line_follower::DEFAULT_BLACK_ADC);
-    float m_white_adc = env_float("PICAR_LINE_WHITE_ADC", picar::i2c::line_follower::DEFAULT_WHITE_ADC);
+    uint8_t m_last_sensors[5] = {0, 0, 0, 0, 0};
+    float m_last_darkness[5] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+    int m_consecutive_i2c_errors = 0;
 
     static float env_float(const char* name, float fallback) {
         const char* v = std::getenv(name);
         return (v && v[0] != '\0') ? static_cast<float>(std::atof(v)) : fallback;
     }
 
-    
+    void load_calibration() {
+        float env_b = env_float("PICAR_LINE_BLACK_ADC", picar::i2c::line_follower::DEFAULT_BLACK_ADC);
+        float env_w = env_float("PICAR_LINE_WHITE_ADC", picar::i2c::line_follower::DEFAULT_WHITE_ADC);
+        for (int i = 0; i < 5; ++i) {
+            m_calibration.black_adc[i] = env_b;
+            m_calibration.white_adc[i] = env_w;
+            m_thresholds[i] = static_cast<uint16_t>((env_b + env_w) * 0.5f);
+        }
+
+        const char* paths[] = {"/etc/picar_line_calibration", nullptr};
+        const char* home = std::getenv("HOME");
+        std::string home_path = home ? (std::string(home) + "/.picar_line_calibration") : "";
+
+        const char* target_path = nullptr;
+        std::ifstream file;
+        file.open(paths[0]);
+        if (file.is_open()) {
+            target_path = paths[0];
+        } else if (!home_path.empty()) {
+            file.open(home_path);
+            if (file.is_open()) {
+                target_path = home_path.c_str();
+            }
+        }
+
+        if (target_path && file.is_open()) {
+            std::string line;
+            int count = 0;
+            while (std::getline(file, line) && count < 5) {
+                if (line.empty() || line[0] == '#') continue;
+                std::istringstream iss(line);
+                float v1 = 0.0f, v2 = 0.0f, v3 = 0.0f;
+                if (iss >> v1 >> v2) {
+                    if (iss >> v3) {
+                        int idx = static_cast<int>(v1);
+                        if (idx >= 0 && idx < 5) {
+                            m_calibration.black_adc[idx] = v2;
+                            m_calibration.white_adc[idx] = v3;
+                            m_thresholds[idx] = static_cast<uint16_t>((v2 + v3) * 0.5f);
+                        }
+                    } else {
+                        m_calibration.black_adc[count] = v1;
+                        m_calibration.white_adc[count] = v2;
+                        m_thresholds[count] = static_cast<uint16_t>((v1 + v2) * 0.5f);
+                    }
+                    count++;
+                }
+            }
+            std::cout << "[INFO] Calibration suiveur de ligne chargée depuis " << target_path << std::endl;
+        }
+    }
+
+    static int detect_gpio_base() {
+        DIR* dir = opendir("/sys/class/gpio");
+        if (!dir) return 0;
+        struct dirent* entry;
+        int found_base = 0;
+        while ((entry = readdir(dir)) != nullptr) {
+            if (strncmp(entry->d_name, "gpiochip", 8) == 0) {
+                char label_path[256];
+                snprintf(label_path, sizeof(label_path), "/sys/class/gpio/%s/label", entry->d_name);
+                int lfd = open(label_path, O_RDONLY);
+                if (lfd >= 0) {
+                    char label[64] = {0};
+                    ssize_t n = read(lfd, label, sizeof(label) - 1);
+                    close(lfd);
+                    if (n > 0 && (strstr(label, "bcm2835") || strstr(label, "3f200000.gpio") || strstr(label, "fe200000.gpio"))) {
+                        char base_path[256];
+                        snprintf(base_path, sizeof(base_path), "/sys/class/gpio/%s/base", entry->d_name);
+                        int bfd = open(base_path, O_RDONLY);
+                        if (bfd >= 0) {
+                            char base_str[32] = {0};
+                            ssize_t bn = read(bfd, base_str, sizeof(base_str) - 1);
+                            close(bfd);
+                            if (bn > 0) {
+                                found_base = std::atoi(base_str);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        closedir(dir);
+        return found_base;
+    }
 
 public:
     PiCarHatsSensorDriver(int trig = 12, int echo = 16) 
@@ -167,6 +254,19 @@ public:
 
         std::cout << "[INFO] HC-SR04 configuré sur Trig=GPIO" << actual_trig << " (BCM " << trig_pin 
                   << "), Echo=GPIO" << actual_echo << " (BCM " << echo_pin << ")" << std::endl;
+
+        load_calibration();
+    }
+
+    const picar::i2c::line_follower::CalibrationData& get_calibration() const {
+        return m_calibration;
+    }
+
+    void set_calibration(const picar::i2c::line_follower::CalibrationData& calib) {
+        m_calibration = calib;
+        for (int i = 0; i < 5; ++i) {
+            m_thresholds[i] = static_cast<uint16_t>((calib.black_adc[i] + calib.white_adc[i]) * 0.5f);
+        }
     }
 
     ~PiCarHatsSensorDriver() override {
@@ -272,20 +372,36 @@ public:
         return -1.0f; // Panne matérielle ou GPIO inaccessibles
     }
 
+    bool is_line_sensor_connected() const {
+        return m_line_device.is_connected() && (m_consecutive_i2c_errors < 5);
+    }
+
     void read_line_sensors(uint8_t out_sensors[5]) override {
         if (m_line_device.is_connected()) {
             uint8_t buffer[picar::i2c::line_follower::RAW_BUFFER_SIZE] = {0};
             if (m_line_device.read_block_data(picar::i2c::line_follower::REG_START, 
                                               buffer, 
                                               picar::i2c::line_follower::RAW_BUFFER_SIZE)) {
+                m_consecutive_i2c_errors = 0;
                 uint16_t raw_adc[5];
                 picar::i2c::line_follower::parse_raw_adc(buffer, raw_adc);
                 picar::i2c::line_follower::binarize_sensors(raw_adc, m_thresholds, m_last_sensors);
-                for (int i = 0; i < 5; ++i) {
-                    m_last_darkness[i] = picar::i2c::line_follower::adc_to_darkness(raw_adc[i], m_black_adc, m_white_adc);
-                }
+                picar::i2c::line_follower::convert_raw_to_darkness(raw_adc, m_calibration, m_last_darkness);
+            } else {
+                m_consecutive_i2c_errors++;
+            }
+        } else {
+            m_consecutive_i2c_errors++;
+        }
+
+        // Si l'I2C échoue plus de 3 cycles (~60 ms), fallback strict sur 0 0 0 0 0 (ligne perdue)
+        if (m_consecutive_i2c_errors >= 3) {
+            for (int i = 0; i < 5; ++i) {
+                m_last_sensors[i] = 0;
+                m_last_darkness[i] = 0.0f;
             }
         }
+
         for (int i = 0; i < 5; ++i) {
             out_sensors[i] = m_last_sensors[i];
         }

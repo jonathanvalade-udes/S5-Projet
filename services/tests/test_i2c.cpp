@@ -130,7 +130,24 @@ void test_adc_to_darkness() {
     // Calibration personnalisée
     assert(std::abs(adc_to_darkness(150, 100.0f, 200.0f) - 0.5f) < 1e-4f);
 
-    std::cout << "  -> PASS: Noirceur continue [0,1] calculée à partir de l'ADC brut." << std::endl;
+    // Test de la structure CalibrationData multi-canaux
+    using picar::i2c::line_follower::CalibrationData;
+    using picar::i2c::line_follower::convert_raw_to_darkness;
+
+    CalibrationData calib;
+    calib.black_adc[0] = 50.0f;  calib.white_adc[0] = 250.0f; // capteur 0
+    calib.black_adc[2] = 100.0f; calib.white_adc[2] = 900.0f; // capteur 2
+
+    uint16_t test_adc[5] = {150, 60, 500, 100, 20};
+    float test_dark[5] = {0.0f};
+    convert_raw_to_darkness(test_adc, calib, test_dark);
+
+    // Pour capteur 0 : adc=150, span=200 -> (250 - 150) / 200 = 0.50
+    assert(std::abs(test_dark[0] - 0.5f) < 1e-4f);
+    // Pour capteur 2 : adc=500, span=800 -> (900 - 500) / 800 = 0.50
+    assert(std::abs(test_dark[2] - 0.5f) < 1e-4f);
+
+    std::cout << "  -> PASS: Noirceur continue [0,1] et calibration individuelle validées." << std::endl;
 }
 
 void test_hal_driver_instantiation() {
@@ -138,6 +155,16 @@ void test_hal_driver_instantiation() {
 
     // PiCarHatsMotorDriver
     PiCarHatsMotorDriver motor_driver;
+    motor_driver.set_steering_offset(5.0f);
+    assert(std::abs(motor_driver.get_steering_offset() - 5.0f) < 0.001f);
+
+    // Saturation sécuritaire de l'offset à +-15°
+    motor_driver.set_steering_offset(25.0f);
+    assert(std::abs(motor_driver.get_steering_offset() - 15.0f) < 0.001f);
+    motor_driver.set_steering_offset(-30.0f);
+    assert(std::abs(motor_driver.get_steering_offset() - (-15.0f)) < 0.001f);
+
+    motor_driver.set_steering_offset(3.0f);
     motor_driver.set_steering(15.0f);
     motor_driver.set_speed(30.0f);
     motor_driver.emergency_stop();

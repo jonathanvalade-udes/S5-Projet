@@ -5,6 +5,8 @@
 
 #include "control/motion_profiler.hpp"
 #include "control/line_follower.hpp"
+#include "control/picar_constants.hpp"
+#include "control/picar_config.hpp"
 
 bool approx_equal(float a, float b, float epsilon = 0.01f) {
     return std::abs(a - b) <= epsilon;
@@ -183,6 +185,18 @@ void test_line_follower_analog() {
         assert(!out.is_finished && !out.is_line_lost);
     }
 
+    // 6. Continuité et monotonie stricte du barycentre (passage continu de capteur 2 à capteur 3)
+    {
+        LineFollowerController c(0.65f, 0.05f, 0.32f, 0.14f);
+        float last_steer = -999.0f;
+        for (float alpha = 0.0f; alpha <= 1.0f; alpha += 0.1f) {
+            float d[5] = {0.0f, 0.0f, 1.0f - alpha, alpha, 0.0f};
+            LineFollowerOutput out = c.update_analog(d, dt);
+            assert(out.steer_normalized >= last_steer - 1e-4f); // Évolution strictement monotone sans discontinuité
+            last_steer = out.steer_normalized;
+        }
+    }
+
     std::cout << "  ✓ LineFollowerController : lecture analogique (centre de gravité) validée." << std::endl;
 }
 
@@ -226,15 +240,102 @@ void test_obstacle_avoidance_s4_and_s5() {
     std::cout << "  ✓ S5 Marche arrière guidée : Distance " << (reverse_dist * 1000.0f) << " mm (< 200 mm requis)." << std::endl;
 }
 
+void test_dynamic_config_and_fallbacks() {
+    std::cout << "[TEST] Configuration dynamique et Fallbacks..." << std::endl;
+
+    // 1. Test du fallback par défaut sur le .hpp (fichier inexistant)
+    auto cfg_default = config::PicarConfig::read_config("/chemin_inexistant/bogus.conf");
+    assert(approx_equal(cfg_default.max_acceleration, picar::constants::DEFAULT_MAX_ACCELERATION));
+    assert(approx_equal(cfg_default.cruise_speed, picar::constants::DEFAULT_STRAIGHT_CRUISE_SPEED));
+    assert(approx_equal(cfg_default.min_curve_speed, picar::constants::DEFAULT_MIN_CURVE_SPEED));
+    assert(approx_equal(cfg_default.line_kp, picar::constants::DEFAULT_LINE_KP));
+    std::cout << "  ✓ Fallback dur .hpp validé si le .config est absent." << std::endl;
+
+    // 2. Test d'écriture et de lecture dans un fichier .config temporaire
+    std::string test_conf = "test_picar.conf";
+    bool wrote1 = config::PicarConfig::write_config("MAX_ACCELERATION", 0.55f, test_conf);
+    bool wrote2 = config::PicarConfig::write_config("CRUISE_SPEED", 0.25f, test_conf);
+    assert(wrote1 && wrote2);
+
+    auto cfg_loaded = config::PicarConfig::read_config(test_conf);
+    assert(approx_equal(cfg_loaded.max_acceleration, 0.55f));
+    assert(approx_equal(cfg_loaded.cruise_speed, 0.25f));
+    // Les clés non modifiées doivent garder la valeur par défaut du .hpp
+    assert(approx_equal(cfg_loaded.min_curve_speed, picar::constants::DEFAULT_MIN_CURVE_SPEED));
+    unlink(test_conf.c_str());
+    std::cout << "  ✓ Écriture et relecture .config validées avec préservation des fallbacks." << std::endl;
+
+    // 3. Test de mise à jour dynamique sur MotionProfiler et LineFollowerController
+    MotionProfiler profiler(0.735f, 0.32f);
+    profiler.set_max_accel(0.50f);
+    profiler.set_max_speed(0.20f);
+    assert(approx_equal(profiler.get_max_accel(), 0.50f));
+    assert(approx_equal(profiler.get_max_speed(), 0.20f));
+
+    LineFollowerController controller;
+    controller.set_kp(0.80f);
+    controller.set_kd(0.10f);
+    controller.set_cruise_speed(0.22f);
+    controller.set_min_curve_speed(0.08f);
+
+    // 4. Test du fallback capteur: si aucun capteur actif [0,0,0,0,0], perte de ligne
+    uint8_t no_line[5] = {0, 0, 0, 0, 0};
+    // Sur 1.5s sans ligne (timeout = 1.2s), is_line_lost doit devenir true
+    LineFollowerOutput out_lost;
+    for (int i = 0; i < 75; ++i) {
+        out_lost = controller.update(no_line, 0.02f);
+    }
+    assert(out_lost.is_line_lost);
+    std::cout << "  ✓ Sécurité perte de ligne (0 0 0 0 0) : transition arrêt/récupération confirmée." << std::endl;
+}
+
+void test_ackermann_curve_speed() {
+    std::cout << "[TEST] MotionProfiler - Vitesse en virage Ackermann..." << std::endl;
+    MotionProfiler profiler(0.735f, 0.32f);
+
+    const float cruise = 0.32f;
+    const float min_spd = 0.14f;
+    const float safety = 0.75f;
+
+    // 1. Ligne droite (|steer| <= 2°) : maintien ferme à la vitesse de croisière (aucun ralentissement parasite)
+    float v_straight0 = profiler.calculate_curve_speed_ackermann(0.0f, cruise, min_spd, safety);
+    float v_straight2 = profiler.calculate_curve_speed_ackermann(2.0f, cruise, min_spd, safety);
+    assert(approx_equal(v_straight0, cruise, 1e-4f));
+    assert(approx_equal(v_straight2, cruise, 1e-4f));
+
+    // 2. Virage modéré (15°) : ralentissement calculé par R = L/tan(15°)
+    float v_turn15 = profiler.calculate_curve_speed_ackermann(15.0f, cruise, min_spd, safety);
+    assert(v_turn15 <= cruise);
+    assert(v_turn15 >= min_spd);
+
+    // 3. Virage serré (35°) : doit ralentir davantage
+    float v_turn35 = profiler.calculate_curve_speed_ackermann(35.0f, cruise, min_spd, safety);
+    assert(v_turn35 < v_turn15);
+    assert(v_turn35 >= min_spd);
+
+    // 4. Virage extrême (45°) : borné au minimum autorisé
+    float v_turn45 = profiler.calculate_curve_speed_ackermann(45.0f, cruise, min_spd, safety);
+    assert(v_turn45 >= min_spd);
+
+    // 5. Symétrie gauche/droite
+    float v_left = profiler.calculate_curve_speed_ackermann(-25.0f, cruise, min_spd, safety);
+    float v_right = profiler.calculate_curve_speed_ackermann(25.0f, cruise, min_spd, safety);
+    assert(approx_equal(v_left, v_right, 1e-4f));
+
+    std::cout << "  ✓ Vitesse en virage Ackermann : Maintien en ligne droite et décélération physique validées." << std::endl;
+}
+
 int main() {
     std::cout << "========================================" << std::endl;
     std::cout << "  PiCar C++17 - Tests Unitaires Contrôle" << std::endl;
     std::cout << "========================================" << std::endl;
 
     test_motion_profiler();
+    test_ackermann_curve_speed();
     test_line_follower_controller();
     test_line_follower_analog();
     test_obstacle_avoidance_s4_and_s5();
+    test_dynamic_config_and_fallbacks();
 
     std::cout << "========================================" << std::endl;
     std::cout << "  TOUS LES TESTS SONT PASSÉS AVEC SUCCÈS" << std::endl;

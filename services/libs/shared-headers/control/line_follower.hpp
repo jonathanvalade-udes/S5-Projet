@@ -74,6 +74,11 @@ public:
         has_analog_error = false;
     }
 
+    void set_kp(float p) { kp = std::max(0.0f, p); }
+    void set_kd(float d) { kd = std::max(0.0f, d); }
+    void set_cruise_speed(float s) { cruise_speed = std::max(0.05f, s); }
+    void set_min_curve_speed(float s) { min_curve_speed = std::max(0.05f, s); }
+
     /**
      * @brief Calcule l'erreur spatiale barycentrique de centrage sur le ruban noir.
      * @param sensors Tableau de 5 capteurs (1 = noir/ruban, 0 = blanc/sol).
@@ -212,7 +217,7 @@ public:
             if (d > ANALOG_DARK_THRESHOLD) dark_count++;
         }
 
-        const bool is_t_stop = (dark_count >= 4);
+        const bool is_t_stop = (dark_count >= 4 || total >= 3.6f);
         const bool has_line = (total >= ANALOG_MIN_TOTAL_DARKNESS);
         float error = has_line ? (weighted / total) : 0.0f;
 

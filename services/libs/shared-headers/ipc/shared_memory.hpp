@@ -26,6 +26,7 @@ struct RobotTelemetry {
     // Consignes de commande (écrites par la navigation, lues par les moteurs)
     float target_speed;      // Consigne de vitesse
     float target_steering;   // Consigne d'angle de braquage des roues
+    float steering_offset;   // Offset logiciel de compensation matérielle (degrés)
 
     // États du système et sécurité
     uint32_t state;          // État FSM (0=STOP, 1=IDLE, 2=RUNNING, 99=FAILSAFE)
@@ -34,6 +35,15 @@ struct RobotTelemetry {
 
     // Synchronisation inter-processus POSIX
     pthread_mutex_t mtx;
+
+    // Configuration dynamique modifiable on-the-fly (WiFi / picar.conf)
+    float cfg_max_acceleration;    // m/s²
+    float cfg_cruise_speed;        // m/s
+    float cfg_min_curve_speed;     // m/s
+    float cfg_line_kp;             // Gain proportionnel
+    float cfg_line_kd;             // Gain dérivé
+    float cfg_curve_safety_factor; // Facteur de sécurité virage [0.5, 1.0]
+    uint32_t cfg_version;          // Incrémenté lors d'une mise à jour
 };
 
 /**
@@ -95,19 +105,27 @@ public:
             pthread_mutex_init(&(shm_ptr->mtx), &attr);
             pthread_mutexattr_destroy(&attr);
 
-            // Initialisation des valeurs par défaut
+            // Initialisation des valeurs par défaut sécurisées (aucun capteur actif par défaut)
             shm_ptr->filtered_dist = 100.0f;
             shm_ptr->speed = 0.0f;
             shm_ptr->line_error = 0.0f;
             for (int i = 0; i < 5; ++i) {
-                shm_ptr->line_sensors[i] = (i == 2) ? 1 : 0;
-                shm_ptr->line_darkness[i] = (i == 2) ? 1.0f : 0.0f; // ligne centrée par défaut
+                shm_ptr->line_sensors[i] = 0;
+                shm_ptr->line_darkness[i] = 0.0f; // Aucune ligne vue au boot
             }
             shm_ptr->target_speed = 0.0f;
             shm_ptr->target_steering = 0.0f;
+            shm_ptr->steering_offset = 0.0f;
             shm_ptr->state = 0;
             shm_ptr->emergency_stop = false;
             shm_ptr->heartbeat = 0;
+            shm_ptr->cfg_max_acceleration = 0.735f;
+            shm_ptr->cfg_cruise_speed = 0.32f;
+            shm_ptr->cfg_min_curve_speed = 0.14f;
+            shm_ptr->cfg_line_kp = 0.65f;
+            shm_ptr->cfg_line_kd = 0.05f;
+            shm_ptr->cfg_curve_safety_factor = 0.75f;
+            shm_ptr->cfg_version = 1;
         } else if (create_if_missing) {
             // Segment existant réouvert en mode superviseur : réinitialiser l'arrêt d'urgence
             pthread_mutex_lock(&(shm_ptr->mtx));

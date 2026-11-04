@@ -27,6 +27,7 @@ public:
     bool is_running() const { return m_running.load(); }
 
     static float compute_line_error(const uint8_t sensors[5], float fallback_error = 0.0f);
+    static float compute_line_error_analog(const float darkness[5], float fallback_error = 0.0f);
 
 private:
     std::atomic<bool> m_running{false};

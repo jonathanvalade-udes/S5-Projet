@@ -11,6 +11,8 @@
 #include "sensors/sensors_telemetry.hpp"
 #include "control/line_follower.hpp"
 #include "control/motion_profiler.hpp"
+#include "control/picar_constants.hpp"
+#include "control/picar_config.hpp"
 #include "ipc/shared_memory.hpp"
 #include "shared-services/memory/subscriber.hpp"
 #include "shared-services/memory/server.hpp"
@@ -40,9 +42,19 @@ private:
     float m_state_distance{0.0f};
     bool m_course_finished{false}; // Barre d'arrivée vue : l'état Stopped devient terminal
 
-    static constexpr float STRAIGHT_CRUISE_SPEED = 0.32f; // m/s en ligne droite
-    static constexpr float MIN_CURVE_SPEED = 0.14f;       // m/s en virage serré
-    static constexpr float MAX_ACCELERATION = 0.735f;     // m/s² (seuil critique FastDrink)
+    // Paramètres cinématiques et de suivi (modifiables à chaud via WiFi / .config / POSIX)
+    float m_straight_cruise_speed{picar::constants::DEFAULT_STRAIGHT_CRUISE_SPEED};
+    float m_min_curve_speed{picar::constants::DEFAULT_MIN_CURVE_SPEED};
+    float m_curve_safety_factor{picar::constants::DEFAULT_CURVE_SAFETY_FACTOR};
+    float m_max_acceleration{picar::constants::DEFAULT_MAX_ACCELERATION};
+    float m_line_kp{picar::constants::DEFAULT_LINE_KP};
+    float m_line_kd{picar::constants::DEFAULT_LINE_KD};
+    float m_obstacle_stop_dist_cm{picar::constants::DEFAULT_OBSTACLE_STOP_DIST_CM};
+    float m_reverse_speed{picar::constants::DEFAULT_REVERSE_SPEED};
+
+    uint32_t m_current_cfg_version{0};
+    uint64_t m_last_heartbeat{0};
+    int m_heartbeat_starvation_cycles{0};
 
     std::unique_ptr<LineFollowerController> m_line_controller;
     std::unique_ptr<MotionProfiler> m_motion_profiler;

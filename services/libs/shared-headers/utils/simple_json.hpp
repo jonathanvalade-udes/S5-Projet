@@ -9,8 +9,8 @@
 
 struct GodotTelemetryIn {
     float distance = 100.0f;
-    uint8_t line_sensors[5] = {0, 0, 1, 0, 0};
-    float line_darkness[5] = {0.0f, 0.0f, 1.0f, 0.0f, 0.0f}; // noirceur analogique [0,1] ("line_analog")
+    uint8_t line_sensors[5] = {0, 0, 0, 0, 0};
+    float line_darkness[5] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f}; // noirceur analogique [0,1] ("line_analog")
     bool has_analog = false; // true si "line_analog" était présent dans la trame
     float velocity = 0.0f;
     bool ball_dropped = false;

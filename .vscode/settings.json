@@ -4,5 +4,6 @@
   "explorer.fileNesting.patterns": {
     "*.gd": "${capture}.gd.uid",
     "*.blend": "${capture}.blend.import",
-  }
+  },
+  "cmake.sourceDirectory": "C:/Users/raphb/Desktop/Session5/Projet/Code/S5-Projet/services"
 }

@@ -1,4 +1,5 @@
 #include "SimBridge.hpp"
+#include "control/picar_config.hpp"
 #include <iostream>
 #include <cstring>
 #include <vector>
@@ -116,20 +117,25 @@ void SimBridge::run() {
         char recv_buf[1024];
         ssize_t bytes_read = recv(client_fd, recv_buf, sizeof(recv_buf) - 1, 0);
 
-        if (bytes_read < 0) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
+        if (bytes_read <= 0) {
+            if (bytes_read < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)) {
                 continue;
             }
-            std::cout << "[SimBridge] Socket read error / timeout: " << strerror(errno) << std::endl;
+            if (bytes_read == 0) {
+                std::cout << "[SimBridge] Client disconnected (EOF)." << std::endl;
+            } else {
+                std::cout << "[SimBridge] Socket read error / timeout: " << strerror(errno) << std::endl;
+            }
             close(client_fd);
             client_fd = -1;
-            continue;
-        }
 
-        if (bytes_read == 0) {
-            std::cout << "[SimBridge] Client disconnected (EOF)." << std::endl;
-            close(client_fd);
-            client_fd = -1;
+            // Arrêt sécuritaire immédiat dès déconnexion
+            if (m_telemetry) {
+                pthread_mutex_lock(&(m_telemetry->mtx));
+                m_telemetry->target_speed = 0.0f;
+                m_telemetry->emergency_stop = true;
+                pthread_mutex_unlock(&(m_telemetry->mtx));
+            }
             continue;
         }
 
@@ -143,6 +149,36 @@ void SimBridge::run() {
 
             if (line.empty()) continue;
 
+            // Commande de modification de constante par WiFi (format "PARAM=valeur" ou "set_param")
+            if (line.find('=') != std::string::npos && line.find("line_follower") == std::string::npos && line.find("distance") == std::string::npos) {
+                size_t eq = line.find('=');
+                std::string k = line.substr(0, eq);
+                std::string v = line.substr(eq + 1);
+                k.erase(std::remove_if(k.begin(), k.end(), ::isspace), k.end());
+                v.erase(std::remove_if(v.begin(), v.end(), ::isspace), v.end());
+                try {
+                    float fval = std::stof(v);
+                    // 1. Écriture persistante dans le fichier .config
+                    config::PicarConfig::write_config(k, fval);
+                    // 2. Application immédiate en mémoire POSIX
+                    if (m_telemetry) {
+                        pthread_mutex_lock(&(m_telemetry->mtx));
+                        if (k == "MAX_ACCELERATION") m_telemetry->cfg_max_acceleration = fval;
+                        else if (k == "STRAIGHT_CRUISE_SPEED" || k == "CRUISE_SPEED") m_telemetry->cfg_cruise_speed = fval;
+                        else if (k == "MIN_CURVE_SPEED") m_telemetry->cfg_min_curve_speed = fval;
+                        else if (k == "CURVE_SAFETY_FACTOR") m_telemetry->cfg_curve_safety_factor = fval;
+                        else if (k == "LINE_KP" || k == "KP") m_telemetry->cfg_line_kp = fval;
+                        else if (k == "LINE_KD" || k == "KD") m_telemetry->cfg_line_kd = fval;
+                        m_telemetry->cfg_version++;
+                        pthread_mutex_unlock(&(m_telemetry->mtx));
+                    }
+                    std::cout << "[SimBridge WiFi] Paramètre mis à jour : " << k << " = " << fval << std::endl;
+                    std::string ack = "{\"status\":\"ok\",\"param\":\"" + k + "\",\"value\":" + std::to_string(fval) + "}\n";
+                    send(client_fd, ack.c_str(), ack.size(), 0);
+                    continue;
+                } catch (...) {}
+            }
+
             packet_count++;
 
             GodotTelemetryIn telem_in;
@@ -153,12 +189,22 @@ void SimBridge::run() {
                     if (m_sim_mode) {
                         // Mode simulation Godot : injection des capteurs virtuels dans la mémoire partagée
                         m_telemetry->filtered_dist = m_us_pipeline.process(telem_in.distance);
+                        float total_darkness = 0.0f;
+                        float weighted_darkness = 0.0f;
+                        constexpr float weights[5] = {-2.0f, -1.0f, 0.0f, 1.0f, 2.0f};
+
                         for (int i = 0; i < 5; ++i) {
-                            m_telemetry->line_darkness[i] = telem_in.line_darkness[i];
+                            float d = std::clamp(telem_in.line_darkness[i], 0.0f, 1.0f);
+                            m_telemetry->line_darkness[i] = d;
+                            total_darkness += d;
+                            weighted_darkness += weights[i] * d;
                             // Vue binaire : dérivée de l'analogique si présent, sinon trame binaire brute
                             m_telemetry->line_sensors[i] = telem_in.has_analog
-                                ? static_cast<uint8_t>(telem_in.line_darkness[i] > 0.5f ? 1 : 0)
+                                ? static_cast<uint8_t>(d > 0.5f ? 1 : 0)
                                 : telem_in.line_sensors[i];
+                        }
+                        if (total_darkness >= 0.20f) {
+                            m_telemetry->line_error = (weighted_darkness / (2.0f * total_darkness));
                         }
                         if (telem_in.ball_dropped) {
                             m_telemetry->emergency_stop = true;
