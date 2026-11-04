@@ -21,6 +21,7 @@
 #include "crc/crc_global.hpp"
 #include "shared-services/memory/server.hpp"
 #include "shared-services/memory/subscriber.hpp"
+#include "shared-services/socket/service_ipc_socket.hpp"
 
 namespace services {
 
@@ -73,6 +74,9 @@ public:
     bool is_client_handshaked() const { return m_client_handshaked.load(); }
     int get_tcp_port() const { return m_tcp_port; }
     void set_tcp_port(int port) { m_tcp_port = port; }
+
+    // Envoi de configuration à un service distant (FSM, Motors, Sensors) via socket IPC UNIX
+    bool send_service_config(shared::commands::ServiceID svc, const std::string& key, float value, uint16_t seqNumber = 0);
 
 private:
     void update_metrics(float dt);

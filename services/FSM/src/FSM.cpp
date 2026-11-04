@@ -100,18 +100,33 @@ void FSM::transition_to(shared::fsm::MachineStates new_state) {
 bool FSM::init() {
     std::cout << "[FSM] Initializing Decision & Navigation engine at " << m_hz << " Hz..." << std::endl;
 
-    // Chargement de la configuration via picar.conf avec fallback automatique sur picar_constants.hpp
-    auto cfg = config::PicarConfig::read_config();
-    m_max_acceleration      = cfg.max_acceleration;
-    m_straight_cruise_speed = cfg.cruise_speed;
-    m_min_curve_speed       = cfg.min_curve_speed;
-    m_curve_safety_factor   = cfg.curve_safety_factor;
-    m_predictive_brake_gain = cfg.predictive_brake_gain;
-    m_line_kp               = cfg.line_kp;
-    m_line_kd               = cfg.line_kd;
-    m_obstacle_stop_dist_cm = cfg.obstacle_stop_dist_cm;
-    m_reverse_speed         = cfg.reverse_speed;
-    m_auto_start_delay      = cfg.auto_start_delay;
+    // Chargement de la configuration via fsm.conf (avec fallback automatique sur picar.conf et picar_constants.hpp)
+    if (m_config.load("fsm.conf")) {
+        std::cout << "[FSM] Configuration chargée depuis " << m_config.get_active_filepath() << std::endl;
+        m_max_acceleration      = m_config.get_float("MAX_ACCELERATION", m_max_acceleration);
+        m_straight_cruise_speed = m_config.get_float("STRAIGHT_CRUISE_SPEED", m_config.get_float("CRUISE_SPEED", m_straight_cruise_speed));
+        m_min_curve_speed       = m_config.get_float("MIN_CURVE_SPEED", m_min_curve_speed);
+        m_curve_safety_factor   = m_config.get_float("CURVE_SAFETY_FACTOR", m_curve_safety_factor);
+        m_predictive_brake_gain = m_config.get_float("PREDICTIVE_BRAKE_GAIN", m_predictive_brake_gain);
+        m_line_kp               = m_config.get_float("LINE_KP", m_config.get_float("KP", m_line_kp));
+        m_line_kd               = m_config.get_float("LINE_KD", m_config.get_float("KD", m_line_kd));
+        m_obstacle_stop_dist_cm = m_config.get_float("OBSTACLE_STOP_DIST_CM", m_obstacle_stop_dist_cm);
+        m_reverse_speed         = m_config.get_float("REVERSE_SPEED", m_reverse_speed);
+        m_avoid_side            = m_config.get_float("AVOID_SIDE", m_avoid_side);
+        m_auto_start_delay      = m_config.get_float("AUTO_START_DELAY", m_auto_start_delay);
+    } else {
+        auto cfg = config::PicarConfig::read_config();
+        m_max_acceleration      = cfg.max_acceleration;
+        m_straight_cruise_speed = cfg.cruise_speed;
+        m_min_curve_speed       = cfg.min_curve_speed;
+        m_curve_safety_factor   = cfg.curve_safety_factor;
+        m_predictive_brake_gain = cfg.predictive_brake_gain;
+        m_line_kp               = cfg.line_kp;
+        m_line_kd               = cfg.line_kd;
+        m_obstacle_stop_dist_cm = cfg.obstacle_stop_dist_cm;
+        m_reverse_speed         = cfg.reverse_speed;
+        m_auto_start_delay      = cfg.auto_start_delay;
+    }
 
     // Côté de contournement des obstacles : variable d'environnement AVOID_SIDE (gauche|droite|left|right)
     if (const char* side_env = std::getenv("AVOID_SIDE")) {
@@ -163,6 +178,15 @@ bool FSM::init() {
     // Canal d'événements POSIX (connexion dynamique au socket de PeripheralsService)
     m_event_pipe_fd = -1;
     check_start_trigger();
+
+    // Initialisation du serveur socket IPC (/tmp/fsm.sock)
+    if (!m_ipc_server.init(m_ipc_socket_path, shared::commands::ServiceID::FSM, [this](const std::string& k, float v) {
+        return this->apply_config_key(k, v);
+    })) {
+        std::cerr << "[FSM] Attention : impossible d'ouvrir le socket IPC " << m_ipc_socket_path << std::endl;
+    } else {
+        std::cout << "[FSM] Serveur socket IPC en écoute sur " << m_ipc_socket_path << std::endl;
+    }
 
     transition_to(shared::fsm::MachineStates::Init);
     m_running.store(true);
@@ -283,6 +307,9 @@ void FSM::run() {
 
     while (m_running.load()) {
         auto start_time = std::chrono::steady_clock::now();
+
+        // Traitement des commandes IPC de configuration reçues sur /tmp/fsm.sock
+        m_ipc_server.process_pending_commands();
 
         float current_dist_cm = 100.0f;
         uint8_t line_sensors[5] = {0, 0, 0, 0, 0};          // Fallback strict: aucune ligne par défaut
@@ -688,10 +715,81 @@ void FSM::stop() {
         std::cout << "[FSM] Stopping service..." << std::endl;
         m_running.store(false);
     }
+    m_ipc_server.stop();
     if (m_event_pipe_fd >= 0) {
         close(m_event_pipe_fd);
         m_event_pipe_fd = -1;
     }
+}
+
+bool FSM::apply_config_key(const std::string& key, float value) {
+    bool valid = false;
+    if (key == "MAX_ACCELERATION") {
+        m_max_acceleration = std::clamp(value, 0.1f, 1.5f);
+        if (m_motion_profiler) m_motion_profiler->set_max_accel(m_max_acceleration);
+        valid = true;
+    } else if (key == "STRAIGHT_CRUISE_SPEED" || key == "CRUISE_SPEED") {
+        m_straight_cruise_speed = std::clamp(value, 0.05f, 0.60f);
+        if (m_line_controller) m_line_controller->set_cruise_speed(m_straight_cruise_speed);
+        if (m_motion_profiler) m_motion_profiler->set_max_speed(m_straight_cruise_speed);
+        valid = true;
+    } else if (key == "MIN_CURVE_SPEED") {
+        m_min_curve_speed = std::clamp(value, 0.05f, 0.40f);
+        if (m_line_controller) m_line_controller->set_min_curve_speed(m_min_curve_speed);
+        valid = true;
+    } else if (key == "CURVE_SAFETY_FACTOR") {
+        m_curve_safety_factor = std::clamp(value, 0.30f, 1.20f);
+        valid = true;
+    } else if (key == "PREDICTIVE_BRAKE_GAIN") {
+        m_predictive_brake_gain = std::clamp(value, 0.0f, 0.30f);
+        valid = true;
+    } else if (key == "LINE_KP" || key == "KP") {
+        m_line_kp = std::clamp(value, 0.0f, 2.0f);
+        if (m_line_controller) m_line_controller->set_kp(m_line_kp);
+        valid = true;
+    } else if (key == "LINE_KD" || key == "KD") {
+        m_line_kd = std::clamp(value, 0.0f, 1.0f);
+        if (m_line_controller) m_line_controller->set_kd(m_line_kd);
+        valid = true;
+    } else if (key == "OBSTACLE_STOP_DIST_CM") {
+        m_obstacle_stop_dist_cm = std::clamp(value, 10.0f, 80.0f);
+        valid = true;
+    } else if (key == "REVERSE_SPEED") {
+        m_reverse_speed = std::clamp(value, 0.05f, 0.30f);
+        valid = true;
+    } else if (key == "AVOID_SIDE") {
+        m_avoid_side = (value < 0.0f) ? -1.0f : 1.0f;
+        valid = true;
+    } else if (key == "AUTO_START_DELAY") {
+        m_auto_start_delay = std::max(0.0f, value);
+        valid = true;
+    }
+
+    if (!valid) {
+        std::cerr << "[FSM] SetConfigKey rejeté : clé inconnue '" << key << "'" << std::endl;
+        return false;
+    }
+
+    // 1. Mise à jour de la SHM si disponible
+    if (m_telemetry) {
+        pthread_mutex_lock(&(m_telemetry->mtx));
+        if (key == "MAX_ACCELERATION") m_telemetry->cfg_max_acceleration = m_max_acceleration;
+        else if (key == "STRAIGHT_CRUISE_SPEED" || key == "CRUISE_SPEED") m_telemetry->cfg_cruise_speed = m_straight_cruise_speed;
+        else if (key == "MIN_CURVE_SPEED") m_telemetry->cfg_min_curve_speed = m_min_curve_speed;
+        else if (key == "CURVE_SAFETY_FACTOR") m_telemetry->cfg_curve_safety_factor = m_curve_safety_factor;
+        else if (key == "PREDICTIVE_BRAKE_GAIN") m_telemetry->cfg_predictive_brake_gain = m_predictive_brake_gain;
+        else if (key == "LINE_KP" || key == "KP") m_telemetry->cfg_line_kp = m_line_kp;
+        else if (key == "LINE_KD" || key == "KD") m_telemetry->cfg_line_kd = m_line_kd;
+        m_telemetry->cfg_version++;
+        m_current_cfg_version = m_telemetry->cfg_version;
+        pthread_mutex_unlock(&(m_telemetry->mtx));
+    }
+
+    // 2. Persistance dans fsm.conf
+    m_config.save_key(key, value);
+    std::cout << "[FSM] Configuration mise à jour : " << key << " = " << value 
+              << " (sauvegardé dans " << m_config.get_active_filepath() << ")" << std::endl;
+    return true;
 }
 
 } // namespace services

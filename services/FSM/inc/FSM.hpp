@@ -16,6 +16,8 @@
 #include "ipc/shared_memory.hpp"
 #include "shared-services/memory/subscriber.hpp"
 #include "shared-services/memory/server.hpp"
+#include "shared-services/config/service_config.hpp"
+#include "shared-services/socket/service_ipc_socket.hpp"
 
 namespace services {
 
@@ -79,6 +81,12 @@ private:
     int m_event_pipe_fd{-1};
     std::string m_event_pipe_path{"/tmp/peripherals.sock"};
     bool check_start_trigger();
+
+    // Serveur socket IPC et gestionnaire de configuration fsm.conf
+    shared::services::config::ServiceConfig m_config;
+    shared::services::ipc::ServiceIPCSocketServer m_ipc_server;
+    std::string m_ipc_socket_path{"/tmp/fsm.sock"};
+    bool apply_config_key(const std::string& key, float value);
 
     std::unique_ptr<shared::services::memory::MemoryShareComponentSubscriber> m_sensor_sub;
     std::unique_ptr<shared::services::memory::MemoryShareComponentServer> m_fsm_pub;

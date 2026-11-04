@@ -13,6 +13,8 @@
 #include "ipc/shared_memory.hpp"
 #include "shared-services/memory/subscriber.hpp"
 #include "shared-services/memory/server.hpp"
+#include "shared-services/config/service_config.hpp"
+#include "shared-services/socket/service_ipc_socket.hpp"
 
 namespace services {
 
@@ -46,6 +48,12 @@ private:
     std::unique_ptr<shared::services::memory::MemoryShareComponentServer> m_mem_server;
     std::unique_ptr<shared::services::memory::MemoryShareComponentServer> m_servo_mem_server;
     std::unique_ptr<shared::services::memory::MemoryShareComponentSubscriber> m_fsm_sub;
+
+    // Serveur socket IPC et configuration motors.conf
+    shared::services::config::ServiceConfig m_config;
+    shared::services::ipc::ServiceIPCSocketServer m_ipc_server;
+    std::string m_ipc_socket_path{"/tmp/motors.sock"};
+    bool apply_config_key(const std::string& key, float value);
 };
 
 } // namespace services

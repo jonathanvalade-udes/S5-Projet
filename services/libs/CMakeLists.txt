@@ -14,16 +14,20 @@ target_include_directories(shared_headers INTERFACE
 # Namespace alias for shared_headers
 add_library(libs::shared_headers ALIAS shared_headers)
 
-# Shared services library (memory server and subscriber)
+# Shared services library (memory server and subscriber, config, ipc socket)
 add_library(shared_services STATIC
     shared-services/memory/server.cpp
     shared-services/memory/subscriber.cpp
+    shared-services/config/service_config.cpp
+    shared-services/socket/service_ipc_socket.cpp
 )
 
 target_include_directories(shared_services PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/shared-services
     ${CMAKE_CURRENT_SOURCE_DIR}/shared-services/memory
+    ${CMAKE_CURRENT_SOURCE_DIR}/shared-services/config
+    ${CMAKE_CURRENT_SOURCE_DIR}/shared-services/socket
     ${CMAKE_CURRENT_SOURCE_DIR}/shared-headers
 )
 
