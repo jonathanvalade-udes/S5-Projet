@@ -12,6 +12,8 @@
 #include "hal/sensor_driver.hpp"
 #include "ipc/shared_memory.hpp"
 #include "shared-services/memory/server.hpp"
+#include "shared-services/config/service_config.hpp"
+#include "shared-services/socket/service_ipc_socket.hpp"
 
 namespace services {
 
@@ -40,6 +42,15 @@ private:
     std::unique_ptr<SharedMemoryManager> m_shm_mgr;
     RobotTelemetry* m_telemetry{nullptr};
     std::unique_ptr<shared::services::memory::MemoryShareComponentServer> m_mem_server;
+
+    float m_filter_alpha{0.25f};
+    size_t m_median_window{5};
+
+    // Serveur socket IPC et configuration sensors.conf
+    shared::services::config::ServiceConfig m_config;
+    shared::services::ipc::ServiceIPCSocketServer m_ipc_server;
+    std::string m_ipc_socket_path{"/tmp/sensors.sock"};
+    bool apply_config_key(const std::string& key, float value);
 
     float m_last_line_error{0.0f};
 };

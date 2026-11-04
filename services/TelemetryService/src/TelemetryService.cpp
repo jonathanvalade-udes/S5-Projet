@@ -384,6 +384,24 @@ bool TelemetryService::stream_telemetry_packet() {
     return true;
 }
 
+bool TelemetryService::send_service_config(shared::commands::ServiceID svc, const std::string& key, float value, uint16_t seqNumber) {
+    std::string sock_path;
+    switch (svc) {
+        case shared::commands::ServiceID::FSM:
+            sock_path = "/tmp/fsm.sock";
+            break;
+        case shared::commands::ServiceID::MOTORS:
+            sock_path = "/tmp/motors.sock";
+            break;
+        case shared::commands::ServiceID::SENSORS:
+            sock_path = "/tmp/sensors.sock";
+            break;
+        default:
+            return false;
+    }
+    return shared::services::ipc::ServiceIPCSocketClient::send_set_config(sock_path, svc, key, value, seqNumber);
+}
+
 void TelemetryService::tcp_worker() {
     std::cout << "[TelemetryService] TCP worker started on port " << m_tcp_port << "." << std::endl;
 
