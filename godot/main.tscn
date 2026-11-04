@@ -34,6 +34,11 @@ sky_material = SubResource("ProceduralSkyMaterial_jv41d")
 background_mode = 2
 sky = SubResource("Sky_nfout")
 
+[sub_resource type="BoxMesh" id="BoxMesh_m8pl1"]
+
+[sub_resource type="ConcavePolygonShape3D" id="ConcavePolygonShape3D_kek77"]
+data = PackedVector3Array(-0.5, 0.5, 0.5, 0.5, 0.5, 0.5, -0.5, -0.5, 0.5, 0.5, 0.5, 0.5, 0.5, -0.5, 0.5, -0.5, -0.5, 0.5, 0.5, 0.5, -0.5, -0.5, 0.5, -0.5, 0.5, -0.5, -0.5, -0.5, 0.5, -0.5, -0.5, -0.5, -0.5, 0.5, -0.5, -0.5, 0.5, 0.5, 0.5, 0.5, 0.5, -0.5, 0.5, -0.5, 0.5, 0.5, 0.5, -0.5, 0.5, -0.5, -0.5, 0.5, -0.5, 0.5, -0.5, 0.5, -0.5, -0.5, 0.5, 0.5, -0.5, -0.5, -0.5, -0.5, 0.5, 0.5, -0.5, -0.5, 0.5, -0.5, -0.5, -0.5, 0.5, 0.5, 0.5, -0.5, 0.5, 0.5, 0.5, 0.5, -0.5, -0.5, 0.5, 0.5, -0.5, 0.5, -0.5, 0.5, 0.5, -0.5, -0.5, -0.5, 0.5, 0.5, -0.5, 0.5, -0.5, -0.5, -0.5, 0.5, -0.5, 0.5, 0.5, -0.5, -0.5, -0.5, -0.5, -0.5)
+
 [node name="Main" type="Node3D" unique_id=601723906]
 script = ExtResource("1_eka3w")
 
@@ -66,7 +71,7 @@ current = true
 transform = Transform3D(-4.37114e-08, 0, -1, 0, 1, 0, 1, 0, -4.37114e-08, -0.125, 0.02, 0)
 
 [node name="RobotModel" parent="PiCar" unique_id=826783087 instance=ExtResource("8_cyber")]
-transform = Transform3D(0, 0, -0.064028285, 0, 0.064028285, 0, 0.064028285, 0, 0, 0.05895132, 0.031622197, 0.0017511249)
+transform = Transform3D(-1.7484555e-09, 0, -0.04, 0, 0.04, 0, 0.04, 0, -1.7484555e-09, 0.05895132, 0.031622197, 0.0017511249)
 
 [node name="PlaquetteSupport" parent="PiCar" unique_id=1599129438 instance=ExtResource("11_plaq")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.07338458, 0.09961535, 0)
@@ -87,16 +92,16 @@ rings = 32
 material = SubResource("StandardMaterial3D_ball")
 
 [node name="Roue" parent="PiCar" unique_id=1889117682 instance=ExtResource("9_kek77")]
-transform = Transform3D(2.9309253e-09, 0, -0.06705175, 0, 0.06705175, 0, 0.06705175, 0, 2.9309253e-09, 0.1559681, 0.02516575, -0.0991235)
+transform = Transform3D(3.0199159e-09, 0, -0.04, 0, 0.04, 0, 0.04, 0, 3.0199159e-09, 0.11809701, 0.025165748, -0.06273794)
 
 [node name="Roue2" parent="PiCar" unique_id=891560649 instance=ExtResource("9_kek77")]
-transform = Transform3D(2.9309253e-09, 0, -0.06705175, 0, 0.06705175, 0, 0.06705175, 0, 2.9309253e-09, -0.02327855, 0.02516575, -0.0991235)
+transform = Transform3D(3.0199159e-09, 0, -0.04, 0, 0.04, 0, 0.04, 0, 3.0199159e-09, 0.0062386394, 0.025165748, -0.06236601)
 
 [node name="Roue3" parent="PiCar" unique_id=151815307 instance=ExtResource("9_kek77")]
-transform = Transform3D(2.9309253e-09, 0, 0.06705175, 0, 0.06705175, 0, -0.06705175, 0, 2.9309253e-09, -0.023277, 0.02516575, 0.09974605)
+transform = Transform3D(3.0199159e-09, 0, 0.04, 0, 0.04, 0, -0.04, 0, 3.0199159e-09, 0.0073540807, 0.025165748, 0.06633043)
 
 [node name="Roue4" parent="PiCar" unique_id=1550137342 instance=ExtResource("9_kek77")]
-transform = Transform3D(2.9309253e-09, 0, 0.06705175, 0, 0.06705175, 0, -0.06705175, 0, 2.9309253e-09, 0.1559663, 0.02516575, 0.10083085)
+transform = Transform3D(3.0199159e-09, 0, 0.04, 0, 0.04, 0, -0.04, 0, 3.0199159e-09, 0.118652165, 0.025165748, 0.065187395)
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=1176366824]
 transform = Transform3D(0.866025, -0.353553, 0.353553, 0, 0.707107, 0.707107, -0.5, -0.612372, 0.612372, 0, 5, 0)
@@ -129,6 +134,15 @@ text = "Connect"
 [node name="btn_Quit" type="Button" parent="GridContainer" unique_id=550675181]
 layout_mode = 2
 text = "Quit"
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=1471697750]
+transform = Transform3D(0.15, 0, 0, 0, 0.15, 0, 0, 0, 0.15, 0, 0.066530704, 0.99916446)
+mesh = SubResource("BoxMesh_m8pl1")
+
+[node name="StaticBody3D" type="StaticBody3D" parent="MeshInstance3D" unique_id=590206742]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="MeshInstance3D/StaticBody3D" unique_id=743403651]
+shape = SubResource("ConcavePolygonShape3D_kek77")
 
 [connection signal="pressed" from="GridContainer/btn_Connect" to="." method="_on_connect_pressed"]
 [connection signal="pressed" from="GridContainer/btn_Quit" to="." method="_on_quit_pressed"]
