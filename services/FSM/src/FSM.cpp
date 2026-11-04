@@ -181,12 +181,17 @@ bool FSM::init() {
 // parfaite et pour la voiture "réaliste" (biais, jeu, latence) : en dessous de 70° ou sans recul, l'arrière de la
 // voiture touche l'obstacle ; plus loin, la voiture risque de s'accrocher à une autre branche du parcours.
 // side = +1 : droite (RightDeviation), -1 : gauche.
+// Vitesse d'une manoeuvre d'évitement : la vitesse voulue, mais jamais sous MIN_CURVE_SPEED
+float FSM::avoidance_speed(float nominal) const {
+    return std::max(nominal, m_min_curve_speed);
+}
+
 FSM::DeviationResult FSM::run_obstacle_deviation(float side, float dt, const float darkness[5],
                                                  float& steering_deg, float& velocity) {
     constexpr float REVERSE_DISTANCE_M = 0.10f;
-    constexpr float FORWARD_SPEED = 0.16f;
-    constexpr float REVERSE_SPEED = 0.12f;
-    constexpr float RETURN_SPEED = 0.15f;
+    constexpr float FORWARD_SPEED_NOMINAL = 0.16f;
+    constexpr float REVERSE_SPEED_NOMINAL = 0.12f;
+    constexpr float RETURN_SPEED_NOMINAL = 0.15f;
     constexpr float RETURN_STEER_DEG = 30.0f;            // braquage du virage de retour (moins que ARC_STEER_DEG)
     constexpr float RETURN_HEADING_RAD = 35.0f * 3.14159265f / 180.0f;  // angle d'approche de la ligne
     constexpr float RETURN_STRAIGHT_MAX_M = 0.60f;       // sans ruban sur cette distance : LineSearching
@@ -199,6 +204,12 @@ FSM::DeviationResult FSM::run_obstacle_deviation(float side, float dt, const flo
     constexpr float CAR_REAR_M = 0.15f;                  // distance de l'origine de la voiture à son arrière
     constexpr float CLEARANCE_M = 0.03f;
     constexpr float TIMEOUT_S = 14.0f;
+
+    // Les moteurs ne décollent pas à très basse puissance : on ne descend jamais sous la plus petite vitesse que le
+    // suivi de ligne utilise déjà (MIN_CURVE_SPEED), qui est validée sur le robot.
+    const float FORWARD_SPEED = avoidance_speed(FORWARD_SPEED_NOMINAL);
+    const float REVERSE_SPEED = avoidance_speed(REVERSE_SPEED_NOMINAL);
+    const float RETURN_SPEED = avoidance_speed(RETURN_SPEED_NOMINAL);
 
     m_state_timer += dt;
     const float v = m_motion_profiler ? m_motion_profiler->get_current_speed() : 0.0f;
@@ -519,6 +530,11 @@ void FSM::run() {
                         m_dev_trim_deg = m_line_controller ? m_line_controller->steering_trim() * 45.0f : 0.0f;
                         m_ignore_finish_s = IGNORE_FINISH_AFTER_AVOIDANCE_S;
                         std::cout << "[FSM] Correction de braquage apprise (biais des roues) : " << m_dev_trim_deg << " deg" << std::endl;
+                        {
+                            const float to_pct = (m_straight_cruise_speed > 0.01f) ? 50.0f / m_straight_cruise_speed : 0.0f;
+                            std::cout << "[FSM] Evitement : avance " << avoidance_speed(0.16f) << " m/s (" << avoidance_speed(0.16f) * to_pct
+                                      << " %), recul " << avoidance_speed(0.12f) << " m/s (" << avoidance_speed(0.12f) * to_pct << " %)" << std::endl;
+                        }
                     } else {
                         // Obstacle retiré -> reprise immédiate
                         transition_to(shared::fsm::MachineStates::LineFollowingForward);

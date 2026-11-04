@@ -35,6 +35,7 @@ public:
 private:
     void transition_to(shared::fsm::MachineStates new_state);
     enum class DeviationResult { Running, LineFound, SearchLine };
+    float avoidance_speed(float nominal) const;
     DeviationResult run_obstacle_deviation(float side, float dt, const float darkness[5], float& steering_deg, float& velocity);
 
     std::atomic<bool> m_running{false};
