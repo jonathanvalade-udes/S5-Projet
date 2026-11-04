@@ -64,7 +64,7 @@ transform = Transform3D(-0.004291712, -0.56876385, 0.8224897, -0.00078878977, 0.
 current = true
 
 [node name="line_follower_sensor" parent="PiCar" unique_id=1091166352 instance=ExtResource("9_a0528")]
-transform = Transform3D(-4.37114e-08, 0, -1, 0, 1, 0, 1, 0, -4.37114e-08, -0.125, 0.02, 0)
+transform = Transform3D(-4.37114e-08, 0, -1, 0, 1, 0, 1, 0, -4.37114e-08, -0.038305223, 0.017878067, 0)
 
 [node name="RobotModel" parent="PiCar" unique_id=826783087 instance=ExtResource("8_cyber")]
 transform = Transform3D(-1.7484555e-09, 0, -0.04, 0, 0.04, 0, 0.04, 0, -1.7484555e-09, 0.05895132, 0.031622197, 0.0017511249)
@@ -74,7 +74,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0700019, 0.075148866, 0)
 
 [node name="Bille" type="RigidBody3D" parent="PiCar" unique_id=1804454935]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.072184265, 0.08946782, 0)
-mass = 0.065
+mass = 0.01
 script = ExtResource("10_bmon")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PiCar/Bille" unique_id=537514198]
@@ -144,7 +144,7 @@ text = "Stop FSM"
 transform = Transform3D(-0.00060717657, 0, -0.9999998, 0, 1, 0, 0.9999998, 0, -0.00060717657, -0.0013141632, 0.10000006, 1.0050113)
 
 [node name="obstacle2" parent="." unique_id=104985700 instance=ExtResource("10_4c57u")]
-transform = Transform3D(0.9999916, 0, 0.0040991195, 0, 1, 0, -0.0040991195, 0, 0.9999916, -0.32261512, 0.10000006, -0.15249658)
+transform = Transform3D(0.9999916, 0, 0.0040991195, 0, 1, 0, -0.0040991195, 0, 0.9999916, -0.32261512, 0.10000006, -0.076802135)
 
 [connection signal="pressed" from="GridContainer/btn_Connect" to="." method="_on_connect_pressed"]
 [connection signal="pressed" from="GridContainer/btn_Quit" to="." method="_on_quit_pressed"]
