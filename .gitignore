@@ -6,7 +6,6 @@
 .idea/
 *.swp
 *~
-# Garder settings.json pour le masquage des .uid dans VS Code
 .vscode/*
 !.vscode/settings.json
 
@@ -25,16 +24,6 @@ compile_commands.json
 # ==========================================
 .godot/
 .import/
-*.translation
-export.cfg
-export_credentials.cfg
-*.tmp
-
-# ==========================================
-# Blender (Backups)
-# ==========================================
-*.blend1
-*.blend2
 
 # ==========================================
 # Python (Outils de filtrage)
