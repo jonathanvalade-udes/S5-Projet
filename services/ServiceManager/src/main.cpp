@@ -57,7 +57,7 @@ int main(int argc, char* argv[])
 
     // Optional console shell for direct UART/console access
     if (is_pid_1) {
-        pid_shell = spawn_shell();
+        //pid_shell = spawn_shell();
     }
 
     // Monitored microservices with multiple candidate binary names
@@ -92,6 +92,15 @@ int main(int argc, char* argv[])
         {
             "TelemetryService",
             {"/root/TelemetryService", "/root/telemetry", "TelemetryService", "telemetry", "/usr/local/bin/TelemetryService", "/usr/local/bin/telemetry", "/usr/sbin/TelemetryService"},
+            {},
+            -1,
+            0,
+            {},
+            false
+        }, 
+        {
+            "PeripheralsService",
+            {"/usr/sbin/peripherals"},
             {},
             -1,
             0,
