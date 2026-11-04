@@ -1,0 +1,10 @@
+# Normaliser les fins de ligne en LF (Unix) pour eviter les erreurs bash^M sous Docker / Linux
+* text=auto eol=lf
+
+# Declarer explicitement les fichiers binaires pour eviter toute corruption
+*.blend binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.svg binary
