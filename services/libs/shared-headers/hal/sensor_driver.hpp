@@ -50,44 +50,6 @@ public:
 };
 
 /**
- * @brief Pilote Mock pour les capteurs pour tests unitaires et intégration sans robot physique.
- */
-class MockSensorDriver : public ISensorDriver {
-private:
-    float simulated_dist = 50.0f;
-    uint8_t simulated_line[5] = {0, 0, 0, 0, 0}; // Par défaut, aucune ligne si non initialisé
-    size_t counter = 0;
-
-public:
-    MockSensorDriver() = default;
-
-    void set_simulated_distance(float dist_cm) {
-        simulated_dist = dist_cm;
-    }
-
-    void set_simulated_line(const uint8_t line[5]) {
-        for (int i = 0; i < 5; ++i) simulated_line[i] = line[i];
-    }
-
-    float read_raw_ultrasonic_cm() override {
-        counter++;
-        // Injection sporadique d'un glitch de test (toutes les 25 lectures)
-        if (counter % 25 == 0) {
-            return 400.0f; // glitch max distance
-        } else if (counter % 40 == 0) {
-            return 0.0f;   // glitch dropout
-        }
-        return simulated_dist;
-    }
-
-    void read_line_sensors(uint8_t out_sensors[5]) override {
-        for (int i = 0; i < 5; ++i) {
-            out_sensors[i] = simulated_line[i];
-        }
-    }
-};
-
-/**
  * @brief Pilote capteurs pour SunFounder PiCar-S sous Linux :
  * - Bus I2C pour le suiveur de ligne 5 voies (TCRT5000 via I2CDevice)
  * - GPIO Trigger/Echo pour le sonar ultrason HC-SR04 avec timeout non-bloquant

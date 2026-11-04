@@ -3,10 +3,45 @@
 #include <thread>
 #include <chrono>
 #include <cmath>
+#include <algorithm>
 
 #include "ipc/shared_memory.hpp"
 #include "hal/motor_driver.hpp"
 #include "filters/ultrasonic_pipeline.hpp"
+
+namespace {
+/**
+ * @brief Mock local pour valider l'application des consignes IPC et l'arrêt d'urgence.
+ */
+class MockMotorDriver : public IMotorDriver {
+private:
+    float current_speed = 0.0f;
+    float current_steering = 0.0f;
+    bool stopped = true;
+
+public:
+    explicit MockMotorDriver(bool /*verbose_logs*/ = false) {}
+
+    void set_speed(float speed_percent) override {
+        current_speed = std::clamp(speed_percent, -100.0f, 100.0f);
+        stopped = (std::abs(current_speed) < 0.001f);
+    }
+
+    void set_steering(float angle_degrees) override {
+        current_steering = std::clamp(angle_degrees, -45.0f, 45.0f);
+    }
+
+    void emergency_stop() override {
+        current_speed = 0.0f;
+        current_steering = 0.0f;
+        stopped = true;
+    }
+
+    float get_speed() const { return current_speed; }
+    float get_steering() const { return current_steering; }
+    bool is_stopped() const { return stopped; }
+};
+} // namespace
 
 void test_ipc_communication_and_failsafe() {
     std::cout << "[TEST] Démarrage du test d'intégration IPC & Failsafe..." << std::endl;

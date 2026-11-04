@@ -51,56 +51,6 @@ public:
 };
 
 /**
- * @brief Pilote Mock utilisé pour les tests unitaires et la logique IPC sans matériel physique.
- */
-class MockMotorDriver : public IMotorDriver {
-private:
-    float current_speed = 0.0f;
-    float current_steering = 0.0f;
-    float current_offset = 0.0f;
-    bool stopped = true;
-    bool verbose = false;
-
-public:
-    explicit MockMotorDriver(bool verbose_logs = false) : verbose(verbose_logs) {}
-
-    void set_speed(float speed_percent) override {
-        current_speed = std::clamp(speed_percent, -100.0f, 100.0f);
-        stopped = (std::abs(current_speed) < 0.001f);
-        if (verbose) {
-            std::cout << "[MOCK_MOTOR] Vitesse fixée à : " << current_speed << "%" << std::endl;
-        }
-    }
-
-    void set_steering(float angle_degrees) override {
-        current_steering = std::clamp(angle_degrees + current_offset, -45.0f, 45.0f);
-        if (verbose) {
-            std::cout << "[MOCK_MOTOR] Direction fixée à : " << current_steering 
-                      << "° (offset=" << current_offset << "°)" << std::endl;
-        }
-    }
-
-    void set_steering_offset(float offset_deg) override {
-        current_offset = std::clamp(offset_deg, -15.0f, 15.0f);
-    }
-
-    float get_steering_offset() const override {
-        return current_offset;
-    }
-
-    void emergency_stop() override {
-        current_speed = 0.0f;
-        current_steering = 0.0f;
-        stopped = true;
-        std::cout << "[MOCK_MOTOR] >>> ARRÊT D'URGENCE FAILSAFE : Sorties forcées à 0V <<<" << std::endl;
-    }
-
-    float get_speed() const { return current_speed; }
-    float get_steering() const { return current_steering; }
-    bool is_stopped() const { return stopped; }
-};
-
-/**
  * @brief Pilote matériel officiel SunFounder PiCar-S (Robot HATS / PCA9685 PWM + TB6612).
  * Actif sur Raspberry Pi sous Linux.
  */
