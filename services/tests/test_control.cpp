@@ -289,12 +289,49 @@ void test_dynamic_config_and_fallbacks() {
     std::cout << "  ✓ Sécurité perte de ligne (0 0 0 0 0) : transition arrêt/récupération confirmée." << std::endl;
 }
 
+void test_ackermann_curve_speed() {
+    std::cout << "[TEST] MotionProfiler - Vitesse en virage Ackermann..." << std::endl;
+    MotionProfiler profiler(0.735f, 0.32f);
+
+    const float cruise = 0.32f;
+    const float min_spd = 0.14f;
+    const float safety = 0.75f;
+
+    // 1. Ligne droite (|steer| <= 2°) : maintien ferme à la vitesse de croisière (aucun ralentissement parasite)
+    float v_straight0 = profiler.calculate_curve_speed_ackermann(0.0f, cruise, min_spd, safety);
+    float v_straight2 = profiler.calculate_curve_speed_ackermann(2.0f, cruise, min_spd, safety);
+    assert(approx_equal(v_straight0, cruise, 1e-4f));
+    assert(approx_equal(v_straight2, cruise, 1e-4f));
+
+    // 2. Virage modéré (15°) : ralentissement calculé par R = L/tan(15°)
+    float v_turn15 = profiler.calculate_curve_speed_ackermann(15.0f, cruise, min_spd, safety);
+    assert(v_turn15 <= cruise);
+    assert(v_turn15 >= min_spd);
+
+    // 3. Virage serré (35°) : doit ralentir davantage
+    float v_turn35 = profiler.calculate_curve_speed_ackermann(35.0f, cruise, min_spd, safety);
+    assert(v_turn35 < v_turn15);
+    assert(v_turn35 >= min_spd);
+
+    // 4. Virage extrême (45°) : borné au minimum autorisé
+    float v_turn45 = profiler.calculate_curve_speed_ackermann(45.0f, cruise, min_spd, safety);
+    assert(v_turn45 >= min_spd);
+
+    // 5. Symétrie gauche/droite
+    float v_left = profiler.calculate_curve_speed_ackermann(-25.0f, cruise, min_spd, safety);
+    float v_right = profiler.calculate_curve_speed_ackermann(25.0f, cruise, min_spd, safety);
+    assert(approx_equal(v_left, v_right, 1e-4f));
+
+    std::cout << "  ✓ Vitesse en virage Ackermann : Maintien en ligne droite et décélération physique validées." << std::endl;
+}
+
 int main() {
     std::cout << "========================================" << std::endl;
     std::cout << "  PiCar C++17 - Tests Unitaires Contrôle" << std::endl;
     std::cout << "========================================" << std::endl;
 
     test_motion_profiler();
+    test_ackermann_curve_speed();
     test_line_follower_controller();
     test_line_follower_analog();
     test_obstacle_avoidance_s4_and_s5();

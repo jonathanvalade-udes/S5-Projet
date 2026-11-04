@@ -249,6 +249,7 @@ bool TelemetryService::handle_ping_pong() {
                         if (k == "MAX_ACCELERATION") m_telemetry->cfg_max_acceleration = fval;
                         else if (k == "STRAIGHT_CRUISE_SPEED" || k == "CRUISE_SPEED") m_telemetry->cfg_cruise_speed = fval;
                         else if (k == "MIN_CURVE_SPEED") m_telemetry->cfg_min_curve_speed = fval;
+                        else if (k == "CURVE_SAFETY_FACTOR") m_telemetry->cfg_curve_safety_factor = fval;
                         else if (k == "LINE_KP" || k == "KP") m_telemetry->cfg_line_kp = fval;
                         else if (k == "LINE_KD" || k == "KD") m_telemetry->cfg_line_kd = fval;
                         m_telemetry->cfg_version++;

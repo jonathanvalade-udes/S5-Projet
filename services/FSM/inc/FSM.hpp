@@ -45,6 +45,7 @@ private:
     // Paramètres cinématiques et de suivi (modifiables à chaud via WiFi / .config / POSIX)
     float m_straight_cruise_speed{picar::constants::DEFAULT_STRAIGHT_CRUISE_SPEED};
     float m_min_curve_speed{picar::constants::DEFAULT_MIN_CURVE_SPEED};
+    float m_curve_safety_factor{picar::constants::DEFAULT_CURVE_SAFETY_FACTOR};
     float m_max_acceleration{picar::constants::DEFAULT_MAX_ACCELERATION};
     float m_line_kp{picar::constants::DEFAULT_LINE_KP};
     float m_line_kd{picar::constants::DEFAULT_LINE_KD};

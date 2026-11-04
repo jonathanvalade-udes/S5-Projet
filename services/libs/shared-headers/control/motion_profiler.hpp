@@ -14,6 +14,8 @@ public:
     static constexpr float DEFAULT_MAX_ACCELERATION = 0.735f; // m/s²
     // Rayon de virage minimal imposé par le parcours (S3 : 120 mm)
     static constexpr float MIN_TURN_RADIUS = 0.12f;          // m
+    // Empattement du véhicule PiCar-S (distance essieu avant - essieu arrière)
+    static constexpr float WHEELBASE_M = 0.14f;              // m
     // Vitesse de croisière nominale en ligne droite (m/s)
     static constexpr float DEFAULT_CRUISE_SPEED = 0.25f;     // m/s
 
@@ -40,6 +42,31 @@ public:
     float calculate_curve_speed_limit(float radius_m) const {
         if (radius_m <= 0.0f) return 0.0f;
         return std::sqrt(max_accel * radius_m);
+    }
+
+    /**
+     * @brief Calcule la vitesse adaptative en virage selon la cinématique d'Ackermann et la limite centrifuge :
+     * R = L / tan(|delta|)
+     * v_max = safety_factor * sqrt(a_max * R)
+     */
+    float calculate_curve_speed_ackermann(float steer_deg, float cruise_spd, float min_spd, float safety_factor = 0.75f) const {
+        constexpr float DEG_TO_RAD = 3.14159265358979323846f / 180.0f;
+        float abs_steer_rad = std::abs(steer_deg) * DEG_TO_RAD;
+
+        // Sous ~3 degrés : pas de virage significatif, pleine vitesse de croisière sans ralentissement
+        if (abs_steer_rad < 0.052f) {
+            return cruise_spd;
+        }
+
+        float tan_steer = std::tan(abs_steer_rad);
+        if (tan_steer <= 1e-4f) {
+            return cruise_spd;
+        }
+        float radius = WHEELBASE_M / tan_steer;
+
+        // Limite physique critique a_c = v² / R <= a_max pondérée par le facteur de sécurité
+        float v_phys = safety_factor * calculate_curve_speed_limit(radius);
+        return std::clamp(v_phys, min_spd, cruise_spd);
     }
 
     /**

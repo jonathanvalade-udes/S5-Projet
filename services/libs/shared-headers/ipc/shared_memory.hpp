@@ -42,6 +42,7 @@ struct RobotTelemetry {
     float cfg_min_curve_speed;     // m/s
     float cfg_line_kp;             // Gain proportionnel
     float cfg_line_kd;             // Gain dérivé
+    float cfg_curve_safety_factor; // Facteur de sécurité virage [0.5, 1.0]
     uint32_t cfg_version;          // Incrémenté lors d'une mise à jour
 };
 
@@ -123,6 +124,7 @@ public:
             shm_ptr->cfg_min_curve_speed = 0.14f;
             shm_ptr->cfg_line_kp = 0.65f;
             shm_ptr->cfg_line_kd = 0.05f;
+            shm_ptr->cfg_curve_safety_factor = 0.75f;
             shm_ptr->cfg_version = 1;
         } else if (create_if_missing) {
             // Segment existant réouvert en mode superviseur : réinitialiser l'arrêt d'urgence

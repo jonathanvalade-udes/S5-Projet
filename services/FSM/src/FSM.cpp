@@ -33,6 +33,7 @@ bool FSM::init() {
     m_max_acceleration      = cfg.max_acceleration;
     m_straight_cruise_speed = cfg.cruise_speed;
     m_min_curve_speed       = cfg.min_curve_speed;
+    m_curve_safety_factor   = cfg.curve_safety_factor;
     m_line_kp               = cfg.line_kp;
     m_line_kd               = cfg.line_kd;
     m_obstacle_stop_dist_cm = cfg.obstacle_stop_dist_cm;
@@ -53,6 +54,7 @@ bool FSM::init() {
                 m_telemetry->cfg_max_acceleration = m_max_acceleration;
                 m_telemetry->cfg_cruise_speed     = m_straight_cruise_speed;
                 m_telemetry->cfg_min_curve_speed  = m_min_curve_speed;
+                m_telemetry->cfg_curve_safety_factor = m_curve_safety_factor;
                 m_telemetry->cfg_line_kp          = m_line_kp;
                 m_telemetry->cfg_line_kd          = m_line_kd;
                 m_telemetry->cfg_version          = 1;
@@ -105,6 +107,9 @@ void FSM::run() {
                 m_max_acceleration      = m_telemetry->cfg_max_acceleration;
                 m_straight_cruise_speed = m_telemetry->cfg_cruise_speed;
                 m_min_curve_speed       = m_telemetry->cfg_min_curve_speed;
+                m_curve_safety_factor   = (m_telemetry->cfg_curve_safety_factor > 0.1f) 
+                                            ? m_telemetry->cfg_curve_safety_factor 
+                                            : m_curve_safety_factor;
                 m_line_kp               = m_telemetry->cfg_line_kp;
                 m_line_kd               = m_telemetry->cfg_line_kd;
 
@@ -228,9 +233,13 @@ void FSM::run() {
                                                                 : LineFollowerOutput{0.0f, 0.0f, m_straight_cruise_speed, false, false};
                 desired_steering = line_out.steer_degrees;
 
-                // Vitesse adaptative dynamique modifiable à chaud :
-                float steer_ratio = std::abs(line_out.steer_normalized); // 0.0 à 1.0
-                float adaptive_velocity = m_straight_cruise_speed - ((m_straight_cruise_speed - m_min_curve_speed) * steer_ratio);
+                // Vitesse adaptative basée sur la physique centrifuge d'Ackermann :
+                // Limite centrifuge : a_c = v² / R <= a_max  ==>  v = safety_factor * sqrt(a_max * R)
+                // Sous ~3° (ligne droite), la vitesse reste 100% à m_straight_cruise_speed.
+                float adaptive_velocity = m_motion_profiler
+                    ? m_motion_profiler->calculate_curve_speed_ackermann(
+                          desired_steering, m_straight_cruise_speed, m_min_curve_speed, m_curve_safety_factor)
+                    : m_straight_cruise_speed;
                 desired_velocity = adaptive_velocity;
 
                 if (line_out.is_finished) {
