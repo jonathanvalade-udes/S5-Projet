@@ -87,3 +87,15 @@ target_include_directories(test_service_manager PRIVATE
 target_link_libraries(test_service_manager PRIVATE Threads::Threads)
 add_test(NAME test_service_manager COMMAND test_service_manager)
 
+add_executable(test_peripherals 
+    test_peripherals.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../PeripheralsService/src/PeripheralsService.cpp
+)
+target_include_directories(test_peripherals PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/.. 
+    ${CMAKE_CURRENT_SOURCE_DIR}/../libs/shared-headers
+    ${CMAKE_CURRENT_SOURCE_DIR}/../PeripheralsService/inc
+)
+target_link_libraries(test_peripherals PRIVATE Threads::Threads)
+add_test(NAME test_peripherals COMMAND test_peripherals)
+

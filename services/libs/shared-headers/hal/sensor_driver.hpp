@@ -128,41 +128,6 @@ private:
         }
     }
 
-    static int detect_gpio_base() {
-        DIR* dir = opendir("/sys/class/gpio");
-        if (!dir) return 0;
-        struct dirent* entry;
-        int found_base = 0;
-        while ((entry = readdir(dir)) != nullptr) {
-            if (strncmp(entry->d_name, "gpiochip", 8) == 0) {
-                char label_path[256];
-                snprintf(label_path, sizeof(label_path), "/sys/class/gpio/%s/label", entry->d_name);
-                int lfd = open(label_path, O_RDONLY);
-                if (lfd >= 0) {
-                    char label[64] = {0};
-                    ssize_t n = read(lfd, label, sizeof(label) - 1);
-                    close(lfd);
-                    if (n > 0 && (strstr(label, "bcm2835") || strstr(label, "3f200000.gpio") || strstr(label, "fe200000.gpio"))) {
-                        char base_path[256];
-                        snprintf(base_path, sizeof(base_path), "/sys/class/gpio/%s/base", entry->d_name);
-                        int bfd = open(base_path, O_RDONLY);
-                        if (bfd >= 0) {
-                            char base_str[32] = {0};
-                            ssize_t bn = read(bfd, base_str, sizeof(base_str) - 1);
-                            close(bfd);
-                            if (bn > 0) {
-                                found_base = std::atoi(base_str);
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        closedir(dir);
-        return found_base;
-    }
-
 public:
     PiCarHatsSensorDriver(int trig = 12, int echo = 16) 
         : trig_pin(trig), 
@@ -241,6 +206,41 @@ public:
             write(unexport_fd, buf, strlen(buf));
             close(unexport_fd);
         }
+    }
+
+    static int detect_gpio_base() {
+        DIR* dir = opendir("/sys/class/gpio");
+        if (!dir) return 0;
+        struct dirent* entry;
+        int found_base = 0;
+        while ((entry = readdir(dir)) != nullptr) {
+            if (strncmp(entry->d_name, "gpiochip", 8) == 0) {
+                char label_path[256];
+                snprintf(label_path, sizeof(label_path), "/sys/class/gpio/%s/label", entry->d_name);
+                int lfd = open(label_path, O_RDONLY);
+                if (lfd >= 0) {
+                    char label[64] = {0};
+                    ssize_t n = read(lfd, label, sizeof(label) - 1);
+                    close(lfd);
+                    if (n > 0 && (strstr(label, "bcm2835") || strstr(label, "3f200000.gpio") || strstr(label, "fe200000.gpio"))) {
+                        char base_path[256];
+                        snprintf(base_path, sizeof(base_path), "/sys/class/gpio/%s/base", entry->d_name);
+                        int bfd = open(base_path, O_RDONLY);
+                        if (bfd >= 0) {
+                            char base_str[32] = {0};
+                            ssize_t bn = read(bfd, base_str, sizeof(base_str) - 1);
+                            close(bfd);
+                            if (bn > 0) {
+                                found_base = std::atoi(base_str);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        closedir(dir);
+        return found_base;
     }
 
     void set_thresholds(const uint16_t thresholds[5]) {
