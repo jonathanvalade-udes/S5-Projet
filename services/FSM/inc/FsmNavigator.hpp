@@ -33,6 +33,9 @@ public:
     /// Diagonale de la phase 2 de l'evitement : duree (s) et vitesse (m/s), lues dans fsm.conf.
     void set_avoidance_diagonal(float time_s, float speed) { m_obstacle_avoidance.set_diagonal(time_s, speed); }
 
+    /// Deuxieme diagonale de l'evitement (phase 5) : duree maximale (s) et vitesse (m/s), lues dans fsm.conf.
+    void set_avoidance_return(float time_s, float speed) { m_obstacle_avoidance.set_return(time_s, speed); }
+
     void reset_controllers();
     float get_current_speed() const;
     float compute_bounded_velocity(float desired_v, float dt);

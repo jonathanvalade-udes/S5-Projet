@@ -672,6 +672,32 @@ async function sendCommand(cmdStr) {
     }
 }
 
+// Evitement d'obstacle : distance parcourue en diagonale = vitesse x duree (memes bornes que le FSM)
+function avoidDistanceText(timeId, speedId, tagId, label, tMin, tMax, vMin, vMax) {
+    const timeInput = document.getElementById(timeId);
+    const speedInput = document.getElementById(speedId);
+    const tag = document.getElementById(tagId);
+    if (!timeInput || !speedInput || !tag) return;
+    const t = parseFloat(timeInput.value);
+    const v = parseFloat(speedInput.value);
+    if (isNaN(t) || isNaN(v)) {
+        tag.textContent = `${label} : -- cm`;
+        return;
+    }
+    const tc = Math.min(tMax, Math.max(tMin, t));
+    const vc = Math.min(vMax, Math.max(vMin, v));
+    const clamped = (tc !== t || vc !== v) ? ' (valeurs ramenées aux bornes du FSM)' : '';
+    tag.textContent = `${label} : ~${(tc * vc * 100).toFixed(0)} cm${clamped}`;
+}
+
+function updateAvoidDistance() {
+    avoidDistanceText('cfg-avoid-diag-time', 'cfg-avoid-diag-speed', 'live-avoid-dist',
+                      'Distance diagonale', 0.3, 3.0, 0.12, 0.25);
+    avoidDistanceText('cfg-avoid-ret-time', 'cfg-avoid-ret-speed', 'live-avoid-return-dist',
+                      'Distance maximale', 1.0, 5.0, 0.12, 0.25);
+}
+document.addEventListener('DOMContentLoaded', updateAvoidDistance);
+
 async function applyConfig(service, key, inputId) {
     const input = document.getElementById(inputId);
     if (!input) return;

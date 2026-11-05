@@ -43,6 +43,8 @@ private:
     float m_avoid_side{1.0f};
     float m_avoid_diag_time_s{ObstacleAvoidance::DEFAULT_DIAG_TIME_S};   // evitement, phase 2 : duree de la diagonale (s)
     float m_avoid_diag_speed{ObstacleAvoidance::DEFAULT_DIAG_SPEED};     // evitement, phase 2 : vitesse de la diagonale (m/s)
+    float m_avoid_return_time_s{ObstacleAvoidance::DEFAULT_RETURN_TIME_S};   // evitement, phase 5 : duree max de la diagonale de retour (s)
+    float m_avoid_return_speed{ObstacleAvoidance::DEFAULT_RETURN_SPEED};     // evitement, phase 5 : vitesse de la diagonale de retour (m/s)
 
     FsmNavigator m_navigator;
     FsmEventPipe m_event_pipe;

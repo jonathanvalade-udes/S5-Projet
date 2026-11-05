@@ -82,11 +82,21 @@ bool FSM::init() {
     m_reverse_speed         = m_ipc_handler.get_float("REVERSE_SPEED", m_reverse_speed);
     m_avoid_side            = m_ipc_handler.get_float("AVOID_SIDE", m_avoid_side);
     apply_avoid_side_env(m_avoid_side);
-    m_avoid_diag_time_s = m_ipc_handler.get_float("AVOID_DIAG_TIME_S", m_avoid_diag_time_s);
-    m_avoid_diag_speed  = m_ipc_handler.get_float("AVOID_DIAG_SPEED", m_avoid_diag_speed);
+    m_avoid_diag_time_s = std::clamp(m_ipc_handler.get_float("AVOID_DIAG_TIME_S", m_avoid_diag_time_s),
+                                     ObstacleAvoidance::MIN_DIAG_TIME_S, ObstacleAvoidance::MAX_DIAG_TIME_S);
+    m_avoid_diag_speed  = std::clamp(m_ipc_handler.get_float("AVOID_DIAG_SPEED", m_avoid_diag_speed),
+                                     ObstacleAvoidance::MIN_DIAG_SPEED, ObstacleAvoidance::MAX_DIAG_SPEED);
     m_navigator.set_avoidance_diagonal(m_avoid_diag_time_s, m_avoid_diag_speed);
     std::cout << "[FSM] Evitement, diagonale de la phase 2 : " << m_avoid_diag_speed << " m/s pendant "
               << m_avoid_diag_time_s << " s (~" << m_avoid_diag_speed * m_avoid_diag_time_s * 100.0f << " cm)" << std::endl;
+    m_avoid_return_time_s = std::clamp(m_ipc_handler.get_float("AVOID_RETURN_TIME_S", m_avoid_return_time_s),
+                                       ObstacleAvoidance::MIN_RETURN_TIME_S, ObstacleAvoidance::MAX_RETURN_TIME_S);
+    m_avoid_return_speed  = std::clamp(m_ipc_handler.get_float("AVOID_RETURN_SPEED", m_avoid_return_speed),
+                                       ObstacleAvoidance::MIN_RETURN_SPEED, ObstacleAvoidance::MAX_RETURN_SPEED);
+    m_navigator.set_avoidance_return(m_avoid_return_time_s, m_avoid_return_speed);
+    std::cout << "[FSM] Evitement, diagonale de retour (phase 5) : " << m_avoid_return_speed << " m/s, "
+              << m_avoid_return_time_s << " s maximum (~" << m_avoid_return_speed * m_avoid_return_time_s * 100.0f
+              << " cm au plus)" << std::endl;
     std::cout << "[FSM] Contournement des obstacles par la " << (m_avoid_side < 0.0f ? "GAUCHE" : "DROITE") << std::endl;
     m_hz = std::clamp(static_cast<int>(m_ipc_handler.get_float("HZ", static_cast<float>(m_hz))), 10, 10000);
 
@@ -256,15 +266,27 @@ bool FSM::apply_config_key(const std::string& key, float value) {
         return true;
     }
     if (key == "AVOID_DIAG_TIME_S") {
-        m_avoid_diag_time_s = value;
-        m_ipc_handler.set_float("AVOID_DIAG_TIME_S", value);
+        m_avoid_diag_time_s = std::clamp(value, ObstacleAvoidance::MIN_DIAG_TIME_S, ObstacleAvoidance::MAX_DIAG_TIME_S);
+        m_ipc_handler.set_float("AVOID_DIAG_TIME_S", m_avoid_diag_time_s);
         m_navigator.set_avoidance_diagonal(m_avoid_diag_time_s, m_avoid_diag_speed);
         return true;
     }
     if (key == "AVOID_DIAG_SPEED") {
-        m_avoid_diag_speed = value;
-        m_ipc_handler.set_float("AVOID_DIAG_SPEED", value);
+        m_avoid_diag_speed = std::clamp(value, ObstacleAvoidance::MIN_DIAG_SPEED, ObstacleAvoidance::MAX_DIAG_SPEED);
+        m_ipc_handler.set_float("AVOID_DIAG_SPEED", m_avoid_diag_speed);
         m_navigator.set_avoidance_diagonal(m_avoid_diag_time_s, m_avoid_diag_speed);
+        return true;
+    }
+    if (key == "AVOID_RETURN_TIME_S") {
+        m_avoid_return_time_s = std::clamp(value, ObstacleAvoidance::MIN_RETURN_TIME_S, ObstacleAvoidance::MAX_RETURN_TIME_S);
+        m_ipc_handler.set_float("AVOID_RETURN_TIME_S", m_avoid_return_time_s);
+        m_navigator.set_avoidance_return(m_avoid_return_time_s, m_avoid_return_speed);
+        return true;
+    }
+    if (key == "AVOID_RETURN_SPEED") {
+        m_avoid_return_speed = std::clamp(value, ObstacleAvoidance::MIN_RETURN_SPEED, ObstacleAvoidance::MAX_RETURN_SPEED);
+        m_ipc_handler.set_float("AVOID_RETURN_SPEED", m_avoid_return_speed);
+        m_navigator.set_avoidance_return(m_avoid_return_time_s, m_avoid_return_speed);
         return true;
     }
     if (key == "HZ") {

@@ -433,18 +433,6 @@
 
                     <div class="config-row">
                         <div class="config-label-group">
-                            <span class="config-name">OBSTACLE_STOP_DIST_CM</span>
-                            <span class="config-unit">Distance d'arrêt devant obstacle (cm)</span>
-                            <span class="live-tag" id="live-fsm-dist">Sonar actuel: -- cm</span>
-                        </div>
-                        <div class="config-input-group">
-                            <input type="number" step="1.0" id="cfg-fsm-dist" value="20.0">
-                            <button class="btn-sm" onclick="applyConfig('FSM', 'OBSTACLE_STOP_DIST_CM', 'cfg-fsm-dist')">Appliquer</button>
-                        </div>
-                    </div>
-
-                    <div class="config-row">
-                        <div class="config-label-group">
                             <span class="config-name">REVERSE_SPEED</span>
                             <span class="config-unit">Vitesse marche arrière de récupération (m/s)</span>
                             <span class="live-tag" id="live-fsm-reverse">Actuel: -- m/s</span>
@@ -452,18 +440,6 @@
                         <div class="config-input-group">
                             <input type="number" step="0.01" id="cfg-fsm-reverse" value="0.12">
                             <button class="btn-sm" onclick="applyConfig('FSM', 'REVERSE_SPEED', 'cfg-fsm-reverse')">Appliquer</button>
-                        </div>
-                    </div>
-
-                    <div class="config-row">
-                        <div class="config-label-group">
-                            <span class="config-name">AVOID_SIDE</span>
-                            <span class="config-unit">Côté évitement (-1.0 = Gauche, +1.0 = Droite)</span>
-                            <span class="live-tag" id="live-fsm-side">Actuel: --</span>
-                        </div>
-                        <div class="config-input-group">
-                            <input type="number" step="1.0" min="-1" max="1" id="cfg-fsm-side" value="1.0">
-                            <button class="btn-sm" onclick="applyConfig('FSM', 'AVOID_SIDE', 'cfg-fsm-side')">Appliquer</button>
                         </div>
                     </div>
 
@@ -488,6 +464,87 @@
                         <div class="config-input-group">
                             <input type="number" step="5" id="cfg-fsm-hz" value="50.0">
                             <button class="btn-sm" onclick="applyConfig('FSM', 'HZ', 'cfg-fsm-hz')">Appliquer</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sous-Section Evitement d'obstacle (service FSM) -->
+            <div class="service-config-block">
+                <div class="service-config-header fsm-header">
+                    <span class="service-badge fsm-badge">ÉVITEMENT D'OBSTACLE (FSM)</span>
+                    <span class="service-desc">Arrêt devant le cube, côté de contournement et diagonale de la phase 2 ; les valeurs sont conservées dans fsm.conf sur le robot</span>
+                </div>
+                <div class="config-table">
+                    <div class="config-row">
+                        <div class="config-label-group">
+                            <span class="config-name">OBSTACLE_STOP_DIST_CM</span>
+                            <span class="config-unit">Distance d'arrêt devant obstacle (cm)</span>
+                            <span class="live-tag" id="live-fsm-dist">Sonar actuel: -- cm</span>
+                        </div>
+                        <div class="config-input-group">
+                            <input type="number" step="1.0" id="cfg-fsm-dist" value="20.0">
+                            <button class="btn-sm" onclick="applyConfig('FSM', 'OBSTACLE_STOP_DIST_CM', 'cfg-fsm-dist')">Appliquer</button>
+                        </div>
+                    </div>
+
+                    <div class="config-row">
+                        <div class="config-label-group">
+                            <span class="config-name">AVOID_SIDE</span>
+                            <span class="config-unit">Côté évitement (-1.0 = Gauche, +1.0 = Droite)</span>
+                            <span class="live-tag" id="live-fsm-side">Actuel: --</span>
+                        </div>
+                        <div class="config-input-group">
+                            <input type="number" step="1.0" min="-1" max="1" id="cfg-fsm-side" value="1.0">
+                            <button class="btn-sm" onclick="applyConfig('FSM', 'AVOID_SIDE', 'cfg-fsm-side')">Appliquer</button>
+                        </div>
+                    </div>
+
+                    <div class="config-row">
+                        <div class="config-label-group">
+                            <span class="config-name">AVOID_DIAG_TIME_S</span>
+                            <span class="config-unit">Phase 2 : durée de la diagonale pour s'écarter (s), de 0.3 à 3.0</span>
+                            <span class="live-tag" id="live-avoid-dist">Distance diagonale : -- cm</span>
+                        </div>
+                        <div class="config-input-group">
+                            <input type="number" step="0.05" min="0.3" max="3" id="cfg-avoid-diag-time" value="1.10" oninput="updateAvoidDistance()">
+                            <button class="btn-sm" onclick="applyConfig('FSM', 'AVOID_DIAG_TIME_S', 'cfg-avoid-diag-time')">Appliquer</button>
+                        </div>
+                    </div>
+
+                    <div class="config-row">
+                        <div class="config-label-group">
+                            <span class="config-name">AVOID_DIAG_SPEED</span>
+                            <span class="config-unit">Phase 2 : vitesse pendant la diagonale (m/s), de 0.12 à 0.25</span>
+                            <span class="live-tag" id="live-avoid-speed">Distance = vitesse × durée</span>
+                        </div>
+                        <div class="config-input-group">
+                            <input type="number" step="0.01" min="0.12" max="0.25" id="cfg-avoid-diag-speed" value="0.16" oninput="updateAvoidDistance()">
+                            <button class="btn-sm" onclick="applyConfig('FSM', 'AVOID_DIAG_SPEED', 'cfg-avoid-diag-speed')">Appliquer</button>
+                        </div>
+                    </div>
+
+                    <div class="config-row">
+                        <div class="config-label-group">
+                            <span class="config-name">AVOID_RETURN_TIME_S</span>
+                            <span class="config-unit">Phase 5 : durée maximale de la 2ᵉ diagonale, retour vers la ligne (s), de 1.0 à 5.0. Elle s'arrête dès que le ruban est vu.</span>
+                            <span class="live-tag" id="live-avoid-return-dist">Distance maximale : -- cm</span>
+                        </div>
+                        <div class="config-input-group">
+                            <input type="number" step="0.1" min="1" max="5" id="cfg-avoid-ret-time" value="3.5" oninput="updateAvoidDistance()">
+                            <button class="btn-sm" onclick="applyConfig('FSM', 'AVOID_RETURN_TIME_S', 'cfg-avoid-ret-time')">Appliquer</button>
+                        </div>
+                    </div>
+
+                    <div class="config-row">
+                        <div class="config-label-group">
+                            <span class="config-name">AVOID_RETURN_SPEED</span>
+                            <span class="config-unit">Phase 5 : vitesse pendant la 2ᵉ diagonale (m/s), de 0.12 à 0.25</span>
+                            <span class="live-tag" id="live-avoid-return-speed">Distance max = vitesse × durée max</span>
+                        </div>
+                        <div class="config-input-group">
+                            <input type="number" step="0.01" min="0.12" max="0.25" id="cfg-avoid-ret-speed" value="0.16" oninput="updateAvoidDistance()">
+                            <button class="btn-sm" onclick="applyConfig('FSM', 'AVOID_RETURN_SPEED', 'cfg-avoid-ret-speed')">Appliquer</button>
                         </div>
                     </div>
                 </div>

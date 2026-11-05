@@ -23,6 +23,20 @@ public:
     /// Distance parcourue en diagonale = vitesse x duree (0,16 x 1,10 = environ 18 cm).
     static constexpr float DEFAULT_DIAG_TIME_S = 1.10f;
     static constexpr float DEFAULT_DIAG_SPEED = 0.16f;
+    /// Bornes acceptees (une valeur hors bornes est ramenee dans l'intervalle).
+    static constexpr float MIN_DIAG_TIME_S = 0.3f;
+    static constexpr float MAX_DIAG_TIME_S = 3.0f;
+    static constexpr float MIN_DIAG_SPEED = 0.12f;
+    static constexpr float MAX_DIAG_SPEED = 0.25f;
+
+    /// Deuxieme diagonale (phase 5, retour vers la piste) : AVOID_RETURN_TIME_S = duree maximale de la recherche du ruban,
+    /// AVOID_RETURN_SPEED = vitesse. La phase s'arrete des que le ruban est vu.
+    static constexpr float DEFAULT_RETURN_TIME_S = 3.5f;
+    static constexpr float DEFAULT_RETURN_SPEED = 0.16f;
+    static constexpr float MIN_RETURN_TIME_S = 1.0f;
+    static constexpr float MAX_RETURN_TIME_S = 5.0f;
+    static constexpr float MIN_RETURN_SPEED = 0.12f;
+    static constexpr float MAX_RETURN_SPEED = 0.25f;
 
     /// Demarre une manoeuvre. trim_deg = biais de braquage appris (roues mal alignees).
     /// obstacle_dist (m) n'est plus utilise : la manoeuvre est reglee par des durees fixes.
@@ -37,6 +51,9 @@ public:
     /// Regle la diagonale de la phase 2 : duree (s) et vitesse (m/s). Valeurs bornees (0,3 a 3 s ; 0,12 a 0,25 m/s).
     void set_diagonal(float time_s, float speed);
 
+    /// Regle la deuxieme diagonale (phase 5) : duree maximale (s) et vitesse (m/s), bornees comme ci-dessus.
+    void set_return(float time_s, float speed);
+
     void set_ignore_finish(float duration_s) { m_ignore_finish_s = duration_s; }
     void update_ignore_finish(float dt) { m_ignore_finish_s = std::max(0.0f, m_ignore_finish_s - dt); }
     bool is_finish_ignored() const { return m_ignore_finish_s > 0.0f; }
@@ -49,7 +66,7 @@ private:
     bool phase_move_away(float side, float forward_speed, float& steering_deg, float& velocity) const;
     bool phase_straighten(float side, float forward_speed, float& steering_deg, float& velocity) const;
     bool phase_turn_back(float side, float forward_speed, float& steering_deg, float& velocity) const;
-    bool phase_find_line(float forward_speed, float& steering_deg, float& velocity) const;
+    bool phase_find_line(float& steering_deg, float& velocity) const;
 
     /// Vire a fond (turn_direction = +1 / -1) pendant turn_time_s, puis roule droit : braquage selon le temps ecoule dans la phase.
     float turn_then_straight(float turn_direction, float turn_time_s) const;
@@ -59,6 +76,8 @@ private:
 
     float m_diag_time_s{DEFAULT_DIAG_TIME_S};   // phase 2 : duree de la diagonale
     float m_diag_speed{DEFAULT_DIAG_SPEED};     // phase 2 : vitesse pendant la diagonale
+    float m_return_time_s{DEFAULT_RETURN_TIME_S};   // phase 5 : duree maximale de la diagonale de retour
+    float m_return_speed{DEFAULT_RETURN_SPEED};     // phase 5 : vitesse pendant la diagonale de retour
 
     int m_phase{1};
     float m_phase_time{0.0f};        // temps ecoule dans la phase courante (s)

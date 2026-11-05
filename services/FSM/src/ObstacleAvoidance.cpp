@@ -33,8 +33,9 @@ constexpr float PASS_TIME_S = 0.80f;
 
 // --- Phase 4 : revenir (virage de 45 deg vers la piste) : dure TURN_TIME_S ---
 
-// --- Phase 5 : retrouver la ligne (diagonale), abandon au bout de ce temps ---
-constexpr float FIND_LINE_MAX_TIME_S = 3.50f;
+// --- Phase 5 : retrouver la ligne (deuxieme diagonale), abandon au bout d'un temps maximal ---
+// Duree maximale et vitesse se reglent dans fsm.conf (AVOID_RETURN_TIME_S, AVOID_RETURN_SPEED) ;
+// valeurs par defaut (3,5 s et 0,16 m/s) dans ObstacleAvoidance.hpp.
 
 // --- Securite : duree maximale de toute la manoeuvre ---
 constexpr float TOTAL_TIMEOUT_S = 14.0f;
@@ -56,8 +57,13 @@ void ObstacleAvoidance::reset(float trim_deg, float /*obstacle_dist*/) {
 }
 
 void ObstacleAvoidance::set_diagonal(float time_s, float speed) {
-    m_diag_time_s = std::clamp(time_s, 0.3f, 3.0f);
-    m_diag_speed = std::clamp(speed, 0.12f, 0.25f);
+    m_diag_time_s = std::clamp(time_s, MIN_DIAG_TIME_S, MAX_DIAG_TIME_S);
+    m_diag_speed = std::clamp(speed, MIN_DIAG_SPEED, MAX_DIAG_SPEED);
+}
+
+void ObstacleAvoidance::set_return(float time_s, float speed) {
+    m_return_time_s = std::clamp(time_s, MIN_RETURN_TIME_S, MAX_RETURN_TIME_S);
+    m_return_speed = std::clamp(speed, MIN_RETURN_SPEED, MAX_RETURN_SPEED);
 }
 
 void ObstacleAvoidance::next_phase() {
@@ -108,10 +114,10 @@ bool ObstacleAvoidance::phase_turn_back(float side, float forward_speed, float& 
 }
 
 // Phase 5 : avancer en diagonale (braquage nul) ; la fin est decidee par la detection du ruban ou par le temps max
-bool ObstacleAvoidance::phase_find_line(float forward_speed, float& steering_deg, float& velocity) const {
+bool ObstacleAvoidance::phase_find_line(float& steering_deg, float& velocity) const {
     steering_deg = 0.0f;
-    velocity = forward_speed;
-    return m_phase_time >= FIND_LINE_MAX_TIME_S;
+    velocity = m_return_speed;
+    return m_phase_time >= m_return_time_s;
 }
 
 ObstacleAvoidance::DeviationResult ObstacleAvoidance::update(
@@ -134,7 +140,7 @@ ObstacleAvoidance::DeviationResult ObstacleAvoidance::update(
         case 3: phase_done = phase_straighten(side, forward_speed, steering_deg, velocity); break;
         case 4: phase_done = phase_turn_back(side, forward_speed, steering_deg, velocity); break;
         default:
-            phase_done = phase_find_line(forward_speed, steering_deg, velocity);
+            phase_done = phase_find_line(steering_deg, velocity);
             if (line_seen(darkness)) return DeviationResult::LineFound;
             if (phase_done) return DeviationResult::SearchLine;
             break;
