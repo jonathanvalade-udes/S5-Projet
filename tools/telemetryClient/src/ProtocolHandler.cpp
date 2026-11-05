@@ -6,6 +6,8 @@
 #include <chrono>
 #include <cstring>
 #include <cmath>
+#include <algorithm>
+#include <cctype>
 
 namespace telemetry {
 
