@@ -47,13 +47,23 @@ fi
 rm -f /dev/shm/picar_shm
 rm -rf /dev/shm/car
 
+# Ordre de depart : sur le robot, PeripheralsService cree /tmp/peripherals.sock (bouton GPIO) et le FSM s'y connecte.
+# Ici il n'y a pas de bouton : SimBridge ecrit "trigger_start" dans un tube nomme (FIFO) au meme chemin quand on
+# clique "Start FSM" dans Godot, et le FSM le lit. Le tube doit exister avant le FSM.
+START_PIPE="/tmp/peripherals.sock"
+if [ -e "$START_PIPE" ] && [ ! -p "$START_PIPE" ]; then
+    echo "[run_sim] $START_PIPE existe et n'est pas un tube (PeripheralsService actif ?) : supprime-le ou arrete ce service."
+    exit 1
+fi
+[ -p "$START_PIPE" ] || mkfifo "$START_PIPE" || { echo "[run_sim] mkfifo $START_PIPE impossible"; exit 1; }
+
 PIDS=()
 cleanup() {
     trap - INT TERM EXIT
     echo; echo "[run_sim] Arret des services..."
     for pid in "${PIDS[@]}"; do kill "$pid" 2>/dev/null; done
     wait 2>/dev/null
-    rm -f /dev/shm/picar_shm
+    rm -f /dev/shm/picar_shm "$START_PIPE"
     rm -rf /dev/shm/car
 }
 trap cleanup INT TERM EXIT
