@@ -7,6 +7,7 @@
 #   --host <ip>    adresse du robot (defaut : $PI_HOST ou 10.155.175.111)
 #   --no-build     n'effectue pas la compilation : envoie les binaires deja presents dans build-embedded/
 #   --config       envoie aussi picar.conf (celui du depot) : ECRASE celui du robot
+#   --fsm-hz <n>   regle la ligne HZ de /root/fsm.conf sur le robot (les autres reglages du fichier sont conserves)
 #   --run          lance /root/init sur le robot apres l'envoi (reste attache : Ctrl+C pour arreter)
 #   -h, --help     affiche cette aide
 #
@@ -23,6 +24,7 @@ HOST="${PI_HOST:-10.155.175.111}"
 DO_BUILD=true
 SEND_CONFIG=false
 RUN_AFTER=false
+FSM_HZ=""
 
 usage() { sed -n '2,/^# =====.*$/p' "$0" | sed -n '2,$p' | sed 's/^# \{0,1\}//' | sed '$d'; exit "${1:-0}"; }
 
@@ -32,6 +34,8 @@ while [[ $# -gt 0 ]]; do
         --host=*)   HOST="${1#*=}"; shift ;;
         --no-build) DO_BUILD=false; shift ;;
         --config)   SEND_CONFIG=true; shift ;;
+        --fsm-hz)   FSM_HZ="${2:?--fsm-hz demande une frequence}"; shift 2 ;;
+        --fsm-hz=*) FSM_HZ="${1#*=}"; shift ;;
         --run)      RUN_AFTER=true; shift ;;
         -h|--help)  usage 0 ;;
         *) echo "[deploy] option inconnue : $1 (voir --help)"; exit 1 ;;
@@ -78,6 +82,17 @@ echo "[deploy] 3/4  Envoi de ${#FILES[@]} fichier(s) vers ${TARGET}:/root/ ..."
 scp "${SSH_OPTS[@]}" "${FILES[@]}" "${TARGET}:/root/"
 
 ssh "${SSH_OPTS[@]}" "${TARGET}" 'chmod +x /root/init /root/FSM /root/Motors /root/Sensors /root/TelemetryService; ls -l /root'
+
+# Frequence du FSM : on ne change que la ligne HZ de /root/fsm.conf (sans ecraser les autres reglages du robot)
+if [ -n "${FSM_HZ}" ]; then
+    [[ "${FSM_HZ}" =~ ^[0-9]+$ ]] || { echo "[deploy] ERREUR : --fsm-hz doit etre un entier (recu : ${FSM_HZ})"; exit 1; }
+    echo "[deploy]      HZ=${FSM_HZ} dans /root/fsm.conf..."
+    ssh "${SSH_OPTS[@]}" "${TARGET}" \
+        "if [ -f /root/fsm.conf ]; then
+             if grep -q '^HZ=' /root/fsm.conf; then sed -i 's/^HZ=.*/HZ=${FSM_HZ}.0/' /root/fsm.conf; else echo 'HZ=${FSM_HZ}.0' >> /root/fsm.conf; fi
+             grep '^HZ=' /root/fsm.conf
+         else echo '[deploy] /root/fsm.conf absent : rien modifie (le FSM utilisera sa valeur par defaut)'; fi"
+fi
 
 # --- 4. Lancement ----------------------------------------------------------------------------------------------------
 if $RUN_AFTER; then
