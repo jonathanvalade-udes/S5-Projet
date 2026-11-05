@@ -29,6 +29,7 @@ public:
                       float current_dist_cm, const float line_darkness[5],
                       bool start_triggered, float avoid_side, float obstacle_stop_dist_cm,
                       float reverse_speed, float curve_safety_factor);
+                      float curve_safety_factor);
 
     void reset_controllers();
     float get_current_speed() const;
@@ -48,6 +49,7 @@ private:
 
     float m_cruise_speed{0.35f};
     float m_min_curve_speed{0.17f};
+    float m_last_steer_degrees{0.0f};
     float m_state_timer{0.0f};
     float m_state_distance{0.0f};
     bool m_course_finished{false};

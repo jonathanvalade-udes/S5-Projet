@@ -15,13 +15,8 @@ static const char* fsm_state_to_str(uint32_t state) {
         case shared::fsm::MachineStates::LineFollowingForward: return "LineFollowingForward";
         case shared::fsm::MachineStates::CollisionRisk: return "CollisionRisk";
         case shared::fsm::MachineStates::Stopped: return "Stopped";
-        case shared::fsm::MachineStates::CollisionOccured: return "CollisionOccured";
         case shared::fsm::MachineStates::RightDeviation: return "RightDeviation";
         case shared::fsm::MachineStates::LeftDeviation: return "LeftDeviation";
-        case shared::fsm::MachineStates::Reverse: return "Reverse";
-        case shared::fsm::MachineStates::LineSearching: return "LineSearching";
-        case shared::fsm::MachineStates::LineDetected: return "LineDetected";
-        case shared::fsm::MachineStates::LineSearchingTimedOut: return "LineSearchingTimedOut";
         case shared::fsm::MachineStates::Abort: return "Abort";
         case shared::fsm::MachineStates::Failure: return "Failure";
         default: return "Undefined";
