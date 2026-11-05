@@ -8,10 +8,12 @@ namespace {
 
 // ================================ REGLAGES DE LA MANOEUVRE ================================
 // Tout se regle ici, par essais. Les durees supposent la vitesse d'evitement ci-dessous.
-
-// --- Vitesses (m/s du FSM), relevees a MIN_CURVE_SPEED si trop basses ---
+//
+// Vitesses en m/s du FSM. Avec STRAIGHT_CRUISE_SPEED = 0.32, elles valent des m/s reels et 0.16 = 25 % de puissance
+// moteur (la puissance la plus basse qui fait avancer le vrai robot). Si la croisiere change, ces vitesses
+// changent de puissance : il faut alors recalibrer les durees.
 constexpr float FORWARD_SPEED = 0.16f;
-constexpr float REVERSE_SPEED = 0.12f;
+constexpr float REVERSE_SPEED = 0.16f;
 
 // --- Phase 1 : reculer (assez pour avoir la place d'ecarter la voiture avant d'arriver au cube) ---
 constexpr float REVERSE_DISTANCE_M = 0.25f;
@@ -23,10 +25,10 @@ constexpr float TURN_OUT_TIME_S = 1.10f;   // phase 2 (depart de l'arret)
 constexpr float TURN_TIME_S = 0.70f;       // phases 3 et 4 (robot deja en mouvement)
 
 // --- Phase 2 : s'ecarter (virage de 45 deg puis diagonale) ---
-constexpr float DIAGONAL_TIME_S = 1.90f;
+constexpr float DIAGONAL_TIME_S = 1.10f;
 
 // --- Phase 3 : se redresser (virage retour puis ligne droite pour depasser le cube) ---
-constexpr float PASS_TIME_S = 1.50f;
+constexpr float PASS_TIME_S = 0.80f;
 
 // --- Phase 4 : revenir (virage de 45 deg vers la piste) : dure TURN_TIME_S ---
 
@@ -41,8 +43,6 @@ constexpr float LINE_MAX_DARKNESS = 0.50f;
 constexpr float LINE_TOTAL_DARKNESS = 0.35f;
 constexpr float LINE_TOTAL_MIN_SENSOR = 0.35f;
 // ==========================================================================================
-
-float floor_speed(float nominal, float min_curve_speed) { return std::max(nominal, min_curve_speed); }
 
 } // namespace
 
@@ -113,8 +113,9 @@ ObstacleAvoidance::DeviationResult ObstacleAvoidance::update(
     float current_speed, float min_curve_speed,
     float& steering_deg, float& velocity) {
 
-    const float forward_speed = floor_speed(FORWARD_SPEED, min_curve_speed);
-    const float reverse_speed = floor_speed(REVERSE_SPEED, min_curve_speed);
+    (void)min_curve_speed;   // les vitesses de la manoeuvre sont fixes (voir REGLAGES), sans plancher
+    const float forward_speed = FORWARD_SPEED;
+    const float reverse_speed = REVERSE_SPEED;
 
     m_total_time += dt;
     m_phase_time += dt;
