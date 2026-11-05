@@ -9,6 +9,7 @@
 #include "TcpClient.hpp"
 #include "ProtocolHandler.hpp"
 #include "WebServer.hpp"
+#include "CsvLogger.hpp"
 
 namespace telemetry {
 
@@ -18,6 +19,8 @@ struct TelemetryClientConfig {
     int web_port{8080};
     bool enable_web{true};
     std::string web_root{"web"};
+    std::string csv_path{"telemetry_data.csv"};
+    bool enable_csv{true};
 };
 
 class TelemetryClient {
@@ -43,6 +46,7 @@ private:
     TcpClient m_tcp;
     ProtocolHandler m_proto;
     WebServer m_web;
+    CsvLogger m_csv_logger;
 
     std::thread m_tcp_thread;
 

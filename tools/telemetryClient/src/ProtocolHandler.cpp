@@ -5,7 +5,6 @@
 #include <iomanip>
 #include <chrono>
 #include <cstring>
-
 #include <cmath>
 
 namespace telemetry {
@@ -212,6 +211,16 @@ std::string ProtocolHandler::fsm_state_to_string(shared::fsm::MachineStates stat
     }
 }
 
+std::string ProtocolHandler::motor_state_to_string(shared::motors::MotorStates state) {
+    switch (state) {
+        case shared::motors::MotorStates::Init: return "Init";
+        case shared::motors::MotorStates::Idle: return "Idle";
+        case shared::motors::MotorStates::Running: return "Running";
+        case shared::motors::MotorStates::Abort: return "Abort";
+        default: return "Undefined";
+    }
+}
+
 static inline float safe_float(float val, float fallback = 0.0f) {
     if (std::isnan(val) || std::isinf(val)) {
         return fallback;
@@ -229,19 +238,27 @@ std::string ProtocolHandler::telemetry_to_json(const shared::car::CarTelemetry& 
     ss << "\"timestamp\":" << now << ",";
     ss << "\"seq\":" << seq_num << ",";
 
-    // FSM
-    auto fsm_state = telem.fsm.currentState;
+    // 1. FSM
+    auto fsm_cur = telem.fsm.currentState;
+    auto fsm_req = telem.fsm.requestedState;
     ss << "\"fsm\":{";
-    ss << "\"state_id\":" << static_cast<int>(fsm_state) << ",";
-    ss << "\"state_name\":\"" << fsm_state_to_string(fsm_state) << "\"";
+    ss << "\"state_id\":" << static_cast<int>(fsm_cur) << ",";
+    ss << "\"state_name\":\"" << fsm_state_to_string(fsm_cur) << "\",";
+    ss << "\"requested_state_id\":" << static_cast<int>(fsm_req) << ",";
+    ss << "\"requested_state_name\":\"" << fsm_state_to_string(fsm_req) << "\",";
+    ss << "\"flags\":" << telem.fsm.flags << ",";
+    ss << "\"error_code\":" << telem.fsm.errorCode;
     ss << "},";
 
-    // Sensors
+    // 2. Sensors
     ss << "\"sensors\":{";
+    ss << "\"component_flags\":" << telem.sensors.flags << ",";
+    ss << "\"component_error_code\":" << telem.sensors.errorCode << ",";
     ss << "\"ultrasonic\":{";
     ss << "\"raw_dist_cm\":" << safe_float(telem.sensors.ultrasonicSensor.rawDistanceCm) << ",";
     ss << "\"calc_dist_cm\":" << safe_float(telem.sensors.ultrasonicSensor.calculatedDistance) << ",";
-    ss << "\"flags\":" << telem.sensors.ultrasonicSensor.flags;
+    ss << "\"flags\":" << telem.sensors.ultrasonicSensor.flags << ",";
+    ss << "\"error_code\":" << telem.sensors.ultrasonicSensor.errorCode;
     ss << "},";
     ss << "\"line_follower\":{";
     ss << "\"flags\":" << telem.sensors.lineFollower.flags << ",";
@@ -251,34 +268,100 @@ std::string ProtocolHandler::telemetry_to_json(const shared::car::CarTelemetry& 
         ss << "{";
         ss << "\"raw\":" << s.rawADCValue << ",";
         ss << "\"normalized\":" << safe_float(s.normalizedValue) << ",";
-        ss << "\"corrector\":" << safe_float(s.correctorValue);
+        ss << "\"corrector\":" << safe_float(s.correctorValue) << ",";
+        ss << "\"error_code\":" << s.errorCode;
         ss << "}" << (i < 4 ? "," : "");
     }
     ss << "]";
     ss << "}";
     ss << "},";
 
-    // Motors & Steering
+    // 3. Motors
     ss << "\"motors\":{";
+    ss << "\"state_id\":" << static_cast<int>(telem.motors.state) << ",";
+    ss << "\"state_name\":\"" << motor_state_to_string(telem.motors.state) << "\",";
+    ss << "\"component_flags\":" << telem.motors.componentFlags << ",";
+    ss << "\"error_code\":" << telem.motors.errorCode << ",";
+
+    // Left Motor
+    const auto& ml = telem.motors.leftMotor;
     ss << "\"left\":{";
-    ss << "\"target_throttle\":" << safe_float(telem.motors.leftMotor.normalizedMotorThrottleTargetted) << ",";
-    ss << "\"applied_throttle\":" << safe_float(telem.motors.leftMotor.normalizedMotorThrottleApplied) << ",";
-    ss << "\"encoder\":" << telem.motors.leftMotor.motorEncoder;
-    ss << "},";
-    ss << "\"right\":{";
-    ss << "\"target_throttle\":" << safe_float(telem.motors.rightMotor.normalizedMotorThrottleTargetted) << ",";
-    ss << "\"applied_throttle\":" << safe_float(telem.motors.rightMotor.normalizedMotorThrottleApplied) << ",";
-    ss << "\"encoder\":" << telem.motors.rightMotor.motorEncoder;
-    ss << "},";
-    ss << "\"steering\":{";
-    ss << "\"target_angle\":" << safe_float(telem.motors.steeringServo.normalizedTargettedAngle) << ",";
-    ss << "\"current_angle\":" << safe_float(telem.motors.steeringServo.normalizedCurrentAngle);
+    ss << "\"target_throttle\":" << safe_float(ml.normalizedMotorThrottleTargetted) << ",";
+    ss << "\"applied_throttle\":" << safe_float(ml.normalizedMotorThrottleApplied) << ",";
+    ss << "\"encoder\":" << ml.motorEncoder << ",";
+    ss << "\"motor_flags\":" << static_cast<int>(ml.motorFlags) << ",";
+    ss << "\"pid_flags\":" << static_cast<int>(ml.pidFlags) << ",";
+    ss << "\"pid\":{";
+    ss << "\"kp\":" << safe_float(ml.pidInfo.powerCoefficient) << ",";
+    ss << "\"kd\":" << safe_float(ml.pidInfo.derivativeCoefficient) << ",";
+    ss << "\"ki\":" << safe_float(ml.pidInfo.integralCoefficient);
     ss << "}";
     ss << "},";
 
-    // Services flags
+    // Right Motor
+    const auto& mr = telem.motors.rightMotor;
+    ss << "\"right\":{";
+    ss << "\"target_throttle\":" << safe_float(mr.normalizedMotorThrottleTargetted) << ",";
+    ss << "\"applied_throttle\":" << safe_float(mr.normalizedMotorThrottleApplied) << ",";
+    ss << "\"encoder\":" << mr.motorEncoder << ",";
+    ss << "\"motor_flags\":" << static_cast<int>(mr.motorFlags) << ",";
+    ss << "\"pid_flags\":" << static_cast<int>(mr.pidFlags) << ",";
+    ss << "\"pid\":{";
+    ss << "\"kp\":" << safe_float(mr.pidInfo.powerCoefficient) << ",";
+    ss << "\"kd\":" << safe_float(mr.pidInfo.derivativeCoefficient) << ",";
+    ss << "\"ki\":" << safe_float(mr.pidInfo.integralCoefficient);
+    ss << "}";
+    ss << "},";
+
+    // Steering Servo
+    const auto& st = telem.motors.steeringServo;
+    ss << "\"steering\":{";
+    ss << "\"target_angle\":" << safe_float(st.normalizedTargettedAngle) << ",";
+    ss << "\"current_angle\":" << safe_float(st.normalizedCurrentAngle) << ",";
+    ss << "\"target_ccr\":" << st.targetedCCR << ",";
+    ss << "\"current_ccr\":" << st.currentCCR << ",";
+    ss << "\"coefficient\":" << safe_float(st.coefficient) << ",";
+    ss << "\"flags\":" << st.flags << ",";
+    ss << "\"error_code\":" << st.errorCode;
+    ss << "}";
+    ss << "},";
+
+    // 4. Aux Servo
+    const auto& sv = telem.servo;
+    ss << "\"aux_servo\":{";
+    ss << "\"target_angle\":" << safe_float(sv.normalizedTargettedAngle) << ",";
+    ss << "\"current_angle\":" << safe_float(sv.normalizedCurrentAngle) << ",";
+    ss << "\"target_ccr\":" << sv.targetedCCR << ",";
+    ss << "\"current_ccr\":" << sv.currentCCR << ",";
+    ss << "\"coefficient\":" << safe_float(sv.coefficient) << ",";
+    ss << "\"flags\":" << sv.flags << ",";
+    ss << "\"error_code\":" << sv.errorCode;
+    ss << "},";
+
+    // 5. Services & Daemons
     ss << "\"services\":{";
-    ss << "\"flags\":" << telem.services.flags;
+    ss << "\"flags\":" << telem.services.flags << ",";
+    ss << "\"timestamp\":" << telem.services.timestamp << ",";
+    ss << "\"handler_error_code\":" << telem.services.handlerErrorCode << ",";
+    ss << "\"daemons_count\":" << telem.services.deamonsLenght << ",";
+    ss << "\"daemons\":[";
+    uint16_t d_count = std::min<uint16_t>(telem.services.deamonsLenght, shared::services::MAX_DAMEONS);
+    for (uint16_t i = 0; i < d_count; ++i) {
+        const auto& d = telem.services.daemons[i];
+        std::string d_name = "Inconnu";
+        if (d.id == 1) d_name = "Sensors";
+        else if (d.id == 2) d_name = "Motors";
+        else if (d.id == 3) d_name = "Servo";
+        else if (d.id == 4) d_name = "FSM";
+
+        ss << "{";
+        ss << "\"id\":" << static_cast<int>(d.id) << ",";
+        ss << "\"name\":\"" << d_name << "\",";
+        ss << "\"status\":" << static_cast<int>(d.status) << ",";
+        ss << "\"error_code\":" << static_cast<int>(d.errorCode);
+        ss << "}" << (i + 1 < d_count ? "," : "");
+    }
+    ss << "]";
     ss << "}";
 
     ss << "}";

@@ -164,6 +164,9 @@ void WebServer::handle_http_request(int client_fd, const std::string& request) {
             }
             send_response(client_fd, 200, "application/json", telem);
             close(client_fd);
+        } else if (path == "/api/export_csv" || path == "/api/download_csv") {
+            serve_csv_download(client_fd);
+            close(client_fd);
         } else if (path == "/api/stream") {
             // Configuration du flux Server-Sent Events (SSE) direct sans mise en tampon
             std::string sse_hdr = 
@@ -277,6 +280,40 @@ void WebServer::serve_file(int client_fd, const std::string& filepath, const std
     std::string content = ss.str();
 
     send_response(client_fd, 200, content_type, content);
+}
+
+void WebServer::serve_csv_download(int client_fd) {
+    std::string path;
+    {
+        std::lock_guard<std::mutex> lock(m_csv_mutex);
+        path = m_csv_filepath;
+    }
+
+    std::ifstream file(path, std::ios::binary);
+    if (!file.is_open()) {
+        send_response(client_fd, 404, "text/plain", "Fichier CSV introuvable ou non encore genere.");
+        return;
+    }
+
+    std::ostringstream ss;
+    ss << file.rdbuf();
+    std::string content = ss.str();
+
+    std::ostringstream resp_stream;
+    resp_stream << "HTTP/1.1 200 OK\r\n";
+    resp_stream << "Content-Type: text/csv; charset=utf-8\r\n";
+    resp_stream << "Content-Disposition: attachment; filename=\"telemetry_data.csv\"\r\n";
+    resp_stream << "Content-Length: " << content.size() << "\r\n";
+    resp_stream << "Access-Control-Allow-Origin: *\r\n";
+    resp_stream << "Connection: close\r\n\r\n";
+    resp_stream << content;
+
+    std::string resp = resp_stream.str();
+    int flags = 0;
+#if defined(MSG_NOSIGNAL)
+    flags |= MSG_NOSIGNAL;
+#endif
+    send(client_fd, resp.data(), resp.size(), flags);
 }
 
 void WebServer::send_response(int client_fd, int status_code, const std::string& content_type, const std::string& body) {

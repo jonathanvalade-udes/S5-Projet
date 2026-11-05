@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FastDrink — Telemetry Client & Control Hub</title>
+    <title>FastDrink — Telemetry Client & Diagnostic Hub</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <header class="navbar">
         <div class="brand">
             <span class="logo-icon">🏎️</span>
-            <h1>FastDrink <span>Telemetry Hub</span></h1>
+            <h1>FastDrink <span>Telemetry & Diagnostic Hub</span></h1>
         </div>
         <div class="status-bar">
             <div id="connection-status" class="status-badge disconnected">
@@ -26,16 +26,16 @@
                 <span id="packet-seq">0</span>
             </div>
             <div class="info-pill">
-                <span class="pill-label">Fréquence:</span>
+                <span class="pill-label">Débit:</span>
                 <span id="packet-rate">0 Hz</span>
             </div>
         </div>
     </header>
 
     <main class="dashboard-grid">
-        <!-- Section Commandes Rapides -->
+        <!-- Section Commandes Prioritaires & Export CSV -->
         <section class="card quick-actions-card">
-            <h2>⚡ Commandes Prioritaires</h2>
+            <h2>⚡ Commandes Prioritaires & Export Télémétrie</h2>
             <div class="actions-group">
                 <button id="btn-start" class="btn btn-start" onclick="sendCommand('trigger_start')">
                     ▶ DÉPART FSM
@@ -43,18 +43,122 @@
                 <button id="btn-stop" class="btn btn-stop" onclick="sendCommand('emergency_stop')">
                     🛑 ARRÊT D'URGENCE
                 </button>
-                <button id="btn-export" class="btn btn-export" onclick="sendCommand('export_usb')">
-                    💾 EXPORT USB / FLUSH
+                <button id="btn-export-usb" class="btn btn-export" onclick="sendCommand('export_usb')">
+                    💾 FLUSH USB EMBARQUÉ
                 </button>
+                <a href="/api/export_csv" download="telemetry_data.csv" id="btn-download-csv" class="btn btn-csv">
+                    📥 TÉLÉCHARGER CSV COMPLET
+                </a>
+            </div>
+        </section>
+
+        <!-- Centre de Diagnostic Global & États d'Erreur -->
+        <section class="card diagnostic-card">
+            <h2>🚨 Centre de Diagnostic & Erreurs Système</h2>
+            <div id="system-health-banner" class="health-banner health-ok">
+                <span class="health-icon">✓</span>
+                <span id="health-status-text">Système Nominal — Zéro Erreur Active</span>
+            </div>
+            <div class="diag-table">
+                <div class="diag-item">
+                    <span class="diag-label">Erreur FSM</span>
+                    <span id="err-fsm" class="hex-badge ok">0x00000000</span>
+                </div>
+                <div class="diag-item">
+                    <span class="diag-label">Erreur Moteurs</span>
+                    <span id="err-motors" class="hex-badge ok">0x00000000</span>
+                </div>
+                <div class="diag-item">
+                    <span class="diag-label">Erreur Direction</span>
+                    <span id="err-steering" class="hex-badge ok">0x00000000</span>
+                </div>
+                <div class="diag-item">
+                    <span class="diag-label">Erreur Servo Aux</span>
+                    <span id="err-aux-servo" class="hex-badge ok">0x00000000</span>
+                </div>
+                <div class="diag-item">
+                    <span class="diag-label">Erreur Capteurs</span>
+                    <span id="err-sensors" class="hex-badge ok">0x0000</span>
+                </div>
+                <div class="diag-item">
+                    <span class="diag-label">Erreur Ultrasons</span>
+                    <span id="err-sonar" class="hex-badge ok">0x00000000</span>
+                </div>
+                <div class="diag-item">
+                    <span class="diag-label">Erreur Gestionnaire</span>
+                    <span id="err-handler" class="hex-badge ok">0x00000000</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Superviseur des 4 Daemons IPC -->
+        <section class="card daemons-card">
+            <h2>🛡️ Superviseur des Daemons IPC</h2>
+            <div class="daemons-grid">
+                <div class="daemon-item" id="daemon-1">
+                    <div class="daemon-header">
+                        <span class="daemon-dot"></span>
+                        <span class="daemon-title">1. Sensors Daemon</span>
+                    </div>
+                    <div class="daemon-meta">
+                        <span>Statut: <b id="d1-status" class="status-offline">Inactif</b></span>
+                        <span>Err: <code id="d1-err">0x00</code></span>
+                    </div>
+                </div>
+                <div class="daemon-item" id="daemon-2">
+                    <div class="daemon-header">
+                        <span class="daemon-dot"></span>
+                        <span class="daemon-title">2. Motors Daemon</span>
+                    </div>
+                    <div class="daemon-meta">
+                        <span>Statut: <b id="d2-status" class="status-offline">Inactif</b></span>
+                        <span>Err: <code id="d2-err">0x00</code></span>
+                    </div>
+                </div>
+                <div class="daemon-item" id="daemon-3">
+                    <div class="daemon-header">
+                        <span class="daemon-dot"></span>
+                        <span class="daemon-title">3. Servo Daemon</span>
+                    </div>
+                    <div class="daemon-meta">
+                        <span>Statut: <b id="d3-status" class="status-offline">Inactif</b></span>
+                        <span>Err: <code id="d3-err">0x00</code></span>
+                    </div>
+                </div>
+                <div class="daemon-item" id="daemon-4">
+                    <div class="daemon-header">
+                        <span class="daemon-dot"></span>
+                        <span class="daemon-title">4. FSM Daemon</span>
+                    </div>
+                    <div class="daemon-meta">
+                        <span>Statut: <b id="d4-status" class="status-offline">Inactif</b></span>
+                        <span>Err: <code id="d4-err">0x00</code></span>
+                    </div>
+                </div>
+            </div>
+            <div class="service-footer">
+                <span>Horodatage SHM : <b id="services-timestamp">0</b> ms</span>
+                <span>Daemons Déclarés : <b id="services-daemons-count">0</b></span>
             </div>
         </section>
 
         <!-- Section Machine d'État FSM -->
         <section class="card fsm-card">
-            <h2>🧠 État FSM Robot</h2>
-            <div class="fsm-display">
-                <div id="fsm-badge" class="fsm-state-badge state-init">Initialisation</div>
-                <div class="fsm-id-text">Code État : <span id="fsm-id">0</span></div>
+            <h2>🧠 États & Transitions FSM</h2>
+            <div class="fsm-dual-grid">
+                <div class="fsm-box">
+                    <span class="sub-label">État Actuel</span>
+                    <div id="fsm-badge" class="fsm-state-badge state-init">Initialisation</div>
+                    <div class="fsm-id-text">Code: <span id="fsm-id">0</span></div>
+                </div>
+                <div class="fsm-box">
+                    <span class="sub-label">État Demandé</span>
+                    <div id="fsm-req-badge" class="fsm-state-badge state-init">Initialisation</div>
+                    <div class="fsm-id-text">Code: <span id="fsm-req-id">0</span></div>
+                </div>
+            </div>
+            <div class="fsm-flags-summary">
+                <span>Masque de Drapeaux : <code id="fsm-flags-hex">0x0000</code></span>
             </div>
         </section>
 
@@ -71,48 +175,65 @@
                 <div class="metric-meta">
                     <span>Brute: <b id="sonar-raw">--</b> cm</span>
                     <span>Zone: <b id="sonar-zone">Normal</b></span>
+                    <span>Flags: <code id="sonar-flags-raw">0x00</code></span>
                 </div>
             </div>
         </section>
 
         <!-- Section Capteurs de Suivi de Ligne -->
         <section class="card line-card">
-            <h2>🛤️ Capteurs Suivi de Ligne (5x TCRT5000)</h2>
+            <h2>🛤️ Capteurs Suivi de Ligne (5x TCRT5000 ADC 10-bit)</h2>
             <div class="line-sensors-visual">
                 <div class="sensor-node" id="sensor-0">
                     <div class="sensor-indicator"></div>
                     <span class="sensor-label">S1 (-2)</span>
                     <span class="sensor-val" id="sval-0">0.00</span>
+                    <span class="sensor-subval" id="sraw-0">ADC: 0</span>
+                    <span class="sensor-subval" id="scorr-0">Corr: 0.0</span>
                 </div>
                 <div class="sensor-node" id="sensor-1">
                     <div class="sensor-indicator"></div>
                     <span class="sensor-label">S2 (-1)</span>
                     <span class="sensor-val" id="sval-1">0.00</span>
+                    <span class="sensor-subval" id="sraw-1">ADC: 0</span>
+                    <span class="sensor-subval" id="scorr-1">Corr: 0.0</span>
                 </div>
                 <div class="sensor-node" id="sensor-2">
                     <div class="sensor-indicator"></div>
                     <span class="sensor-label">S3 (0)</span>
                     <span class="sensor-val" id="sval-2">0.00</span>
+                    <span class="sensor-subval" id="sraw-2">ADC: 0</span>
+                    <span class="sensor-subval" id="scorr-2">Corr: 0.0</span>
                 </div>
                 <div class="sensor-node" id="sensor-3">
                     <div class="sensor-indicator"></div>
                     <span class="sensor-label">S4 (+1)</span>
                     <span class="sensor-val" id="sval-3">0.00</span>
+                    <span class="sensor-subval" id="sraw-3">ADC: 0</span>
+                    <span class="sensor-subval" id="scorr-3">Corr: 0.0</span>
                 </div>
                 <div class="sensor-node" id="sensor-4">
                     <div class="sensor-indicator"></div>
                     <span class="sensor-label">S5 (+2)</span>
                     <span class="sensor-val" id="sval-4">0.00</span>
+                    <span class="sensor-subval" id="sraw-4">ADC: 0</span>
+                    <span class="sensor-subval" id="scorr-4">Corr: 0.0</span>
                 </div>
             </div>
             <div class="line-meta">
                 <span>Statut : <b id="line-status">Recherche...</b></span>
+                <span>Seuil Calibré : <b>60</b> (TCRT5000)</span>
+                <span>Flags : <code id="line-flags-hex">0x0000</code></span>
             </div>
         </section>
 
-        <!-- Section Moteurs & Direction -->
+        <!-- Section Moteurs & Registres Encodeurs / PWM CCR -->
         <section class="card motor-card">
-            <h2>⚙️ Moteurs & Servomoteur</h2>
+            <h2>⚙️ Moteurs & Registres Matériels (PWM / CCR / Encoders)</h2>
+            <div class="motor-state-bar">
+                <span>État Global Moteurs : <b id="motor-state-text" class="state-pill">Init</b></span>
+                <span>Flags Composant : <code id="motor-comp-flags">0x0000</code></span>
+            </div>
             <div class="motor-grid">
                 <div class="motor-box">
                     <div class="box-title">Moteur Gauche</div>
@@ -122,6 +243,13 @@
                     <div class="metric-meta">
                         <span>Consigne: <b id="motor-left-tgt">0%</b></span>
                         <span>Appliqué: <b id="motor-left-app">0%</b></span>
+                    </div>
+                    <div class="register-meta">
+                        <span>Codeur (ticks): <b id="motor-left-enc" class="reg-val">0</b></span>
+                        <span>Flags: <code id="m-l-flags">0x00</code></span>
+                    </div>
+                    <div class="pid-meta">
+                        <span>PID: P=<b id="m-l-kp">0.0</b> I=<b id="m-l-ki">0.0</b> D=<b id="m-l-kd">0.0</b></span>
                     </div>
                 </div>
                 <div class="motor-box">
@@ -133,13 +261,84 @@
                         <span>Consigne: <b id="motor-right-tgt">0%</b></span>
                         <span>Appliqué: <b id="motor-right-app">0%</b></span>
                     </div>
+                    <div class="register-meta">
+                        <span>Codeur (ticks): <b id="motor-right-enc" class="reg-val">0</b></span>
+                        <span>Flags: <code id="m-r-flags">0x00</code></span>
+                    </div>
+                    <div class="pid-meta">
+                        <span>PID: P=<b id="m-r-kp">0.0</b> I=<b id="m-r-ki">0.0</b> D=<b id="m-r-kd">0.0</b></span>
+                    </div>
                 </div>
             </div>
             <div class="steering-box">
-                <div class="box-title">Angle de Braquage Direction : <span id="steering-val">0.0°</span></div>
+                <div class="box-title">Direction (Servo PCA9685 Canal 0) : <span id="steering-val">0.0°</span></div>
                 <div class="steering-gauge-bar">
                     <div class="steering-center-mark"></div>
                     <div id="steering-indicator" class="steering-pointer" style="left: 50%;"></div>
+                </div>
+                <div class="ccr-meta">
+                    <span>CCR Actuel: <b id="st-cur-ccr" class="reg-val">307</b> ticks</span>
+                    <span>CCR Consigne: <b id="st-tgt-ccr" class="reg-val">307</b> ticks</span>
+                    <span>Coeff: <b id="st-coeff">1.00</b></span>
+                    <span>Flags: <code id="st-flags">0x0000</code></span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Matrice Exhaustive des Drapeaux & Bitfields -->
+        <section class="card flags-card">
+            <h2>🏷️ Matrice des Drapeaux Systèmes & Périphériques</h2>
+            
+            <div class="flag-group">
+                <div class="flag-group-title">Drapeaux FSM</div>
+                <div class="flags-matrix">
+                    <span id="flag-fsm-rdy" class="flag-badge">RDY</span>
+                    <span id="flag-fsm-disc" class="flag-badge">DISCOVERABLE</span>
+                    <span id="flag-fsm-req" class="flag-badge">ALLOW_REQUEST_STATE</span>
+                    <span id="flag-fsm-auto" class="flag-badge">AUTOMATE_DEVIATION</span>
+                    <span id="flag-fsm-headless" class="flag-badge">HEADLESS_CTRL</span>
+                    <span id="flag-fsm-stall" class="flag-badge err">STALLED</span>
+                    <span id="flag-fsm-anom" class="flag-badge warn">ANOMALIES</span>
+                    <span id="flag-fsm-warn" class="flag-badge warn">WARNING</span>
+                    <span id="flag-fsm-cfg" class="flag-badge err">CONFIG_ERROR</span>
+                    <span id="flag-fsm-drv" class="flag-badge err">DRIVER_ERROR</span>
+                    <span id="flag-fsm-sock" class="flag-badge err">SOCKET_ERROR</span>
+                    <span id="flag-fsm-shm" class="flag-badge err">SHM_ERROR</span>
+                </div>
+            </div>
+
+            <div class="flag-group">
+                <div class="flag-group-title">Drapeaux Services & Système (OS / IPC)</div>
+                <div class="flags-matrix">
+                    <span id="flag-srv-sys" class="flag-badge">SYSTEM_STARTED</span>
+                    <span id="flag-srv-shm" class="flag-badge">SHM_MOUNTED</span>
+                    <span id="flag-srv-dev" class="flag-badge">DEVICE_MOUNTED</span>
+                    <span id="flag-srv-proc" class="flag-badge">PROC_MOUNTED</span>
+                    <span id="flag-srv-daemons" class="flag-badge">DAEMONS_STARTED</span>
+                    <span id="flag-srv-sock" class="flag-badge">SOCKET_ENABLED</span>
+                    <span id="flag-srv-disc" class="flag-badge">DISCOVERABLE</span>
+                    <span id="flag-srv-eth" class="flag-badge">ETH_PLUGGED</span>
+                    <span id="flag-srv-dhcp" class="flag-badge">DHCP_ENABLED</span>
+                    <span id="flag-srv-ssh" class="flag-badge">SSH_ENABLED</span>
+                    <span id="flag-srv-shell" class="flag-badge">SHELL_ENABLED</span>
+                    <span id="flag-srv-stall" class="flag-badge err">PROCESS_STALLED</span>
+                    <span id="flag-srv-anom" class="flag-badge warn">ANOMALIES_DETECTED</span>
+                </div>
+            </div>
+
+            <div class="flag-group">
+                <div class="flag-group-title">Drapeaux Moteurs, Direction & Capteurs</div>
+                <div class="flags-matrix">
+                    <span id="flag-mot-rdy" class="flag-badge">MOTOR_RDY</span>
+                    <span id="flag-mot-det" class="flag-badge">MOTOR_DETECTED</span>
+                    <span id="flag-mot-enc" class="flag-badge">ENCODER_DETECTED</span>
+                    <span id="flag-mot-pid" class="flag-badge">PID_APPLIED</span>
+                    <span id="flag-srv-pwm" class="flag-badge">PWM_DETECTED</span>
+                    <span id="flag-srv-rdy" class="flag-badge">SERVO_RDY</span>
+                    <span id="flag-sns-obj" class="flag-badge">OBJ_DETECTED</span>
+                    <span id="flag-sns-act" class="flag-badge">SONAR_ACTIVE</span>
+                    <span id="flag-line-fol" class="flag-badge">LINE_FOLLOWED</span>
+                    <span id="flag-line-lost" class="flag-badge warn">LINE_LOST</span>
                 </div>
             </div>
         </section>
@@ -215,7 +414,7 @@
     </main>
 
     <footer>
-        <p>Projet FastDrink S5-GI &bull; Architecture Microservices C++17 &bull; Docker Hub</p>
+        <p>Projet FastDrink S5-GI &bull; Architecture Microservices C++17 &bull; Docker Hub &bull; Logging CSV Temps Réel</p>
     </footer>
 
     <script src="app.js"></script>

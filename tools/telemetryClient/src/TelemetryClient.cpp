@@ -20,7 +20,15 @@ bool TelemetryClient::init() {
     if (m_config.enable_web) {
         std::cout << "  Serveur Web : http://localhost:" << m_config.web_port << std::endl;
     }
+    if (m_config.enable_csv) {
+        std::cout << "  Fichier CSV : " << m_config.csv_path << std::endl;
+    }
     std::cout << "==================================================" << std::endl;
+
+    if (m_config.enable_csv) {
+        m_csv_logger.open(m_config.csv_path);
+        m_web.set_csv_filepath(m_config.csv_path);
+    }
 
     if (m_config.enable_web) {
         m_web.set_command_callback([this](const std::string& cmd) {
@@ -56,6 +64,9 @@ void TelemetryClient::stop() {
 
     m_tcp.disconnect();
     m_web.stop();
+    if (m_config.enable_csv) {
+        m_csv_logger.close();
+    }
 
     if (m_tcp_thread.joinable()) {
         m_tcp_thread.join();
@@ -138,6 +149,12 @@ void TelemetryClient::tcp_worker_loop() {
 
         if (ok) {
             last_activity_time = now;
+
+            // Enregistrement CSV continu et non-bloquant de TOUTES les données
+            if (m_config.enable_csv) {
+                m_csv_logger.log_record(seq, telem);
+            }
+
             // Diffusion Web SSE régulée à ~60 Hz avec la dernière trame fraîche
             if (m_config.enable_web) {
                 if (now - last_broadcast_time >= MIN_BROADCAST_INTERVAL) {
