@@ -71,6 +71,16 @@ docker compose -f services/docker-compose.yml up simulation
 
 ## 📡 Déploiement sur le Robot (Raspberry Pi)
 
+### En une commande (WSL ou Git Bash)
+```bash
+./services/deploy.sh              # compile, arrête les services du robot, copie dans /root/
+./services/deploy.sh --run        # idem, puis lance /root/init (Ctrl+C pour arrêter)
+./services/deploy.sh --no-build   # envoie sans recompiler
+./services/deploy.sh --config     # envoie aussi picar.conf (écrase celui du robot)
+./services/deploy.sh --host <ip>  # autre adresse que 10.155.175.111
+```
+
+### À la main
 Transférer tous les binaires compilés sur le robot via SCP :
 ```bash
 scp services/build-embedded/Sensors/Sensors \

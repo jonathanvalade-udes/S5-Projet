@@ -22,7 +22,7 @@ Usage: $0 [options] [target]
 
 Options:
   --static        Build executables with static linking (-static)
-  --embedded      Build for Linux ARM64 (aarch64). Uses Docker automatically on macOS.
+  --embedded      Build for Linux ARM64 (aarch64). Uses Docker (linux/arm64) when the host is not ARM64.
   --test          Run the full test suite (ctest) inside the Linux environment
   --sim           Start SimBridge + FSM in Docker for Godot simulation (port 9000)
   --build-docker  Build or update the Docker builder image (alpine-picar-builder) and exit
@@ -98,26 +98,33 @@ if [[ "${SIM_MODE}" == true ]]; then
     exit 0
 fi
 
-# Detect if we are on macOS needing Linux ARM64 compilation
+# Compilation pour le robot (Linux ARM64) : sans toolchain croisée et sur une machine qui n'est pas ARM64
+# (Mac Intel, Windows, WSL, Linux x86), on compile dans un conteneur Docker linux/arm64 (émulé si besoin).
+# Sans ça, le build produirait des binaires de la machine locale (x86-64), qui ne s'exécutent pas sur le robot.
 if [[ "${EMBEDDED_MODE}" == true ]]; then
-    if [[ "$(uname -s)" == "Darwin" ]] && ! command -v aarch64-linux-gnu-g++ &>/dev/null; then
+    export MSYS_NO_PATHCONV=1   # Git Bash (Windows) : ne pas convertir les chemins /workspace passés à Docker
+    HOST_ARCH="$(uname -m)"
+    # docker.exe (Windows) ne comprend pas les chemins /c/... de Git Bash : on lui donne le chemin au format Windows
+    DOCKER_DIR="${SCRIPT_DIR}"
+    command -v cygpath &>/dev/null && DOCKER_DIR="$(cygpath -m "${SCRIPT_DIR}")"
+    if ! command -v aarch64-linux-gnu-g++ &>/dev/null && [[ "${HOST_ARCH}" != "aarch64" && "${HOST_ARCH}" != "arm64" ]]; then
         if command -v docker &>/dev/null && docker info &>/dev/null; then
-            echo "==> macOS detected without aarch64 cross-toolchain."
-            echo "==> Using Docker (native aarch64 Linux container) to build static ARM64 binaries..."
+            echo "==> Pas de toolchain aarch64 sur cette machine (${HOST_ARCH})."
+            echo "==> Compilation des binaires ARM64 statiques dans Docker (linux/arm64, émulé si besoin : plus lent)..."
             IMAGE_NAME="alpine-picar-builder"
             if ! docker image inspect "${IMAGE_NAME}" &>/dev/null; then
                 echo "==> Docker image '${IMAGE_NAME}' not found. Building it once from Dockerfile.builder..."
-                docker build -f "${SCRIPT_DIR}/Dockerfile.builder" -t "${IMAGE_NAME}" "${SCRIPT_DIR}"
+                docker build --platform linux/arm64 -f "${DOCKER_DIR}/Dockerfile.builder" -t "${IMAGE_NAME}" "${DOCKER_DIR}"
             fi
             if [[ "${RUN_TESTS}" == true ]]; then
                 CMD="cmake -B /workspace/build-embedded -S /workspace -DSTATIC=${STATIC_FLAG} && cmake --build /workspace/build-embedded && ctest --test-dir /workspace/build-embedded --output-on-failure"
-                docker run --rm --dns 8.8.8.8 -v "${SCRIPT_DIR}":/workspace -w /workspace "${IMAGE_NAME}" sh -c "${CMD}"
+                docker run --rm --platform linux/arm64 --dns 8.8.8.8 -v "${DOCKER_DIR}":/workspace -w /workspace "${IMAGE_NAME}" sh -c "${CMD}"
                 echo ""
                 echo "==> ALL TESTS PASSED SUCCESSFULLY IN DOCKER (LINUX)!"
                 exit 0
             fi
             CMD="cmake -B /workspace/build-embedded -S /workspace -DSTATIC=${STATIC_FLAG} && cmake --build /workspace/build-embedded --target ${TARGET}"
-            docker run --rm --dns 8.8.8.8 -v "${SCRIPT_DIR}":/workspace -w /workspace "${IMAGE_NAME}" sh -c "${CMD}"
+            docker run --rm --platform linux/arm64 --dns 8.8.8.8 -v "${DOCKER_DIR}":/workspace -w /workspace "${IMAGE_NAME}" sh -c "${CMD}"
             echo ""
             echo "==> SUCCESS! Binaries generated in services/build-embedded/:"
             file "${BUILD_DIR}/ServiceManager/init" "${BUILD_DIR}/FSM/FSM" "${BUILD_DIR}/Sensors/Sensors" "${BUILD_DIR}/Motors/Motors" "${BUILD_DIR}/TelemetryService/TelemetryService"
