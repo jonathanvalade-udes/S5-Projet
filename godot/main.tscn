@@ -144,7 +144,7 @@ text = "Stop FSM"
 transform = Transform3D(-0.00060717657, 0, -0.9999998, 0, 1, 0, 0.9999998, 0, -0.00060717657, -0.0013141632, 0.10000006, 1.0050113)
 
 [node name="obstacle2" parent="." unique_id=104985700 instance=ExtResource("10_4c57u")]
-transform = Transform3D(0.9999916, 0, 0.0040991195, 0, 1, 0, -0.0040991195, 0, 0.9999916, -0.32261512, 0.10000006, -0.076802135)
+transform = Transform3D(0.9999916, 0, 0.0040991195, 0, 1, 0, -0.0040991195, 0, 0.9999916, -0.32261512, 0.10000006, -0.43937427)
 
 [connection signal="pressed" from="GridContainer/btn_Connect" to="." method="_on_connect_pressed"]
 [connection signal="pressed" from="GridContainer/btn_Quit" to="." method="_on_quit_pressed"]

@@ -1,4 +1,9 @@
 #include "SimBridge.hpp"
+<<<<<<< Updated upstream
+=======
+#include "control/picar_constants.hpp"
+#include "control/picar_config.hpp"
+>>>>>>> Stashed changes
 #include <iostream>
 #include <chrono>
 #include <thread>
@@ -101,10 +106,55 @@ void SimBridge::run() {
             std::string response = SimProtocolHandler::serialize_command(cmd_out);
             m_tcp_server.send_response(response);
 
+<<<<<<< Updated upstream
             if (packet_count % 1000 == 0) {
                 std::cout << "[SimBridge RT] [" << (m_sim_mode ? "SIM" : "VEHICLE")
                           << "] Packets: " << packet_count << " | Vel: " << cmd_out.velocity
                           << " | Steer: " << cmd_out.direction << std::endl;
+=======
+                    float target_spd = m_telemetry->target_speed;
+                    float target_steer = m_telemetry->target_steering;
+                    bool emergency = m_telemetry->emergency_stop;
+                    float current_dist = m_telemetry->filtered_dist;
+                    uint8_t current_lines[5];
+                    for (int i = 0; i < 5; ++i) {
+                        current_lines[i] = m_telemetry->line_sensors[i];
+                    }
+                    pthread_mutex_unlock(&(m_telemetry->mtx));
+
+                    GodotCommandOut cmd_out;
+                    // Même relation puissance -> vitesse que sur le robot (50 % = ~0,32 m/s), quelle que soit la croisière configurée
+                    cmd_out.velocity = (target_spd / 50.0f) * picar::constants::PHYSICAL_SPEED_AT_HALF_THROTTLE;
+                    // Normalisation de l'angle de braquage [-1.0, 1.0] pour l'épure d'Ackermann de Godot (+-48°)
+                    cmd_out.direction = -std::clamp(target_steer / 45.0f, -1.0f, 1.0f);  // miroir Godot (voir plus haut)
+                    cmd_out.brake = emergency;
+
+                    if (!m_sim_mode) {
+                        // En mode véhicule réel, transmettre aussi les valeurs des capteurs réels vers le client/dashboard
+                        cmd_out.distance = current_dist;
+                        for (int i = 0; i < 5; ++i) {
+                            cmd_out.line_sensors[i] = current_lines[i];
+                        }
+                        cmd_out.has_sensors = true;
+                    }
+
+                    std::string response = SimpleJson::serialize_command(cmd_out);
+                    ssize_t sent = send(client_fd, response.c_str(), response.size(), 0);
+                    if (sent < 0) {
+                        std::cerr << "[SimBridge] Send failed: " << strerror(errno) << std::endl;
+                        close(client_fd);
+                        client_fd = -1;
+                        break;
+                    }
+
+                    if (packet_count % 50 == 0) {
+                        std::cout << "[SimBridge 50Hz] [" << (m_sim_mode ? "SIM" : "VEHICLE") << "] Packets: " << packet_count
+                                  << " | Dist: " << current_dist << " cm"
+                                  << " | Vel: " << cmd_out.velocity << " m/s"
+                                  << " | Steer: " << cmd_out.direction << std::endl;
+                    }
+                }
+>>>>>>> Stashed changes
             }
         }
     }
