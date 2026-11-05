@@ -46,9 +46,9 @@ float FsmNavigator::compute_bounded_velocity(float desired_v, float dt) {
     return m_motion_profiler ? m_motion_profiler->update(desired_v, dt) : desired_v;
 }
 
-float FsmNavigator::compute_motor_power(float bounded_v, float cruise_speed) {
+float FsmNavigator::compute_motor_power(float bounded_v, float cruise_speed, float power_at_cruise_pct) {
     if (cruise_speed <= 0.01f) return 0.0f;
-    float pct = (bounded_v / cruise_speed) * 50.0f;
+    float pct = (bounded_v / cruise_speed) * power_at_cruise_pct;
     return std::clamp(pct, -100.0f, 100.0f);
 }
 

@@ -41,6 +41,7 @@ private:
     float m_obstacle_stop_dist_cm{picar::constants::DEFAULT_OBSTACLE_STOP_DIST_CM};
     float m_reverse_speed{picar::constants::DEFAULT_REVERSE_SPEED};
     float m_avoid_side{1.0f};
+    float m_max_power_pct{FsmNavigator::REFERENCE_POWER_PCT};   // puissance moteur (%) quand la vitesse atteint la croisiere
     float m_avoid_diag_time_s{ObstacleAvoidance::DEFAULT_DIAG_TIME_S};   // evitement, phase 2 : duree de la diagonale (s)
     float m_avoid_diag_speed{ObstacleAvoidance::DEFAULT_DIAG_SPEED};     // evitement, phase 2 : vitesse de la diagonale (m/s)
     float m_avoid_return_time_s{ObstacleAvoidance::DEFAULT_RETURN_TIME_S};   // evitement, phase 5 : duree max de la diagonale de retour (s)

@@ -68,3 +68,18 @@ target_link_libraries(test_client PRIVATE
     Threads::Threads
     $<$<PLATFORM_ID:Linux>:rt>
 )
+
+# Test : l'arret d'urgence doit atteindre le FSM et les moteurs
+add_executable(test_emergency_stop
+    tests/test_emergency_stop.cpp
+    src/TcpClient.cpp
+    src/ProtocolHandler.cpp
+)
+target_include_directories(test_emergency_stop PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/inc
+    ${SHARED_HEADERS_DIR}
+)
+target_link_libraries(test_emergency_stop PRIVATE
+    Threads::Threads
+    $<$<PLATFORM_ID:Linux>:rt>
+)

@@ -39,7 +39,16 @@ public:
     void reset_controllers();
     float get_current_speed() const;
     float compute_bounded_velocity(float desired_v, float dt);
-    float compute_motor_power(float bounded_v, float cruise_speed);
+    /// Puissance moteur (%) pour une vitesse donnee : vitesse / croisiere x power_at_cruise_pct.
+    float compute_motor_power(float bounded_v, float cruise_speed, float power_at_cruise_pct = REFERENCE_POWER_PCT);
+
+    /// Puissance (%) a la vitesse de croisiere. 50 = reference validee (environ 0,32 m/s) sur laquelle l'evitement est calibre.
+    static constexpr float REFERENCE_POWER_PCT = 50.0f;
+    /// Bornes de MAX_POWER_PCT (puissance a la croisiere) et de STRAIGHT_CRUISE_SPEED.
+    static constexpr float MIN_POWER_PCT = 20.0f;
+    static constexpr float MAX_POWER_PCT = 75.0f;
+    static constexpr float MIN_CRUISE_SPEED = 0.10f;
+    static constexpr float MAX_CRUISE_SPEED = 0.60f;
 
     /// Distance (cm) sous laquelle la voiture commence a ralentir avant l'obstacle.
     static constexpr float OBSTACLE_SLOWDOWN_THRESHOLD_CM = 45.0f;

@@ -72,7 +72,12 @@ bool FSM::init() {
         return false;
     }
 
-    m_straight_cruise_speed = m_ipc_handler.get_float("STRAIGHT_CRUISE_SPEED", m_straight_cruise_speed);
+    m_straight_cruise_speed = std::clamp(m_ipc_handler.get_float("STRAIGHT_CRUISE_SPEED", m_straight_cruise_speed),
+                                         FsmNavigator::MIN_CRUISE_SPEED, FsmNavigator::MAX_CRUISE_SPEED);
+    m_max_power_pct         = std::clamp(m_ipc_handler.get_float("MAX_POWER_PCT", m_max_power_pct),
+                                         FsmNavigator::MIN_POWER_PCT, FsmNavigator::MAX_POWER_PCT);
+    std::cout << "[FSM] Puissance moteur a la croisiere : " << m_max_power_pct << " % (croisiere " << m_straight_cruise_speed
+              << ")" << std::endl;
     m_min_curve_speed       = m_ipc_handler.get_float("MIN_CURVE_SPEED", m_min_curve_speed);
     m_curve_safety_factor   = m_ipc_handler.get_float("CURVE_SAFETY_FACTOR", m_curve_safety_factor);
     m_max_acceleration      = m_ipc_handler.get_float("MAX_ACCELERATION", m_max_acceleration);
@@ -173,7 +178,11 @@ void FSM::run() {
 
         // 6. Smooth velocity profiling & power computation
         float bounded_velocity = m_navigator.compute_bounded_velocity(nav_out.desired_velocity, dt);
-        float motor_power_pct = m_navigator.compute_motor_power(bounded_velocity, m_straight_cruise_speed);
+        // L'evitement d'obstacle garde la puissance de reference (ses durees sont calibrees pour elle) ; le reste suit MAX_POWER_PCT
+        const bool avoiding = (m_current_state == shared::fsm::MachineStates::RightDeviation ||
+                               m_current_state == shared::fsm::MachineStates::LeftDeviation);
+        float motor_power_pct = m_navigator.compute_motor_power(bounded_velocity, m_straight_cruise_speed,
+                                                                avoiding ? FsmNavigator::REFERENCE_POWER_PCT : m_max_power_pct);
         if (nav_out.req_emergency ||
             m_current_state == shared::fsm::MachineStates::Stopped ||
             m_current_state == shared::fsm::MachineStates::Failure ||
@@ -227,9 +236,14 @@ bool FSM::apply_config_key(const std::string& key, float value) {
         update_controllers();
         return true;
     }
+    if (key == "MAX_POWER_PCT") {
+        m_max_power_pct = std::clamp(value, FsmNavigator::MIN_POWER_PCT, FsmNavigator::MAX_POWER_PCT);
+        m_ipc_handler.set_float("MAX_POWER_PCT", m_max_power_pct);
+        return true;
+    }
     if (key == "STRAIGHT_CRUISE_SPEED") {
-        m_straight_cruise_speed = value;
-        m_ipc_handler.set_float("STRAIGHT_CRUISE_SPEED", value);
+        m_straight_cruise_speed = std::clamp(value, FsmNavigator::MIN_CRUISE_SPEED, FsmNavigator::MAX_CRUISE_SPEED);
+        m_ipc_handler.set_float("STRAIGHT_CRUISE_SPEED", m_straight_cruise_speed);
         update_controllers();
         return true;
     }

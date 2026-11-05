@@ -266,7 +266,13 @@ bool ProtocolHandler::send_command(TcpClient& client, const std::string& cmd_str
         return send_set_active(client, shared::commands::ServiceID::FSM, true, seq_num);
     }
     if (cmd_str == "emergency_stop" || cmd_str == "stop") {
-        return send_emergency_stop(client, shared::commands::ServiceID::MOTORS, 1, seq_num);
+        // Le FSM doit etre prevenu en premier : il passe en Abort et maintient l'arret (puissance a 0 + drapeau d'urgence en
+        // memoire partagee). Si seul Motors recevait l'ordre, il ne s'arreterait qu'un cycle : le FSM, qui ignore l'arret,
+        // continuerait de commander les moteurs et le robot repartirait aussitot. Motors est prevenu aussi pour couper tout de suite.
+        const bool fsm_ok = send_emergency_stop(client, shared::commands::ServiceID::FSM, 1, seq_num);
+        const bool motors_ok = send_emergency_stop(client, shared::commands::ServiceID::MOTORS, 1,
+                                                   static_cast<uint16_t>(seq_num + 1));
+        return fsm_ok || motors_ok;
     }
 
     // 2. Détection de commandes de configuration cle=valeur (ex: "CURVE_SAFETY_FACTOR=0.75" ou "MOTORS.STEERING_OFFSET=1.5")

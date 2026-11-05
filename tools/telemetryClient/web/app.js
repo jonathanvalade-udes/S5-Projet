@@ -690,6 +690,19 @@ function avoidDistanceText(timeId, speedId, tagId, label, tMin, tMax, vMin, vMax
     tag.textContent = `${label} : ~${(tc * vc * 100).toFixed(0)} cm${clamped}`;
 }
 
+// Vitesse maximale estimee a partir de la puissance a la croisiere : 50 % = environ 0,32 m/s (lineaire)
+function updateMaxPowerSpeed() {
+    const input = document.getElementById('cfg-fsm-maxpower');
+    const tag = document.getElementById('live-fsm-maxpower');
+    if (!input || !tag) return;
+    const p = parseFloat(input.value);
+    if (isNaN(p)) { tag.textContent = 'Vitesse max estimée : -- m/s'; return; }
+    const pc = Math.min(75, Math.max(20, p));          // memes bornes que le FSM
+    const clamped = (pc !== p) ? ' (valeur ramenée aux bornes du FSM)' : '';
+    tag.textContent = `Vitesse max estimée : ~${(pc / 50 * 0.32).toFixed(2)} m/s${clamped}`;
+}
+document.addEventListener('DOMContentLoaded', updateMaxPowerSpeed);
+
 function updateAvoidDistance() {
     avoidDistanceText('cfg-avoid-diag-time', 'cfg-avoid-diag-speed', 'live-avoid-dist',
                       'Distance diagonale', 0.3, 3.0, 0.12, 0.25);

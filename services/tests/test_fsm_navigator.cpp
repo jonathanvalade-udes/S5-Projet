@@ -127,6 +127,20 @@ int main() {
         assert(near(sp, 0.12f));
     }
 
+    // --- Puissance moteur : vitesse / croisiere x puissance a la croisiere (MAX_POWER_PCT) ---
+    {
+        assert(near(nav.compute_motor_power(0.32f, 0.32f), 50.0f));            // defaut : 50 % a la croisiere
+        assert(near(nav.compute_motor_power(0.16f, 0.32f), 25.0f));            // la manoeuvre d'evitement : 25 %
+        assert(near(nav.compute_motor_power(0.32f, 0.32f, 60.0f), 60.0f));     // MAX_POWER_PCT = 60
+        assert(near(nav.compute_motor_power(0.16f, 0.32f, 60.0f), 30.0f));
+        assert(near(nav.compute_motor_power(-0.16f, 0.32f, 60.0f), -30.0f));   // marche arriere
+        assert(near(nav.compute_motor_power(0.64f, 0.32f, 75.0f), 100.0f));    // jamais plus de 100 %
+        assert(near(nav.compute_motor_power(0.30f, 0.0f), 0.0f));              // croisiere nulle : pas de mouvement
+        assert(FsmNavigator::MIN_POWER_PCT < FsmNavigator::REFERENCE_POWER_PCT);
+        assert(FsmNavigator::REFERENCE_POWER_PCT < FsmNavigator::MAX_POWER_PCT);
+        assert(FsmNavigator::MIN_CRUISE_SPEED > 0.0f);
+    }
+
     std::cout << "test_fsm_navigator: tous les tests passent" << std::endl;
     return 0;
 }

@@ -366,8 +366,20 @@
                             <span class="live-tag" id="live-fsm-cruise">Actuel: -- m/s</span>
                         </div>
                         <div class="config-input-group">
-                            <input type="number" step="0.01" id="cfg-fsm-cruise" value="0.32">
+                            <input type="number" step="0.01" min="0.10" max="0.60" id="cfg-fsm-cruise" value="0.32">
                             <button class="btn-sm" onclick="applyConfig('FSM', 'STRAIGHT_CRUISE_SPEED', 'cfg-fsm-cruise')">Appliquer</button>
+                        </div>
+                    </div>
+
+                    <div class="config-row">
+                        <div class="config-label-group">
+                            <span class="config-name">MAX_POWER_PCT</span>
+                            <span class="config-unit">Puissance moteur (%) quand la vitesse atteint la croisière : fixe la vitesse maximale réelle (20 à 75, 50 = validé)</span>
+                            <span class="live-tag" id="live-fsm-maxpower">Vitesse max estimée : ~0.32 m/s</span>
+                        </div>
+                        <div class="config-input-group">
+                            <input type="number" step="1" min="20" max="75" id="cfg-fsm-maxpower" value="50" oninput="updateMaxPowerSpeed()">
+                            <button class="btn-sm" onclick="applyConfig('FSM', 'MAX_POWER_PCT', 'cfg-fsm-maxpower')">Appliquer</button>
                         </div>
                     </div>
 
