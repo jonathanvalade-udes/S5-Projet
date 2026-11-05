@@ -82,8 +82,7 @@ if command -v aarch64-linux-gnu-g++ &>/dev/null && command -v aarch64-linux-gnu-
         -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
         -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
         -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
-        -DSTATIC=OFF \
-        -DSTATIC_SERVICEMANAGER=ON \
+        -DSTATIC=ON \
         -DCMAKE_BUILD_TYPE=Release
 
     if [[ "${TARGET}" == "all" ]]; then
@@ -100,7 +99,7 @@ elif command -v docker &>/dev/null && docker info &>/dev/null; then
         docker build -f "${SCRIPT_DIR}/Dockerfile.builder" -t "${IMAGE_NAME}" "${SCRIPT_DIR}"
     fi
 
-    CMD="cmake -B /workspace/build-embedded -S /workspace -DSTATIC=OFF -DSTATIC_SERVICEMANAGER=ON -DCMAKE_BUILD_TYPE=Release && cmake --build /workspace/build-embedded --target ${TARGET} -j${NUM_JOBS}"
+    CMD="cmake -B /workspace/build-embedded -S /workspace -DSTATIC=ON -DCMAKE_BUILD_TYPE=Release && cmake --build /workspace/build-embedded --target ${TARGET} -j${NUM_JOBS}"
     docker run --rm --platform linux/arm64 --dns 8.8.8.8 -v "${SCRIPT_DIR}":/workspace -w /workspace "${IMAGE_NAME}" sh -c "${CMD}"
 else
     echo "Error: Neither aarch64-linux-gnu-g++ nor Docker was found." >&2
@@ -114,15 +113,13 @@ mkdir -p "${BIN_DIR}"
 SERVICES=("ServiceManager/init" "Motors/Motors" "Sensors/Sensors" "FSM/FSM" "SimBridge/SimBridge" "TelemetryService/TelemetryService" "PeripheralsService/PeripheralsService")
 
 echo ""
-echo "==> Moving ARM64 binaries to unified directory: ${BIN_DIR}/"
+echo "==> Copying ARM64 binaries to unified directory: ${BIN_DIR}/"
 for svc in "${SERVICES[@]}"; do
     bin_name="$(basename "${svc}")"
     src_path="${BUILD_DIR}/${svc}"
     dst_path="${BIN_DIR}/${bin_name}"
     if [[ -f "${src_path}" ]]; then
-        # Move binary into bin/ and create a symlink back so CMake tracking is preserved
-        mv -f "${src_path}" "${dst_path}"
-        ln -sf "${dst_path}" "${src_path}"
+        cp -f "${src_path}" "${dst_path}"
     fi
 done
 

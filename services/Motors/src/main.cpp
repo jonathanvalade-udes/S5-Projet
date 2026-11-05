@@ -45,7 +45,7 @@ static void signal_handler(int sig) {
 int main(int argc, char* argv[]) {
     int hz = 100;
     bool invert = false;
-    float steering_offset = 0.0f;
+    float steering_offset = picar::i2c::calibration::DEFAULT_STEERING_OFFSET_DEG;
     bool offset_specified = false;
 
     for (int i = 1; i < argc; ++i) {

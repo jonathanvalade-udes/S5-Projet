@@ -35,7 +35,7 @@ bool Motors::init() {
     }
 
     if (!m_offset_specified) {
-        m_steering_offset = m_ipc_handler.get_float("STEERING_OFFSET", m_steering_offset);
+        m_steering_offset = m_ipc_handler.get_float("STEERING_OFFSET", picar::i2c::calibration::DEFAULT_STEERING_OFFSET_DEG);
         m_actuator.set_steering_offset(m_steering_offset);
     }
     m_hz = std::clamp(static_cast<int>(m_ipc_handler.get_float("HZ", static_cast<float>(m_hz))), 10, 10000);
@@ -73,16 +73,10 @@ void Motors::run() {
         // 2. Read FSM commands from shared memory
         float target_speed = 0.0f;
         float target_steering = 0.0f;
-        float shm_steering_offset = m_steering_offset;
         bool emergency_stop = false;
         uint64_t current_heartbeat = 0;
 
-        m_shm_bridge.read_fsm_command(target_speed, target_steering, shm_steering_offset, emergency_stop, current_heartbeat);
-
-        if (std::abs(shm_steering_offset - m_steering_offset) > 0.01f) {
-            m_steering_offset = std::clamp(shm_steering_offset, -15.0f, 15.0f);
-            m_actuator.set_steering_offset(m_steering_offset);
-        }
+        m_shm_bridge.read_fsm_command(target_speed, target_steering, emergency_stop, current_heartbeat);
 
         // 3. Watchdog check
         if (m_shm_bridge.check_watchdog(current_heartbeat, max_watchdog_misses)) {
