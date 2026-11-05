@@ -80,7 +80,6 @@ bool FSM::init() {
     m_line_kd               = m_ipc_handler.get_float("LINE_KD", m_line_kd);
     m_obstacle_stop_dist_cm = m_ipc_handler.get_float("OBSTACLE_STOP_DIST_CM", m_obstacle_stop_dist_cm);
     m_reverse_speed         = m_ipc_handler.get_float("REVERSE_SPEED", m_reverse_speed);
-    m_auto_start_delay      = m_ipc_handler.get_float("AUTO_START_DELAY", m_auto_start_delay);
     m_avoid_side            = m_ipc_handler.get_float("AVOID_SIDE", m_avoid_side);
     apply_avoid_side_env(m_avoid_side);
     m_avoid_diag_time_s = m_ipc_handler.get_float("AVOID_DIAG_TIME_S", m_avoid_diag_time_s);
@@ -152,8 +151,7 @@ void FSM::run() {
         }
 
         // 5. Navigation & State Machine Step
-        bool start_triggered = m_event_pipe.check_start_trigger() ||
-            (m_auto_start_delay > 0.0f && loop_count >= static_cast<uint64_t>(m_auto_start_delay * m_hz));
+        bool start_triggered = m_event_pipe.check_start_trigger();
 
         FsmNavOutput nav_out = m_navigator.step(m_current_state, dt, current_dist_cm, line_darkness,
                                                 start_triggered, m_avoid_side, m_obstacle_stop_dist_cm,
@@ -257,9 +255,6 @@ bool FSM::apply_config_key(const std::string& key, float value) {
         m_ipc_handler.set_float("AVOID_SIDE", m_avoid_side);
         return true;
     }
-    if (key == "AUTO_START_DELAY") {
-        m_auto_start_delay = std::max(value, 0.0f);
-        m_ipc_handler.set_float("AUTO_START_DELAY", m_auto_start_delay);
     if (key == "AVOID_DIAG_TIME_S") {
         m_avoid_diag_time_s = value;
         m_ipc_handler.set_float("AVOID_DIAG_TIME_S", value);
