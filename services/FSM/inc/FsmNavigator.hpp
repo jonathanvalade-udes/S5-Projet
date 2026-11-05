@@ -28,7 +28,7 @@ public:
     FsmNavOutput step(shared::fsm::MachineStates current_state, float dt,
                       float current_dist_cm, const float line_darkness[5],
                       bool start_triggered, float avoid_side, float obstacle_stop_dist_cm,
-                      float reverse_speed, float curve_safety_factor, float predictive_brake_gain);
+                      float reverse_speed, float curve_safety_factor);
 
     void reset_controllers();
     float get_current_speed() const;

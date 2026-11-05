@@ -351,34 +351,6 @@ void test_ackermann_curve_speed() {
     std::cout << "  ✓ Vitesse en virage Ackermann : Maintien en ligne droite et décélération physique validées." << std::endl;
 }
 
-void test_predictive_brake() {
-    std::cout << "[TEST] MotionProfiler - Freinage anticipatif prédictif (feedforward d_error/dt)..." << std::endl;
-    MotionProfiler profiler(0.735f, 0.40f);
-
-    const float cruise = 0.40f;
-    const float gain = 0.06f;
-
-    // 1. Erreur constante (d_error/dt = 0) : aucune réduction prédictive
-    float v0 = profiler.apply_predictive_brake(0.0f, cruise, gain);
-    assert(approx_equal(v0, cruise, 1e-4f));
-
-    // 2. Erreur qui varie (entrée de virage) : d_error/dt = 2.0 pas/s
-    // Réduction : 0.06 * 2.0 = 0.12 m/s -> v = 0.28 m/s
-    float v_entry = profiler.apply_predictive_brake(2.0f, cruise, gain);
-    assert(approx_equal(v_entry, 0.28f, 1e-3f));
-
-    // 3. Symétrie entrée virage gauche vs droite
-    float v_neg = profiler.apply_predictive_brake(-2.0f, cruise, gain);
-    assert(approx_equal(v_entry, v_neg, 1e-4f));
-
-    // 4. Plafond max de réduction (35% de la vitesse) lors d'un choc ou décrochage violent (d_error/dt = 8.0)
-    // 0.06 * 8.0 = 0.48 m/s > 0.35 * 0.40 = 0.14 m/s -> v = 0.40 - 0.14 = 0.26 m/s
-    float v_extreme = profiler.apply_predictive_brake(8.0f, cruise, gain);
-    assert(approx_equal(v_extreme, cruise * 0.65f, 1e-3f));
-
-    std::cout << "  ✓ Feedforward prédictif : Anticipation fluide de virage sans saccade validée." << std::endl;
-}
-
 int main() {
     std::cout << "========================================" << std::endl;
     std::cout << "  PiCar C++17 - Tests Unitaires Contrôle" << std::endl;
@@ -386,7 +358,6 @@ int main() {
 
     test_motion_profiler();
     test_ackermann_curve_speed();
-    test_predictive_brake();
     test_line_follower_controller();
     test_line_follower_analog();
     test_obstacle_avoidance_s4_and_s5();
