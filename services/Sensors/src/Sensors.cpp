@@ -66,8 +66,9 @@ void Sensors::run() {
         // 2. Read line sensors (analog darkness continuous [0,1], rate-isolated)
         float line_darkness[5] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
         uint8_t line_sensors[5] = {0, 0, 0, 0, 0};
+        uint32_t raw_adc[5] = {0, 0, 0, 0, 0};
         bool has_line = false;
-        m_acquisition.read_line(line_darkness, line_sensors, has_line, loop_count, m_hz);
+        m_acquisition.read_line(line_darkness, line_sensors, raw_adc, has_line, loop_count, m_hz);
 
         // 3. Acquire distance with synchronous rate-isolation
         float current_speed = m_shm_bridge.read_current_speed();
@@ -78,7 +79,7 @@ void Sensors::run() {
         float line_error = m_last_line_error;
 
         // 5. Publish to pub/sub SHM
-        m_shm_bridge.publish_telemetry(filtered_dist, line_darkness, has_line, m_acquisition.get_consecutive_us_errors());
+        m_shm_bridge.publish_telemetry(filtered_dist, line_darkness, raw_adc, has_line, m_acquisition.get_consecutive_us_errors());
 
         // 7. 1 Hz periodic log
         loop_count++;
@@ -87,7 +88,10 @@ void Sensors::run() {
                       << " cm | Line: [" 
                       << (int)line_sensors[0] << " " << (int)line_sensors[1] << " "
                       << (int)line_sensors[2] << " " << (int)line_sensors[3] << " "
-                      << (int)line_sensors[4] << "] (err: " << line_error << ")"
+                      << (int)line_sensors[4] << "] ADC: ["
+                      << raw_adc[0] << " " << raw_adc[1] << " "
+                      << raw_adc[2] << " " << raw_adc[3] << " "
+                      << raw_adc[4] << "] (err: " << line_error << ")"
                       << (has_line ? "" : " [PERTE DE LIGNE]") << std::endl;
         }
 

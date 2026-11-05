@@ -31,6 +31,7 @@ float SensorShmBridge::read_current_speed() {
 }
 
 void SensorShmBridge::publish_telemetry(float filtered_dist, const float line_darkness[5],
+                                       const uint32_t raw_adc[5],
                                        bool has_line, int consecutive_us_errors) {
     if (!m_mem_server || !m_mem_server->isValid()) return;
 
@@ -40,10 +41,14 @@ void SensorShmBridge::publish_telemetry(float filtered_dist, const float line_da
     telem.ultrasonicSensor.flags = shared::sensors::ultrasonic::flags::SENSOR_ACTIVATED;
 
     for (int i = 0; i < 5; ++i) {
+        telem.lineFollower.sensorsData[i].rawADCValue = raw_adc[i];
         telem.lineFollower.sensorsData[i].normalizedValue = line_darkness[i];
+        telem.lineFollower.sensorsData[i].correctorValue = 0.0f;
+        telem.lineFollower.sensorsData[i].errorCode = 0;
     }
-    telem.lineFollower.flags = has_line ? shared::sensors::lineFollower::flags::LINE_FOLLOWED
-                                        : shared::sensors::lineFollower::flags::LINE_LOST;
+    telem.lineFollower.flags = (has_line ? shared::sensors::lineFollower::flags::LINE_FOLLOWED
+                                         : shared::sensors::lineFollower::flags::LINE_LOST)
+                               | shared::sensors::lineFollower::flags::SENSOR_ACTIVATED;
     telem.flags = shared::sensors::flags::DISCOVERABLE;
     if (consecutive_us_errors >= 5) {
         telem.flags |= shared::sensors::flags::DRIVER_ERROR;

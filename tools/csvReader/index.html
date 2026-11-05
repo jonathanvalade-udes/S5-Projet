@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FastDrink — Visualiseur & Rejeu Télémétrie Robot PiCar-S</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Chart.js local avec fallback CDN -->
+    <script src="lib/chart.umd.min.js"></script>
+    <script>
+        if (typeof Chart === 'undefined') {
+            document.write('<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"><\/script>');
+        }
+    </script>
+</head>
+<body>
+    <header class="navbar">
+        <div class="brand">
+            <span class="logo-icon">🏎️</span>
+            <h1>FastDrink <span>Rejeu Télémétrie & Modélisation Robot</span></h1>
+        </div>
+        <div class="nav-actions">
+            <button id="btn-load-sample" class="btn btn-secondary">
+                🔄 Charger Exemple
+            </button>
+            <div class="file-input-wrapper">
+                <button class="btn btn-primary">
+                    📁 Ouvrir un CSV...
+                </button>
+                <input type="file" id="csv-file-input" accept=".csv,text/csv">
+            </div>
+            <button id="btn-export-kpi" class="btn btn-secondary" title="Exporter rapport CSV des KPI">
+                📊 Export KPI
+            </button>
+        </div>
+    </header>
+
+    <!-- Zone Drag & Drop -->
+    <div id="drop-zone" class="drop-zone">
+        <p>Glissez-déposez votre fichier <b>CSV</b> de télémétrie ici, ou cliquez sur <b>Ouvrir un CSV</b>.
+        <span id="current-filename" class="filename-highlight"></span></p>
+    </div>
+
+    <main class="dashboard-container">
+        <!-- 1. PARTIE HAUTE : MODÉLISATION 2D DU ROBOT + HUD LIVE -->
+        <div class="top-section-grid">
+            <!-- Canvas Modélisation 2D Robot -->
+            <div class="card">
+                <div class="card-header">
+                    <h2>🤖 Modélisation & Trajectoire 2D (Odometrie & Capteurs)</h2>
+                    <div class="card-tools">
+                        <button id="btn-cam-follow" class="btn btn-secondary" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;">
+                            🎯 Suivre Robot
+                        </button>
+                        <button id="btn-cam-fit" class="btn btn-secondary" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;">
+                            🗺️ Vue Globale
+                        </button>
+                        <button id="btn-clear-trail" class="btn btn-secondary" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;">
+                            🧹 Reset Trace
+                        </button>
+                    </div>
+                </div>
+
+                <div class="canvas-wrapper">
+                    <canvas id="robot-canvas"></canvas>
+                    <div class="canvas-overlay-hud">
+                        <span>Pose: <b>X: <span id="hud-x">0.00</span>m, Y: <span id="hud-y">0.00</span>m</b></span>
+                        <span>Cap: <b>θ: <span id="hud-heading">0.0</span>°</b></span>
+                        <span>Vitesse estimée: <b><span id="hud-vel">0.00</span> m/s</b></span>
+                        <span>Distance parcourue: <b><span id="hud-dist">0.00</span> m</b></span>
+                    </div>
+                    <div class="canvas-controls-bar">
+                        <button id="btn-zoom-in" class="canvas-btn-mini">➕</button>
+                        <button id="btn-zoom-out" class="canvas-btn-mini">➖</button>
+                        <button id="btn-zoom-reset" class="canvas-btn-mini">↺</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- HUD Télémétrie Temps Réel de la Trame Sélectionnée -->
+            <div class="card">
+                <div class="card-header">
+                    <h2>📟 Instrumentation Télémétrique Instantanée</h2>
+                    <span id="live-fsm-badge" class="state-badge">INIT</span>
+                </div>
+
+                <div class="hud-metrics-grid">
+                    <!-- FSM & Moteurs -->
+                    <div class="metric-box">
+                        <div class="metric-title">
+                            <span>État FSM / Moteurs</span>
+                            <span id="fsm-req-text" style="color: var(--accent-cyan);">Req: --</span>
+                        </div>
+                        <div class="metric-val" id="hud-fsm-name" style="font-size: 1.15rem; color: var(--accent-green);">Init</div>
+                        <div class="metric-sub">Moteurs: <b id="hud-motors-state">Init</b> | Flags: <span id="hud-fsm-flags">0x0000</span></div>
+                    </div>
+
+                    <!-- Sonar Distance -->
+                    <div class="metric-box">
+                        <div class="metric-title">
+                            <span>Sonar Ultrasons</span>
+                            <span id="sonar-badge" class="state-badge" style="font-size: 0.65rem;">CLEAR</span>
+                        </div>
+                        <div class="metric-val" id="hud-sonar-val">-- <small style="font-size: 0.8rem;">cm</small></div>
+                        <div class="metric-sub">Brut: <span id="hud-sonar-raw">--</span> cm | Flags: <span id="hud-sonar-flags">0x0</span></div>
+                    </div>
+
+                    <!-- Moteurs Gauche & Droit -->
+                    <div class="metric-box">
+                        <div class="metric-title">Moteur Gauche (Throttle)</div>
+                        <div class="metric-val" id="hud-motor-l-val">0.0%</div>
+                        <div class="metric-sub">Cible: <span id="hud-motor-l-tgt">0.0</span> | Enc: <span id="hud-motor-l-enc">0</span></div>
+                    </div>
+
+                    <div class="metric-box">
+                        <div class="metric-title">Moteur Droit (Throttle)</div>
+                        <div class="metric-val" id="hud-motor-r-val">0.0%</div>
+                        <div class="metric-sub">Cible: <span id="hud-motor-r-tgt">0.0</span> | Enc: <span id="hud-motor-r-enc">0</span></div>
+                    </div>
+
+                    <!-- Servomoteur Direction -->
+                    <div class="metric-box">
+                        <div class="metric-title">Direction (Braquage)</div>
+                        <div class="metric-val" id="hud-steer-val">0.0°</div>
+                        <div class="metric-sub">Cible: <span id="hud-steer-tgt">0.0°</span> | CCR: <span id="hud-steer-ccr">1500</span></div>
+                    </div>
+
+                    <!-- Suiveur de Ligne 5 Capteurs -->
+                    <div class="metric-box">
+                        <div class="metric-title">
+                            <span>Suiveur 5 Voies</span>
+                            <span id="line-err-badge" style="color: var(--accent-green);">OK</span>
+                        </div>
+                        <div class="sensor-bar-visual">
+                            <div class="sensor-bar-item" title="S0 (Ext. Gauche)"><div class="sensor-fill" id="sfill-0"></div></div>
+                            <div class="sensor-bar-item" title="S1 (Mid Gauche)"><div class="sensor-fill" id="sfill-1"></div></div>
+                            <div class="sensor-bar-item" title="S2 (Centre)"><div class="sensor-fill" id="sfill-2"></div></div>
+                            <div class="sensor-bar-item" title="S3 (Mid Droit)"><div class="sensor-fill" id="sfill-3"></div></div>
+                            <div class="sensor-bar-item" title="S4 (Ext. Droit)"><div class="sensor-fill" id="sfill-4"></div></div>
+                        </div>
+                        <div class="metric-sub" style="margin-top: 0.3rem;">S0..<span id="line-sensor-summary">S4 norm</span> | Err: <span id="hud-line-err">0</span></div>
+                    </div>
+                </div>
+
+                <!-- Bannière Santé / Erreurs -->
+                <div id="health-banner" style="margin-top: 0.75rem; padding: 0.5rem 0.75rem; border-radius: 6px; background: rgba(16, 185, 129, 0.15); border: 1px solid var(--accent-green); font-size: 0.8rem; display: flex; justify-content: space-between;">
+                    <span id="health-text">✓ Aucune anomalie détectée sur cette trame</span>
+                    <span id="health-codes" style="font-family: var(--font-mono); color: var(--text-secondary);">Codes: 0x00</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- BARRE DE REJEU & CONTRÔLE CHRONO -->
+        <div class="playback-card">
+            <div class="timeline-scrubber">
+                <input type="range" id="scrubber" class="scrubber-slider" min="0" max="100" value="0" step="1">
+                <div class="time-readout">
+                    <span id="cur-time">00:00.000</span> / <span id="total-time">00:00.000</span>
+                    <div style="font-size: 0.7rem; color: var(--text-muted);">Trame <span id="frame-idx">0</span>/<span id="frame-total">0</span></div>
+                </div>
+            </div>
+
+            <div class="playback-buttons-row">
+                <div class="btn-group">
+                    <button id="btn-step-prev" class="btn-ctrl" title="Trame précédente (Touche ←)">⏮ -1</button>
+                    <button id="btn-play-pause" class="btn-ctrl btn-success" style="min-width: 90px;" title="Lecture/Pause (Espace)">▶ Lecture</button>
+                    <button id="btn-step-next" class="btn-ctrl" title="Trame suivante (Touche →)">+1 ⏭</button>
+                    <button id="btn-reset" class="btn-ctrl" title="Remettre à zéro (Touche Début)">↺ Zéro</button>
+                    <button id="btn-loop" class="btn-ctrl" title="Répéter en boucle">🔁 Boucle</button>
+                </div>
+
+                <div class="btn-group">
+                    <span style="font-size: 0.75rem; color: var(--text-muted); margin-right: 0.25rem;">Vitesse:</span>
+                    <button class="btn-ctrl speed-btn" data-speed="0.25">0.25x</button>
+                    <button class="btn-ctrl speed-btn" data-speed="0.5">0.5x</button>
+                    <button class="btn-ctrl speed-btn active" data-speed="1.0">1x</button>
+                    <button class="btn-ctrl speed-btn" data-speed="2.0">2x</button>
+                    <button class="btn-ctrl speed-btn" data-speed="5.0">5x</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- RÉCAPITULATIF STATISTIQUE GLOBAL -->
+        <div class="card" style="padding: 0.85rem 1.25rem;">
+            <div class="summary-stats-grid">
+                <div class="stat-item">
+                    <div class="label">Durée & Fréquence</div>
+                    <div class="value" id="kpi-duration">0.0 s <small style="font-size: 0.8rem; font-weight: normal; color: var(--text-muted);">(@ 0 Hz)</small></div>
+                </div>
+                <div class="stat-item">
+                    <div class="label">Distance Totale Estimée</div>
+                    <div class="value" id="kpi-distance">0.00 m</div>
+                </div>
+                <div class="stat-item">
+                    <div class="label">Vitesse Maximale</div>
+                    <div class="value" id="kpi-max-speed">0.00 m/s</div>
+                </div>
+                <div class="stat-item">
+                    <div class="label">Transitions FSM</div>
+                    <div class="value" id="kpi-transitions">0</div>
+                </div>
+                <div class="stat-item">
+                    <div class="label">Événements Obstacle (< 25cm)</div>
+                    <div class="value" id="kpi-obstacles">0 trames</div>
+                </div>
+                <div class="stat-item">
+                    <div class="label">Erreurs Détectées</div>
+                    <div class="value" id="kpi-errors" style="color: var(--accent-green);">0</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2. PARTIE BASSE : GRAPHIQUES DÉTAILLÉS MULTI-SYSTÈMES -->
+        <section class="graphs-section">
+            <div class="card-header" style="margin-bottom: 0;">
+                <h2>📈 Graphiques Détaillés Synchronisés (Capteurs, États, Throttles, Direction, PID)</h2>
+            </div>
+
+            <!-- Graph 1: Machine à États (FSM & Motors) -->
+            <div class="graph-card">
+                <div class="card-header">
+                    <h2>⚙️ Machine à États FSM & Modes Moteurs</h2>
+                </div>
+                <div class="chart-container">
+                    <canvas id="chart-fsm"></canvas>
+                </div>
+            </div>
+
+            <!-- Graph 2: Suiveur de ligne 5 voies -->
+            <div class="graph-card">
+                <div class="card-header">
+                    <h2>〰️ Suiveur de Ligne TCRT5000 (5 Voies Optiques)</h2>
+                    <div class="card-tools">
+                        <button class="btn-ctrl active line-mode-btn" data-mode="norm">Normalisé [0..1]</button>
+                        <button class="btn-ctrl line-mode-btn" data-mode="raw">Brut ADC</button>
+                        <button class="btn-ctrl line-mode-btn" data-mode="corr">Correcteur</button>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <canvas id="chart-line"></canvas>
+                </div>
+            </div>
+
+            <!-- Graph 3: Sonar Ultrason -->
+            <div class="graph-card">
+                <div class="card-header">
+                    <h2>📡 Télémétrie Ultrasons Sonar (Distance Brute vs Filtrée EMA)</h2>
+                </div>
+                <div class="chart-container">
+                    <canvas id="chart-sonar"></canvas>
+                </div>
+            </div>
+
+            <!-- Graph 4: Moteurs Throttles & Encodeurs -->
+            <div class="graph-card">
+                <div class="card-header">
+                    <h2>🏎️ Moteurs de Propulsion (Throttles Cible vs Appliqué & Encodeurs)</h2>
+                </div>
+                <div class="chart-container">
+                    <canvas id="chart-motors"></canvas>
+                </div>
+            </div>
+
+            <!-- Graph 5: Servomoteurs Direction & Aux -->
+            <div class="graph-card">
+                <div class="card-header">
+                    <h2>🎯 Servomoteur de Direction (Angle Braquage & Registres PWM CCR)</h2>
+                </div>
+                <div class="chart-container">
+                    <canvas id="chart-steering"></canvas>
+                </div>
+            </div>
+
+            <!-- Graph 6: Régulateurs PID Moteurs -->
+            <div class="graph-card">
+                <div class="card-header">
+                    <h2>🎛️ Paramètres PID des Moteurs (Kp, Kd, Ki)</h2>
+                </div>
+                <div class="chart-container">
+                    <canvas id="chart-pid"></canvas>
+                </div>
+            </div>
+
+            <!-- Graph 7: Supervision Daemons IPC & Codes Erreurs -->
+            <div class="graph-card">
+                <div class="card-header">
+                    <h2>🚨 Supervision Daemons IPC & Registres d'Erreurs</h2>
+                </div>
+                <div class="chart-container">
+                    <canvas id="chart-diag"></canvas>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        FastDrink Robotics S5 — Outil de diagnostic & replay télémétrique haute fidélité | Compatible CSV 78 colonnes
+    </footer>
+
+    <!-- Script logique & Rejeu -->
+    <script src="app.js"></script>
+</body>
+</html>

@@ -13,9 +13,29 @@ bool SensorAcquisition::init() {
     try {
         m_driver = std::make_unique<PiCarHatsSensorDriver>(m_trig_pin, m_echo_pin);
         std::cout << "[SensorAcquisition] Hardware driver initialized (Trig=" << m_trig_pin << ", Echo=" << m_echo_pin << ")." << std::endl;
+        if (auto* picar_driver = dynamic_cast<PiCarHatsSensorDriver*>(m_driver.get())) {
+            m_calibration = picar_driver->get_calibration();
+            for (int i = 0; i < 5; ++i) {
+                m_thresholds[i] = static_cast<uint16_t>((m_calibration.black_adc[i] + m_calibration.white_adc[i]) * 0.5f);
+            }
+        }
     } catch (const std::exception& e) {
         std::cout << "[SensorAcquisition] Note: Hardware sensor driver fallback (" << e.what() << ")." << std::endl;
         m_driver.reset();
+    }
+
+    try {
+        m_line_device = std::make_unique<picar::hal::I2CDevice>(
+            picar::i2c::ADDR_LINE_FOLLOWER, picar::i2c::ADDR_LINE_FOLLOWER_ALT);
+        if (m_line_device->is_connected()) {
+            std::cout << "[SensorAcquisition] Suiveur de ligne I2C prêt sur 0x"
+                      << std::hex << static_cast<int>(m_line_device->get_active_address()) << std::dec << std::endl;
+        } else {
+            std::cout << "[SensorAcquisition] Suiveur de ligne I2C non détecté, mode fallback actif." << std::endl;
+        }
+    } catch (const std::exception& e) {
+        std::cout << "[SensorAcquisition] I2C exception (" << e.what() << "), fallback actif." << std::endl;
+        m_line_device.reset();
     }
 
     m_pipeline = std::make_unique<UltrasonicPipeline>(m_median_window, m_filter_alpha);
@@ -31,17 +51,37 @@ void SensorAcquisition::reset_pipeline(float initial_dist) {
     m_last_filtered_dist = initial_dist;
 }
 
-void SensorAcquisition::read_line(float darkness[5], uint8_t binarized[5], bool& has_line, uint64_t loop_tick, int hz) {
+void SensorAcquisition::read_line(float darkness[5], uint8_t binarized[5], uint32_t raw_adc[5], bool& has_line, uint64_t loop_tick, int hz) {
     // Rate-isolate physical I2C read at ~100 Hz to prevent I2C bus congestion and timeouts
     const uint64_t line_interval = (hz > 100) ? static_cast<uint64_t>(hz / 100) : 1;
-    if (loop_tick % line_interval == 0 && m_driver) {
-        m_driver->read_line_darkness(m_cached_darkness);
+    if (loop_tick % line_interval == 0) {
+        if (m_line_device && m_line_device->is_connected()) {
+            uint8_t buffer[picar::i2c::line_follower::RAW_BUFFER_SIZE] = {0};
+            if (m_line_device->read_block_data(picar::i2c::line_follower::REG_START, buffer, picar::i2c::line_follower::RAW_BUFFER_SIZE)) {
+                uint16_t adc[5] = {0};
+                picar::i2c::line_follower::parse_raw_adc(buffer, adc);
+                for (int i = 0; i < 5; ++i) {
+                    m_cached_raw_adc[i] = adc[i];
+                }
+                picar::i2c::line_follower::binarize_sensors(adc, m_thresholds, m_cached_binarized);
+                picar::i2c::line_follower::convert_raw_to_darkness(adc, m_calibration, m_cached_darkness);
+            }
+        } else if (m_driver) {
+            m_driver->read_line_darkness(m_cached_darkness);
+            for (int i = 0; i < 5; ++i) {
+                m_cached_binarized[i] = (m_cached_darkness[i] > 0.5f) ? 1 : 0;
+                float span = m_calibration.white_adc[i] - m_calibration.black_adc[i];
+                float estimated_adc = m_calibration.white_adc[i] - m_cached_darkness[i] * span;
+                m_cached_raw_adc[i] = static_cast<uint32_t>(std::clamp(estimated_adc, 0.0f, 1023.0f));
+            }
+        }
     }
 
     has_line = false;
     for (int i = 0; i < 5; ++i) {
         darkness[i] = m_cached_darkness[i];
-        binarized[i] = (m_cached_darkness[i] > 0.5f) ? 1 : 0;
+        binarized[i] = m_cached_binarized[i];
+        raw_adc[i] = m_cached_raw_adc[i];
         if (binarized[i] != 0) has_line = true;
     }
 }
