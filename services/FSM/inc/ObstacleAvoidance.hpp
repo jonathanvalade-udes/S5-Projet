@@ -19,6 +19,11 @@ class ObstacleAvoidance {
 public:
     enum class DeviationResult { Running, LineFound, SearchLine };
 
+    /// Valeurs par defaut de la diagonale de la phase 2 (reglables dans fsm.conf : AVOID_DIAG_TIME_S / AVOID_DIAG_SPEED).
+    /// Distance parcourue en diagonale = vitesse x duree (0,16 x 1,10 = environ 18 cm).
+    static constexpr float DEFAULT_DIAG_TIME_S = 1.10f;
+    static constexpr float DEFAULT_DIAG_SPEED = 0.16f;
+
     /// Demarre une manoeuvre. trim_deg = biais de braquage appris (roues mal alignees).
     /// obstacle_dist (m) n'est plus utilise : la manoeuvre est reglee par des durees fixes.
     void reset(float trim_deg, float obstacle_dist);
@@ -28,6 +33,9 @@ public:
     DeviationResult update(float side, float dt, const float darkness[5],
                            float current_speed, float min_curve_speed,
                            float& steering_deg, float& velocity);
+
+    /// Regle la diagonale de la phase 2 : duree (s) et vitesse (m/s). Valeurs bornees (0,3 a 3 s ; 0,12 a 0,25 m/s).
+    void set_diagonal(float time_s, float speed);
 
     void set_ignore_finish(float duration_s) { m_ignore_finish_s = duration_s; }
     void update_ignore_finish(float dt) { m_ignore_finish_s = std::max(0.0f, m_ignore_finish_s - dt); }
@@ -48,6 +56,9 @@ private:
 
     static bool line_seen(const float darkness[5]);
     void next_phase();
+
+    float m_diag_time_s{DEFAULT_DIAG_TIME_S};   // phase 2 : duree de la diagonale
+    float m_diag_speed{DEFAULT_DIAG_SPEED};     // phase 2 : vitesse pendant la diagonale
 
     int m_phase{1};
     float m_phase_time{0.0f};        // temps ecoule dans la phase courante (s)

@@ -25,7 +25,8 @@ constexpr float TURN_OUT_TIME_S = 1.10f;   // phase 2 (depart de l'arret)
 constexpr float TURN_TIME_S = 0.70f;       // phases 3 et 4 (robot deja en mouvement)
 
 // --- Phase 2 : s'ecarter (virage de 45 deg puis diagonale) ---
-constexpr float DIAGONAL_TIME_S = 1.10f;
+// La duree et la vitesse de la diagonale se reglent dans fsm.conf (AVOID_DIAG_TIME_S, AVOID_DIAG_SPEED) ;
+// leurs valeurs par defaut (1,10 s et 0,16 m/s) sont dans ObstacleAvoidance.hpp.
 
 // --- Phase 3 : se redresser (virage retour puis ligne droite pour depasser le cube) ---
 constexpr float PASS_TIME_S = 0.80f;
@@ -52,6 +53,11 @@ void ObstacleAvoidance::reset(float trim_deg, float /*obstacle_dist*/) {
     m_phase_distance = 0.0f;
     m_total_time = 0.0f;
     m_trim_deg = trim_deg;
+}
+
+void ObstacleAvoidance::set_diagonal(float time_s, float speed) {
+    m_diag_time_s = std::clamp(time_s, 0.3f, 3.0f);
+    m_diag_speed = std::clamp(speed, 0.12f, 0.25f);
 }
 
 void ObstacleAvoidance::next_phase() {
@@ -83,8 +89,8 @@ bool ObstacleAvoidance::phase_reverse(float reverse_speed, float& steering_deg, 
 // Phase 2 : virer a 45 deg du cote choisi, puis avancer en diagonale
 bool ObstacleAvoidance::phase_move_away(float side, float forward_speed, float& steering_deg, float& velocity) const {
     steering_deg = turn_then_straight(side, TURN_OUT_TIME_S);
-    velocity = forward_speed;
-    return m_phase_time >= TURN_OUT_TIME_S + DIAGONAL_TIME_S;
+    velocity = (m_phase_time < TURN_OUT_TIME_S) ? forward_speed : m_diag_speed;   // virage, puis diagonale
+    return m_phase_time >= TURN_OUT_TIME_S + m_diag_time_s;
 }
 
 // Phase 3 : virer de 45 deg de l'autre cote (cap parallele a la piste), puis avancer droit pour depasser le cube

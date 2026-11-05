@@ -83,6 +83,11 @@ bool FSM::init() {
     m_auto_start_delay      = m_ipc_handler.get_float("AUTO_START_DELAY", m_auto_start_delay);
     m_avoid_side            = m_ipc_handler.get_float("AVOID_SIDE", m_avoid_side);
     apply_avoid_side_env(m_avoid_side);
+    m_avoid_diag_time_s = m_ipc_handler.get_float("AVOID_DIAG_TIME_S", m_avoid_diag_time_s);
+    m_avoid_diag_speed  = m_ipc_handler.get_float("AVOID_DIAG_SPEED", m_avoid_diag_speed);
+    m_navigator.set_avoidance_diagonal(m_avoid_diag_time_s, m_avoid_diag_speed);
+    std::cout << "[FSM] Evitement, diagonale de la phase 2 : " << m_avoid_diag_speed << " m/s pendant "
+              << m_avoid_diag_time_s << " s (~" << m_avoid_diag_speed * m_avoid_diag_time_s * 100.0f << " cm)" << std::endl;
     std::cout << "[FSM] Contournement des obstacles par la " << (m_avoid_side < 0.0f ? "GAUCHE" : "DROITE") << std::endl;
     m_hz = std::clamp(static_cast<int>(m_ipc_handler.get_float("HZ", static_cast<float>(m_hz))), 10, 10000);
 
@@ -255,6 +260,16 @@ bool FSM::apply_config_key(const std::string& key, float value) {
     if (key == "AUTO_START_DELAY") {
         m_auto_start_delay = std::max(value, 0.0f);
         m_ipc_handler.set_float("AUTO_START_DELAY", m_auto_start_delay);
+    if (key == "AVOID_DIAG_TIME_S") {
+        m_avoid_diag_time_s = value;
+        m_ipc_handler.set_float("AVOID_DIAG_TIME_S", value);
+        m_navigator.set_avoidance_diagonal(m_avoid_diag_time_s, m_avoid_diag_speed);
+        return true;
+    }
+    if (key == "AVOID_DIAG_SPEED") {
+        m_avoid_diag_speed = value;
+        m_ipc_handler.set_float("AVOID_DIAG_SPEED", value);
+        m_navigator.set_avoidance_diagonal(m_avoid_diag_time_s, m_avoid_diag_speed);
         return true;
     }
     if (key == "HZ") {

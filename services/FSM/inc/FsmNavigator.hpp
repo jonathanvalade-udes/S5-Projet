@@ -30,6 +30,9 @@ public:
                       bool start_triggered, float avoid_side, float obstacle_stop_dist_cm,
                       float reverse_speed, float curve_safety_factor);
 
+    /// Diagonale de la phase 2 de l'evitement : duree (s) et vitesse (m/s), lues dans fsm.conf.
+    void set_avoidance_diagonal(float time_s, float speed) { m_obstacle_avoidance.set_diagonal(time_s, speed); }
+
     void reset_controllers();
     float get_current_speed() const;
     float compute_bounded_velocity(float desired_v, float dt);

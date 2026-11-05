@@ -42,6 +42,8 @@ private:
     float m_reverse_speed{picar::constants::DEFAULT_REVERSE_SPEED};
     float m_auto_start_delay{0.0f};
     float m_avoid_side{1.0f};
+    float m_avoid_diag_time_s{ObstacleAvoidance::DEFAULT_DIAG_TIME_S};   // evitement, phase 2 : duree de la diagonale (s)
+    float m_avoid_diag_speed{ObstacleAvoidance::DEFAULT_DIAG_SPEED};     // evitement, phase 2 : vitesse de la diagonale (m/s)
 
     FsmNavigator m_navigator;
     FsmEventPipe m_event_pipe;
