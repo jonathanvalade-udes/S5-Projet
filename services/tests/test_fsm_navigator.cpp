@@ -84,6 +84,49 @@ int main() {
         assert(near(sp, 0.12f));
     }
 
+    // --- Evitement : deuxieme diagonale (phase 5) reglable (AVOID_RETURN_TIME_S / AVOID_RETURN_SPEED) ---
+    {
+        using services::ObstacleAvoidance;
+        const float dark[5] = {0, 0, 0, 0, 0};   // aucun ruban : la phase 5 va jusqu'a sa duree maximale
+        // Pas ou la manoeuvre abandonne (SearchLine), et vitesse commandee a 1 s du debut de la phase 5
+        auto step_giveup = [&](float ret_time, float ret_speed, float& speed_in_phase5) {
+            ObstacleAvoidance av;
+            av.set_return(ret_time, ret_speed);
+            av.reset(0.0f, 0.2f);
+            float steer = 0.0f, vel = 0.0f, v = 0.0f;
+            speed_in_phase5 = 0.0f;
+            int phase5_start = -1;
+            for (int k = 0; k < 2000; ++k) {
+                v += (vel * 0.9f - v) * (0.02f / 0.1f);
+                const auto r = av.update(1.0f, 0.02f, dark, v, 0.2f, steer, vel);
+                if (av.get_phase() == 5 && phase5_start < 0) phase5_start = k;
+                if (phase5_start >= 0 && k == phase5_start + 50) speed_in_phase5 = vel;
+                if (r == ObstacleAvoidance::DeviationResult::SearchLine) return k;
+            }
+            return -1;
+        };
+        float sp = 0.0f;
+        const int k_default = step_giveup(ObstacleAvoidance::DEFAULT_RETURN_TIME_S, ObstacleAvoidance::DEFAULT_RETURN_SPEED, sp);
+        assert(k_default > 0);
+        assert(near(sp, ObstacleAvoidance::DEFAULT_RETURN_SPEED));
+
+        // Une recherche plus courte de 1,5 s abandonne 75 pas de 20 ms plus tot
+        const int k_short = step_giveup(2.0f, 0.16f, sp);
+        assert(k_default - k_short >= 74 && k_default - k_short <= 76);
+
+        // La vitesse de la deuxieme diagonale est bien celle demandee
+        step_giveup(3.0f, 0.22f, sp);
+        assert(near(sp, 0.22f));
+
+        // Hors bornes : ramenees a 1..5 s et 0,12..0,25 m/s
+        const int k_min = step_giveup(0.0f, 0.16f, sp);           // 0 s -> 1 s : 2,5 s de moins que 3,5 s = 125 pas
+        assert(k_default - k_min >= 124 && k_default - k_min <= 126);
+        step_giveup(3.0f, 9.0f, sp);
+        assert(near(sp, 0.25f));
+        step_giveup(3.0f, 0.01f, sp);
+        assert(near(sp, 0.12f));
+    }
+
     std::cout << "test_fsm_navigator: tous les tests passent" << std::endl;
     return 0;
 }
