@@ -60,7 +60,7 @@ float FsmNavigator::limit_approach_speed(float desired_v, float current_dist_cm,
 FsmNavOutput FsmNavigator::step(shared::fsm::MachineStates current_state, float dt,
                                float current_dist_cm, const float line_darkness[5],
                                bool start_triggered, float avoid_side, float obstacle_stop_dist_cm,
-                               float reverse_speed, float curve_safety_factor, float predictive_brake_gain) {
+                               float reverse_speed, float curve_safety_factor) {
     FsmNavOutput out{};
     float curr_v = get_current_speed();
     float cruise_spd = m_cruise_speed;
@@ -119,9 +119,6 @@ FsmNavOutput FsmNavigator::step(shared::fsm::MachineStates current_state, float 
                 ? m_motion_profiler->calculate_curve_speed_ackermann(out.desired_steering, cruise_spd, min_curve_spd, curve_safety_factor)
                 : cruise_spd;
 
-            if (m_motion_profiler && predictive_brake_gain > 0.0f) {
-                adapt_v = m_motion_profiler->apply_predictive_brake(line_out.d_error_dt, adapt_v, predictive_brake_gain);
-            }
             out.desired_velocity = limit_approach_speed(adapt_v, current_dist_cm, obstacle_stop_dist_cm);
             break;
         }

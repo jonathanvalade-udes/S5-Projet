@@ -82,7 +82,6 @@ bool FSM::init() {
     m_avoid_side            = m_ipc_handler.get_float("AVOID_SIDE", m_avoid_side);
     apply_avoid_side_env(m_avoid_side);
     std::cout << "[FSM] Contournement des obstacles par la " << (m_avoid_side < 0.0f ? "GAUCHE" : "DROITE") << std::endl;
-    m_predictive_brake_gain = m_ipc_handler.get_float("PREDICTIVE_BRAKE_GAIN", m_predictive_brake_gain);
     m_hz = std::clamp(static_cast<int>(m_ipc_handler.get_float("HZ", static_cast<float>(m_hz))), 10, 10000);
 
     m_navigator.init(m_line_kp, m_line_kd, m_straight_cruise_speed, m_min_curve_speed, m_max_acceleration);
@@ -149,7 +148,7 @@ void FSM::run() {
 
         FsmNavOutput nav_out = m_navigator.step(m_current_state, dt, current_dist_cm, line_darkness,
                                                 start_triggered, m_avoid_side, m_obstacle_stop_dist_cm,
-                                                m_reverse_speed, m_curve_safety_factor, m_predictive_brake_gain);
+                                                m_reverse_speed, m_curve_safety_factor);
 
         if (nav_out.state_changed) {
             transition_to(nav_out.next_state);

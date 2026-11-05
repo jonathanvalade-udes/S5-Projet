@@ -11,6 +11,7 @@
 #include "crc/crc_global.hpp"
 #include "car/full_packet.hpp"
 #include "fsm/machine_states.hpp"
+#include "motors/motor_states.hpp"
 
 namespace telemetry {
 
@@ -34,8 +35,9 @@ public:
     // Convertit une structure CarTelemetry en chaîne JSON pour l'interface Web
     static std::string telemetry_to_json(const shared::car::CarTelemetry& telem, uint16_t seq_num);
 
-    // Nom textuel d'un état FSM
+    // Noms textuels des états
     static std::string fsm_state_to_string(shared::fsm::MachineStates state);
+    static std::string motor_state_to_string(shared::motors::MotorStates state);
 
 private:
     std::vector<uint8_t> m_rx_buffer;

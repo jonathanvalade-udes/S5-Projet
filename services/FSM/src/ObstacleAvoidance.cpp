@@ -4,17 +4,108 @@
 
 namespace services {
 
-void ObstacleAvoidance::reset(float trim_deg, float obstacle_dist) {
-    m_dev_phase = 0;
-    m_dev_phase_distance = 0.0f;
-    m_dev_x = 0.0f;
-    m_dev_y = 0.0f;
-    m_dev_obstacle_far_x = 0.0f;
-    m_dev_trim_deg = trim_deg;
-    m_dev_obstacle_dist = obstacle_dist;
-    m_dev_steer_real = 0.0f;
-    m_dev_heading = 0.0f;
-    m_state_timer = 0.0f;
+namespace {
+
+// ================================ REGLAGES DE LA MANOEUVRE ================================
+// Tout se regle ici, par essais. Les durees supposent la vitesse d'evitement ci-dessous.
+
+// --- Vitesses (m/s du FSM), relevees a MIN_CURVE_SPEED si trop basses ---
+constexpr float FORWARD_SPEED = 0.16f;
+constexpr float REVERSE_SPEED = 0.12f;
+
+// --- Phase 1 : reculer (assez pour avoir la place d'ecarter la voiture avant d'arriver au cube) ---
+constexpr float REVERSE_DISTANCE_M = 0.25f;
+
+// --- Virages a fond (braquage 45 deg) qui changent le cap d'environ 45 deg ---
+// Le 1er virage est plus long : le robot repart de l'arret apres la marche arriere (acceleration + retard du servo).
+constexpr float TURN_STEER_DEG = 45.0f;
+constexpr float TURN_OUT_TIME_S = 1.10f;   // phase 2 (depart de l'arret)
+constexpr float TURN_TIME_S = 0.70f;       // phases 3 et 4 (robot deja en mouvement)
+
+// --- Phase 2 : s'ecarter (virage de 45 deg puis diagonale) ---
+constexpr float DIAGONAL_TIME_S = 1.90f;
+
+// --- Phase 3 : se redresser (virage retour puis ligne droite pour depasser le cube) ---
+constexpr float PASS_TIME_S = 1.50f;
+
+// --- Phase 4 : revenir (virage de 45 deg vers la piste) : dure TURN_TIME_S ---
+
+// --- Phase 5 : retrouver la ligne (diagonale), abandon au bout de ce temps ---
+constexpr float FIND_LINE_MAX_TIME_S = 3.50f;
+
+// --- Securite : duree maximale de toute la manoeuvre ---
+constexpr float TOTAL_TIMEOUT_S = 14.0f;
+
+// --- Detection du ruban : un capteur assez sombre, ou plusieurs moyennement sombres ---
+constexpr float LINE_MAX_DARKNESS = 0.50f;
+constexpr float LINE_TOTAL_DARKNESS = 0.35f;
+constexpr float LINE_TOTAL_MIN_SENSOR = 0.35f;
+// ==========================================================================================
+
+float floor_speed(float nominal, float min_curve_speed) { return std::max(nominal, min_curve_speed); }
+
+} // namespace
+
+void ObstacleAvoidance::reset(float trim_deg, float /*obstacle_dist*/) {
+    m_phase = 1;
+    m_phase_time = 0.0f;
+    m_phase_distance = 0.0f;
+    m_total_time = 0.0f;
+    m_trim_deg = trim_deg;
+}
+
+void ObstacleAvoidance::next_phase() {
+    std::cout << "[ObstacleAvoidance] Phase " << m_phase << " -> " << (m_phase + 1)
+              << " (t=" << m_total_time << " s)" << std::endl;
+    m_phase++;
+    m_phase_time = 0.0f;
+    m_phase_distance = 0.0f;
+}
+
+bool ObstacleAvoidance::line_seen(const float darkness[5]) {
+    const float max_darkness = std::max({darkness[0], darkness[1], darkness[2], darkness[3], darkness[4]});
+    const float total_darkness = darkness[0] + darkness[1] + darkness[2] + darkness[3] + darkness[4];
+    return max_darkness >= LINE_MAX_DARKNESS ||
+           (total_darkness >= LINE_TOTAL_DARKNESS && max_darkness >= LINE_TOTAL_MIN_SENSOR);
+}
+
+float ObstacleAvoidance::turn_then_straight(float turn_direction, float turn_time_s) const {
+    return m_phase_time < turn_time_s ? turn_direction * TURN_STEER_DEG : 0.0f;
+}
+
+// Phase 1 : reculer de 15 cm en ligne droite
+bool ObstacleAvoidance::phase_reverse(float reverse_speed, float& steering_deg, float& velocity) const {
+    steering_deg = 0.0f;
+    velocity = -reverse_speed;
+    return m_phase_distance >= REVERSE_DISTANCE_M;
+}
+
+// Phase 2 : virer a 45 deg du cote choisi, puis avancer en diagonale
+bool ObstacleAvoidance::phase_move_away(float side, float forward_speed, float& steering_deg, float& velocity) const {
+    steering_deg = turn_then_straight(side, TURN_OUT_TIME_S);
+    velocity = forward_speed;
+    return m_phase_time >= TURN_OUT_TIME_S + DIAGONAL_TIME_S;
+}
+
+// Phase 3 : virer de 45 deg de l'autre cote (cap parallele a la piste), puis avancer droit pour depasser le cube
+bool ObstacleAvoidance::phase_straighten(float side, float forward_speed, float& steering_deg, float& velocity) const {
+    steering_deg = turn_then_straight(-side, TURN_TIME_S);
+    velocity = forward_speed;
+    return m_phase_time >= TURN_TIME_S + PASS_TIME_S;
+}
+
+// Phase 4 : virer encore de 45 deg de l'autre cote (cap dirige vers la piste)
+bool ObstacleAvoidance::phase_turn_back(float side, float forward_speed, float& steering_deg, float& velocity) const {
+    steering_deg = -side * TURN_STEER_DEG;
+    velocity = forward_speed;
+    return m_phase_time >= TURN_TIME_S;
+}
+
+// Phase 5 : avancer en diagonale (braquage nul) ; la fin est decidee par la detection du ruban ou par le temps max
+bool ObstacleAvoidance::phase_find_line(float forward_speed, float& steering_deg, float& velocity) const {
+    steering_deg = 0.0f;
+    velocity = forward_speed;
+    return m_phase_time >= FIND_LINE_MAX_TIME_S;
 }
 
 ObstacleAvoidance::DeviationResult ObstacleAvoidance::update(
@@ -22,94 +113,29 @@ ObstacleAvoidance::DeviationResult ObstacleAvoidance::update(
     float current_speed, float min_curve_speed,
     float& steering_deg, float& velocity) {
 
-    constexpr float REVERSE_DISTANCE_M = 0.10f;
-    constexpr float FORWARD_SPEED_NOMINAL = 0.16f;
-    constexpr float REVERSE_SPEED_NOMINAL = 0.12f;
-    constexpr float RETURN_SPEED_NOMINAL = 0.15f;
-    constexpr float RETURN_STEER_DEG = 30.0f;
-    constexpr float RETURN_HEADING_RAD = 35.0f * 3.14159265f / 180.0f;
-    constexpr float RETURN_STRAIGHT_MAX_M = 0.60f;
-    constexpr float ARC_STEER_DEG = 45.0f;
-    constexpr float ARC_HEADING_RAD = 82.0f * 3.14159265f / 180.0f;
-    constexpr float WHEELBASE_M = 0.14f;
-    constexpr float STEER_DEG_TO_REAL = 48.0f / 45.0f;
-    constexpr float STEER_LAG_S = 0.06f;
-    constexpr float OBSTACLE_DEPTH_M = 0.15f;
-    constexpr float CAR_REAR_M = 0.15f;
-    constexpr float CLEARANCE_M = 0.03f;
-    constexpr float TIMEOUT_S = 14.0f;
+    const float forward_speed = floor_speed(FORWARD_SPEED, min_curve_speed);
+    const float reverse_speed = floor_speed(REVERSE_SPEED, min_curve_speed);
 
-    const float FORWARD_SPEED = avoidance_speed(FORWARD_SPEED_NOMINAL, min_curve_speed);
-    const float REVERSE_SPEED = avoidance_speed(REVERSE_SPEED_NOMINAL, min_curve_speed);
-    const float RETURN_SPEED = avoidance_speed(RETURN_SPEED_NOMINAL, min_curve_speed);
+    m_total_time += dt;
+    m_phase_time += dt;
+    m_phase_distance += std::abs(current_speed) * dt;
 
-    m_state_timer += dt;
-    const float v = current_speed;
-    m_dev_phase_distance += std::abs(v) * dt;
-
-    auto integrate = [&](float steer_deg) {
-        const float applied = std::clamp(steer_deg + m_dev_trim_deg, -45.0f, 45.0f) - m_dev_trim_deg;
-        m_dev_steer_real += (applied - m_dev_steer_real) * std::min(1.0f, dt / STEER_LAG_S);
-        m_dev_heading += v / WHEELBASE_M * std::tan(m_dev_steer_real * STEER_DEG_TO_REAL * 3.14159265f / 180.0f) * dt * side;
-        m_dev_x += v * std::cos(m_dev_heading) * dt;
-        m_dev_y += v * std::sin(m_dev_heading) * dt;
-    };
-
-    auto next_phase = [&]() {
-        std::cout << "[ObstacleAvoidance] Phase " << m_dev_phase << " -> " << (m_dev_phase + 1)
-                  << " (x=" << m_dev_x << " y=" << m_dev_y << " cap=" << (m_dev_heading * 57.2958f)
-                  << " deg, t=" << m_state_timer << " s)" << std::endl;
-        m_dev_phase++;
-        m_dev_phase_distance = 0.0f;
-    };
-
-    switch (m_dev_phase) {
-        case 0:
-            steering_deg = 0.0f;
-            velocity = -REVERSE_SPEED;
-            integrate(steering_deg);
-            if (m_dev_phase_distance >= REVERSE_DISTANCE_M) {
-                m_dev_obstacle_far_x = m_dev_obstacle_dist + OBSTACLE_DEPTH_M;
-                next_phase();
-            }
+    bool phase_done = false;
+    switch (m_phase) {
+        case 1: phase_done = phase_reverse(reverse_speed, steering_deg, velocity); break;
+        case 2: phase_done = phase_move_away(side, forward_speed, steering_deg, velocity); break;
+        case 3: phase_done = phase_straighten(side, forward_speed, steering_deg, velocity); break;
+        case 4: phase_done = phase_turn_back(side, forward_speed, steering_deg, velocity); break;
+        default:
+            phase_done = phase_find_line(forward_speed, steering_deg, velocity);
+            if (line_seen(darkness)) return DeviationResult::LineFound;
+            if (phase_done) return DeviationResult::SearchLine;
             break;
-        case 1:
-            steering_deg = side * ARC_STEER_DEG;
-            velocity = FORWARD_SPEED;
-            integrate(steering_deg);
-            if (m_dev_heading >= ARC_HEADING_RAD) next_phase();
-            break;
-        case 2:
-            steering_deg = -side * ARC_STEER_DEG;
-            velocity = FORWARD_SPEED;
-            integrate(steering_deg);
-            if (m_dev_heading <= 0.0f) next_phase();
-            break;
-        case 3:
-            steering_deg = 0.0f;
-            velocity = FORWARD_SPEED;
-            integrate(steering_deg);
-            if (m_dev_x - CAR_REAR_M >= m_dev_obstacle_far_x + CLEARANCE_M) next_phase();
-            break;
-        case 4:
-        default: {
-            const bool turning = (m_dev_phase == 4);
-            steering_deg = turning ? -side * RETURN_STEER_DEG : 0.0f;
-            velocity = RETURN_SPEED;
-            integrate(steering_deg);
-            const float max_darkness = std::max({darkness[0], darkness[1], darkness[2], darkness[3], darkness[4]});
-            const float total_darkness = darkness[0] + darkness[1] + darkness[2] + darkness[3] + darkness[4];
-            if (max_darkness >= 0.50f || (total_darkness >= 0.35f && max_darkness >= 0.35f)) {
-                return DeviationResult::LineFound;
-            }
-            if (turning && m_dev_heading <= -RETURN_HEADING_RAD) next_phase();
-            else if (!turning && m_dev_phase_distance >= RETURN_STRAIGHT_MAX_M) return DeviationResult::SearchLine;
-            break;
-        }
     }
+    if (phase_done) next_phase();
 
-    steering_deg = std::clamp(steering_deg + m_dev_trim_deg, -45.0f, 45.0f);
-    return m_state_timer >= TIMEOUT_S ? DeviationResult::SearchLine : DeviationResult::Running;
+    steering_deg = std::clamp(steering_deg + m_trim_deg, -45.0f, 45.0f);
+    return m_total_time >= TOTAL_TIMEOUT_S ? DeviationResult::SearchLine : DeviationResult::Running;
 }
 
 } // namespace services

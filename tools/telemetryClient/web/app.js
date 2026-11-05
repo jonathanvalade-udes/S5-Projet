@@ -1,6 +1,7 @@
 // ==============================================================================
 // FastDrink Telemetry Client & Dashboard Frontend (JS)
 // Découplage complet Réseau / Rendu (requestAnimationFrame + DOM Cache)
+// Support Diagnostic Exhaustif : Codes Erreurs, Registres PWM/ADC, Drapeaux, Daemons
 // ==============================================================================
 
 let eventSource = null;
@@ -29,38 +30,134 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 
 function initDOMCache() {
+    // Statut Connexion & Trames
     DOM.connectionBadge = document.getElementById('connection-status');
     DOM.connectionText = document.getElementById('connection-text');
     DOM.targetAddress = document.getElementById('target-address');
     DOM.packetSeq = document.getElementById('packet-seq');
     DOM.packetRate = document.getElementById('packet-rate');
 
+    // Diagnostic & Erreurs
+    DOM.healthBanner = document.getElementById('system-health-banner');
+    DOM.healthStatusText = document.getElementById('health-status-text');
+    DOM.errFsm = document.getElementById('err-fsm');
+    DOM.errMotors = document.getElementById('err-motors');
+    DOM.errSteering = document.getElementById('err-steering');
+    DOM.errAuxServo = document.getElementById('err-aux-servo');
+    DOM.errSensors = document.getElementById('err-sensors');
+    DOM.errSonar = document.getElementById('err-sonar');
+    DOM.errHandler = document.getElementById('err-handler');
+
+    // Daemons
+    DOM.daemons = [];
+    for (let i = 1; i <= 4; ++i) {
+        DOM.daemons.push({
+            container: document.getElementById(`daemon-${i}`),
+            status: document.getElementById(`d${i}-status`),
+            err: document.getElementById(`d${i}-err`)
+        });
+    }
+    DOM.servicesTimestamp = document.getElementById('services-timestamp');
+    DOM.servicesDaemonsCount = document.getElementById('services-daemons-count');
+
+    // FSM
     DOM.fsmBadge = document.getElementById('fsm-badge');
     DOM.fsmId = document.getElementById('fsm-id');
+    DOM.fsmReqBadge = document.getElementById('fsm-req-badge');
+    DOM.fsmReqId = document.getElementById('fsm-req-id');
+    DOM.fsmFlagsHex = document.getElementById('fsm-flags-hex');
 
+    // Sonar
     DOM.sonarDist = document.getElementById('sonar-dist');
     DOM.sonarRaw = document.getElementById('sonar-raw');
     DOM.sonarProgress = document.getElementById('sonar-progress');
     DOM.sonarZone = document.getElementById('sonar-zone');
+    DOM.sonarFlagsRaw = document.getElementById('sonar-flags-raw');
 
+    // Suivi de ligne
     DOM.lineStatus = document.getElementById('line-status');
+    DOM.lineFlagsHex = document.getElementById('line-flags-hex');
     DOM.lineNodes = [];
     DOM.lineVals = [];
+    DOM.lineRaws = [];
+    DOM.lineCorrs = [];
     for (let i = 0; i < 5; ++i) {
         DOM.lineNodes.push(document.getElementById(`sensor-${i}`));
         DOM.lineVals.push(document.getElementById(`sval-${i}`));
+        DOM.lineRaws.push(document.getElementById(`sraw-${i}`));
+        DOM.lineCorrs.push(document.getElementById(`scorr-${i}`));
     }
 
+    // Moteurs & Registres
+    DOM.motorStateText = document.getElementById('motor-state-text');
+    DOM.motorCompFlags = document.getElementById('motor-comp-flags');
     DOM.motorLeftApp = document.getElementById('motor-left-app');
     DOM.motorLeftTgt = document.getElementById('motor-left-tgt');
     DOM.motorLeftFill = document.getElementById('motor-left-fill');
+    DOM.motorLeftEnc = document.getElementById('motor-left-enc');
+    DOM.mLFlags = document.getElementById('m-l-flags');
+    DOM.mLKp = document.getElementById('m-l-kp');
+    DOM.mLKi = document.getElementById('m-l-ki');
+    DOM.mLKd = document.getElementById('m-l-kd');
 
     DOM.motorRightApp = document.getElementById('motor-right-app');
     DOM.motorRightTgt = document.getElementById('motor-right-tgt');
     DOM.motorRightFill = document.getElementById('motor-right-fill');
+    DOM.motorRightEnc = document.getElementById('motor-right-enc');
+    DOM.mRFlags = document.getElementById('m-r-flags');
+    DOM.mRKp = document.getElementById('m-r-kp');
+    DOM.mRKi = document.getElementById('m-r-ki');
+    DOM.mRKd = document.getElementById('m-r-kd');
 
+    // Servomoteur Direction (CCR)
     DOM.steeringVal = document.getElementById('steering-val');
     DOM.steeringInd = document.getElementById('steering-indicator');
+    DOM.stCurCcr = document.getElementById('st-cur-ccr');
+    DOM.stTgtCcr = document.getElementById('st-tgt-ccr');
+    DOM.stCoeff = document.getElementById('st-coeff');
+    DOM.stFlags = document.getElementById('st-flags');
+
+    // Matrice des drapeaux (Flags)
+    DOM.flags = {
+        // FSM
+        fsmRdy: document.getElementById('flag-fsm-rdy'),
+        fsmDisc: document.getElementById('flag-fsm-disc'),
+        fsmReq: document.getElementById('flag-fsm-req'),
+        fsmAuto: document.getElementById('flag-fsm-auto'),
+        fsmHeadless: document.getElementById('flag-fsm-headless'),
+        fsmStall: document.getElementById('flag-fsm-stall'),
+        fsmAnom: document.getElementById('flag-fsm-anom'),
+        fsmWarn: document.getElementById('flag-fsm-warn'),
+        fsmCfg: document.getElementById('flag-fsm-cfg'),
+        fsmDrv: document.getElementById('flag-fsm-drv'),
+        fsmSock: document.getElementById('flag-fsm-sock'),
+        fsmShm: document.getElementById('flag-fsm-shm'),
+        // Services
+        srvSys: document.getElementById('flag-srv-sys'),
+        srvShm: document.getElementById('flag-srv-shm'),
+        srvDev: document.getElementById('flag-srv-dev'),
+        srvProc: document.getElementById('flag-srv-proc'),
+        srvDaemons: document.getElementById('flag-srv-daemons'),
+        srvSock: document.getElementById('flag-srv-sock'),
+        srvDisc: document.getElementById('flag-srv-disc'),
+        srvEth: document.getElementById('flag-srv-eth'),
+        srvDhcp: document.getElementById('flag-srv-dhcp'),
+        srvSsh: document.getElementById('flag-srv-ssh'),
+        srvShell: document.getElementById('flag-srv-shell'),
+        srvStall: document.getElementById('flag-srv-stall'),
+        srvAnom: document.getElementById('flag-srv-anom'),
+        // Périphériques
+        motRdy: document.getElementById('flag-mot-rdy'),
+        motDet: document.getElementById('flag-mot-det'),
+        motEnc: document.getElementById('flag-mot-enc'),
+        motPid: document.getElementById('flag-mot-pid'),
+        srvPwm: document.getElementById('flag-srv-pwm'),
+        srvRdy: document.getElementById('flag-srv-rdy'),
+        snsObj: document.getElementById('flag-sns-obj'),
+        snsAct: document.getElementById('flag-sns-act'),
+        lineFol: document.getElementById('flag-line-fol'),
+        lineLost: document.getElementById('flag-line-lost')
+    };
 
     DOM.cmdLogs = document.getElementById('cmd-logs');
 }
@@ -160,6 +257,23 @@ function updateActive(el, key, isActive) {
     }
 }
 
+function updateHex(el, key, num, width = 8) {
+    const val = (num || 0) >>> 0;
+    const hexStr = '0x' + val.toString(16).toUpperCase().padStart(width, '0');
+    if (el && lastRendered[key] !== hexStr) {
+        el.textContent = hexStr;
+        if (val !== 0) {
+            el.classList.remove('ok');
+            el.classList.add('error');
+        } else {
+            el.classList.remove('error');
+            el.classList.add('ok');
+        }
+        lastRendered[key] = hexStr;
+    }
+    return val !== 0;
+}
+
 function valNum(v, fallback = 0) {
     return (typeof v === 'number' && !isNaN(v) && isFinite(v)) ? v : fallback;
 }
@@ -192,47 +306,88 @@ function applyStatus(status) {
 function applyTelemetry(telem) {
     if (!telem || typeof telem !== 'object') return;
 
-    // 1. Seq number
+    // 1. Numéro de séquence
     if (telem.seq !== undefined) {
         updateText(DOM.packetSeq, 'seq', telem.seq);
     }
 
-    // 2. FSM State
+    let hasAnyError = false;
+
+    // 2. Diagnostics & Codes d'erreurs
+    if (telem.fsm) {
+        if (updateHex(DOM.errFsm, 'err_fsm', telem.fsm.error_code, 8)) hasAnyError = true;
+    }
+    if (telem.motors) {
+        if (updateHex(DOM.errMotors, 'err_mot', telem.motors.error_code, 8)) hasAnyError = true;
+        if (telem.motors.steering) {
+            if (updateHex(DOM.errSteering, 'err_st', telem.motors.steering.error_code, 8)) hasAnyError = true;
+        }
+    }
+    if (telem.aux_servo) {
+        if (updateHex(DOM.errAuxServo, 'err_aux', telem.aux_servo.error_code, 8)) hasAnyError = true;
+    }
+    if (telem.sensors) {
+        if (updateHex(DOM.errSensors, 'err_sens', telem.sensors.component_error_code, 4)) hasAnyError = true;
+        if (telem.sensors.ultrasonic) {
+            if (updateHex(DOM.errSonar, 'err_son', telem.sensors.ultrasonic.error_code, 8)) hasAnyError = true;
+        }
+    }
+    if (telem.services) {
+        if (updateHex(DOM.errHandler, 'err_hdl', telem.services.handler_error_code, 8)) hasAnyError = true;
+    }
+
+    // Bannière d'état global
+    if (DOM.healthBanner && lastRendered['has_err'] !== hasAnyError) {
+        lastRendered['has_err'] = hasAnyError;
+        if (hasAnyError) {
+            DOM.healthBanner.className = 'health-banner health-err';
+            if (DOM.healthStatusText) DOM.healthStatusText.textContent = 'Anomalie Détectée — Consulter les Codes d\'Erreur';
+        } else {
+            DOM.healthBanner.className = 'health-banner health-ok';
+            if (DOM.healthStatusText) DOM.healthStatusText.textContent = 'Système Nominal — Zéro Erreur Active';
+        }
+    }
+
+    // 3. FSM
     if (telem.fsm) {
         const stateName = telem.fsm.state_name || 'Inconnu';
         const stateId = telem.fsm.state_id !== undefined ? telem.fsm.state_id : '--';
         updateText(DOM.fsmBadge, 'fsm_name', stateName);
         updateText(DOM.fsmId, 'fsm_id', stateId);
 
-        if (lastRendered['fsm_style'] !== stateName) {
-            lastRendered['fsm_style'] = stateName;
-            const lower = stateName.toLowerCase();
-            if (DOM.fsmBadge) {
-                if (lower.includes('stop') || lower.includes('collision')) {
-                    DOM.fsmBadge.style.color = 'var(--accent-red)';
-                    DOM.fsmBadge.style.borderColor = 'rgba(239, 68, 68, 0.4)';
-                    DOM.fsmBadge.style.backgroundColor = 'rgba(239, 68, 68, 0.15)';
-                } else if (lower.includes('line') || lower.includes('armed')) {
-                    DOM.fsmBadge.style.color = 'var(--accent-green)';
-                    DOM.fsmBadge.style.borderColor = 'rgba(34, 197, 94, 0.4)';
-                    DOM.fsmBadge.style.backgroundColor = 'rgba(34, 197, 94, 0.15)';
-                } else {
-                    DOM.fsmBadge.style.color = 'var(--accent-blue)';
-                    DOM.fsmBadge.style.borderColor = 'rgba(56, 189, 248, 0.4)';
-                    DOM.fsmBadge.style.backgroundColor = 'rgba(56, 189, 248, 0.15)';
-                }
-            }
-        }
+        const reqName = telem.fsm.requested_state_name || stateName;
+        const reqId = telem.fsm.requested_state_id !== undefined ? telem.fsm.requested_state_id : stateId;
+        updateText(DOM.fsmReqBadge, 'fsm_req_name', reqName);
+        updateText(DOM.fsmReqId, 'fsm_req_id', reqId);
+
+        const fsmFlags = valNum(telem.fsm.flags, 0);
+        updateText(DOM.fsmFlagsHex, 'fsm_flags', '0x' + fsmFlags.toString(16).toUpperCase().padStart(4, '0'));
+
+        // Drapeaux FSM individuels
+        updateActive(DOM.flags.fsmDisc, 'f_fsm_disc', !!(fsmFlags & (1 << 0)));
+        updateActive(DOM.flags.fsmAnom, 'f_fsm_anom', !!(fsmFlags & (1 << 1)));
+        updateActive(DOM.flags.fsmWarn, 'f_fsm_warn', !!(fsmFlags & (1 << 2)));
+        updateActive(DOM.flags.fsmCfg, 'f_fsm_cfg', !!(fsmFlags & (1 << 3)));
+        updateActive(DOM.flags.fsmDrv, 'f_fsm_drv', !!(fsmFlags & (1 << 4)));
+        updateActive(DOM.flags.fsmSock, 'f_fsm_sock', !!(fsmFlags & (1 << 5)));
+        updateActive(DOM.flags.fsmShm, 'f_fsm_shm', !!(fsmFlags & (1 << 6)));
+        updateActive(DOM.flags.fsmStall, 'f_fsm_stall', !!(fsmFlags & (1 << 7)));
+        updateActive(DOM.flags.fsmReq, 'f_fsm_req', !!(fsmFlags & (1 << 8)));
+        updateActive(DOM.flags.fsmRdy, 'f_fsm_rdy', !!(fsmFlags & (1 << 9)));
+        updateActive(DOM.flags.fsmAuto, 'f_fsm_auto', !!(fsmFlags & (1 << 10)));
+        updateActive(DOM.flags.fsmHeadless, 'f_fsm_head', !!(fsmFlags & (1 << 11)));
     }
 
-    // 3. Sonar Distance
+    // 4. Sonar Distance & Flags
     if (telem.sensors && telem.sensors.ultrasonic) {
         const u = telem.sensors.ultrasonic;
         const dist = valNum(u.calc_dist_cm, 0);
         const raw = valNum(u.raw_dist_cm, 0);
+        const uFlags = valNum(u.flags, 0);
 
         updateText(DOM.sonarDist, 's_dist', dist.toFixed(1));
         updateText(DOM.sonarRaw, 's_raw', raw.toFixed(1));
+        updateText(DOM.sonarFlagsRaw, 's_flags', '0x' + uFlags.toString(16).toUpperCase().padStart(2, '0'));
 
         const pct = Math.min(100, Math.max(0, (dist / 100.0) * 100));
         updateWidth(DOM.sonarProgress, 's_prog', `${pct.toFixed(0)}%`);
@@ -251,18 +406,29 @@ function applyTelemetry(telem) {
             DOM.sonarZone.style.color = zoneColor;
             lastRendered['s_zone_col'] = zoneColor;
         }
+
+        updateActive(DOM.flags.snsObj, 'f_sns_obj', !!(uFlags & 1));
+        updateActive(DOM.flags.snsAct, 'f_sns_act', !!(uFlags & (1 << 1)));
     }
 
-    // 4. Line Follower Sensors (5x)
-    if (telem.sensors && telem.sensors.line_follower && Array.isArray(telem.sensors.line_follower.sensors)) {
-        const sensors = telem.sensors.line_follower.sensors;
+    // 5. Capteurs Suivi de Ligne
+    if (telem.sensors && telem.sensors.line_follower) {
+        const lf = telem.sensors.line_follower;
+        const lFlags = valNum(lf.flags, 0);
+        updateText(DOM.lineFlagsHex, 'line_flags', '0x' + lFlags.toString(16).toUpperCase().padStart(4, '0'));
+
+        const sensors = Array.isArray(lf.sensors) ? lf.sensors : [];
         let anyDetected = false;
         for (let i = 0; i < sensors.length && i < 5; ++i) {
             const s = sensors[i] || {};
             const val = valNum(s.normalized, 0);
             const rawVal = valNum(s.raw, 0);
+            const corr = valNum(s.corrector, 0);
 
             updateText(DOM.lineVals[i], `sval_${i}`, val.toFixed(2));
+            updateText(DOM.lineRaws[i], `sraw_${i}`, `ADC: ${rawVal}`);
+            updateText(DOM.lineCorrs[i], `scorr_${i}`, `Corr: ${corr.toFixed(1)}`);
+
             const isActive = val >= 0.5 || rawVal > 500;
             updateActive(DOM.lineNodes[i], `snode_${i}`, isActive);
             if (isActive) anyDetected = true;
@@ -275,10 +441,19 @@ function applyTelemetry(telem) {
             DOM.lineStatus.style.color = lineColor;
             lastRendered['line_col'] = lineColor;
         }
+
+        updateActive(DOM.flags.lineFol, 'f_line_fol', !!(lFlags & (1 << 3)));
+        updateActive(DOM.flags.lineLost, 'f_line_lost', !!(lFlags & (1 << 4)));
     }
 
-    // 5. Motors & Steering
+    // 6. Moteurs, Encodeurs & PWM Direction
     if (telem.motors) {
+        const mState = telem.motors.state_name || 'Init';
+        updateText(DOM.motorStateText, 'm_state', mState);
+        const mCompFlags = valNum(telem.motors.component_flags, 0);
+        updateText(DOM.motorCompFlags, 'm_comp_flags', '0x' + mCompFlags.toString(16).toUpperCase().padStart(4, '0'));
+
+        // Moteur Gauche
         if (telem.motors.left) {
             const l = telem.motors.left;
             const appliedPct = Math.round(valNum(l.applied_throttle, 0) * 100);
@@ -286,7 +461,23 @@ function applyTelemetry(telem) {
             updateText(DOM.motorLeftApp, 'm_l_app', `${appliedPct}%`);
             updateText(DOM.motorLeftTgt, 'm_l_tgt', `${targetPct}%`);
             updateWidth(DOM.motorLeftFill, 'm_l_fill', `${Math.min(100, Math.max(0, appliedPct))}%`);
+            updateText(DOM.motorLeftEnc, 'm_l_enc', l.encoder !== undefined ? l.encoder : 0);
+            updateText(DOM.mLFlags, 'm_l_flags', '0x' + valNum(l.motor_flags, 0).toString(16).toUpperCase().padStart(2, '0'));
+
+            if (l.pid) {
+                updateText(DOM.mLKp, 'm_l_kp', valNum(l.pid.kp).toFixed(2));
+                updateText(DOM.mLKi, 'm_l_ki', valNum(l.pid.ki).toFixed(2));
+                updateText(DOM.mLKd, 'm_l_kd', valNum(l.pid.kd).toFixed(2));
+            }
+
+            const mFlags = valNum(l.motor_flags, 0);
+            updateActive(DOM.flags.motDet, 'f_mot_det', !!(mFlags & 1));
+            updateActive(DOM.flags.motEnc, 'f_mot_enc', !!(mFlags & (1 << 1)));
+            updateActive(DOM.flags.motRdy, 'f_mot_rdy', !!(mFlags & (1 << 2)));
+            updateActive(DOM.flags.motPid, 'f_mot_pid', !!(mFlags & (1 << 3)));
         }
+
+        // Moteur Droit
         if (telem.motors.right) {
             const r = telem.motors.right;
             const appliedPct = Math.round(valNum(r.applied_throttle, 0) * 100);
@@ -294,13 +485,75 @@ function applyTelemetry(telem) {
             updateText(DOM.motorRightApp, 'm_r_app', `${appliedPct}%`);
             updateText(DOM.motorRightTgt, 'm_r_tgt', `${targetPct}%`);
             updateWidth(DOM.motorRightFill, 'm_r_fill', `${Math.min(100, Math.max(0, appliedPct))}%`);
+            updateText(DOM.motorRightEnc, 'm_r_enc', r.encoder !== undefined ? r.encoder : 0);
+            updateText(DOM.mRFlags, 'm_r_flags', '0x' + valNum(r.motor_flags, 0).toString(16).toUpperCase().padStart(2, '0'));
+
+            if (r.pid) {
+                updateText(DOM.mRKp, 'm_r_kp', valNum(r.pid.kp).toFixed(2));
+                updateText(DOM.mRKi, 'm_r_ki', valNum(r.pid.ki).toFixed(2));
+                updateText(DOM.mRKd, 'm_r_kd', valNum(r.pid.kd).toFixed(2));
+            }
         }
+
+        // Direction (Servo)
         if (telem.motors.steering) {
             const st = telem.motors.steering;
             const angle = valNum(st.current_angle, 0);
             updateText(DOM.steeringVal, 'st_val', `${angle.toFixed(1)}°`);
             const pointerPct = Math.min(100, Math.max(0, ((angle + 45.0) / 90.0) * 100));
             updateLeft(DOM.steeringInd, 'st_ind', `${pointerPct.toFixed(1)}%`);
+
+            updateText(DOM.stCurCcr, 'st_cur_ccr', st.current_ccr !== undefined ? st.current_ccr : '--');
+            updateText(DOM.stTgtCcr, 'st_tgt_ccr', st.target_ccr !== undefined ? st.target_ccr : '--');
+            updateText(DOM.stCoeff, 'st_coeff', valNum(st.coefficient, 1.0).toFixed(2));
+            const sFlags = valNum(st.flags, 0);
+            updateText(DOM.stFlags, 'st_flags', '0x' + sFlags.toString(16).toUpperCase().padStart(4, '0'));
+
+            updateActive(DOM.flags.srvPwm, 'f_srv_pwm', !!(sFlags & (1 << 7)));
+            updateActive(DOM.flags.srvRdy, 'f_srv_rdy', !!(sFlags & (1 << 8)));
+        }
+    }
+
+    // 7. Services & Superviseur des 4 Daemons
+    if (telem.services) {
+        updateText(DOM.servicesTimestamp, 'srv_ts', telem.services.timestamp || 0);
+        updateText(DOM.servicesDaemonsCount, 'srv_d_count', telem.services.daemons_count || 0);
+
+        const srvFlags = valNum(telem.services.flags, 0);
+        updateActive(DOM.flags.srvDev, 'f_srv_dev', !!(srvFlags & (1 << 0)));
+        updateActive(DOM.flags.srvShm, 'f_srv_shm', !!(srvFlags & (1 << 1)));
+        updateActive(DOM.flags.srvProc, 'f_srv_proc', !!(srvFlags & (1 << 2)));
+        updateActive(DOM.flags.srvSys, 'f_srv_sys', !!(srvFlags & (1 << 3)));
+        updateActive(DOM.flags.srvDaemons, 'f_srv_dae', !!(srvFlags & (1 << 4)));
+        updateActive(DOM.flags.srvEth, 'f_srv_eth', !!(srvFlags & (1 << 5)));
+        updateActive(DOM.flags.srvAnom, 'f_srv_anom', !!(srvFlags & (1 << 7)));
+        updateActive(DOM.flags.srvSock, 'f_srv_sock', !!(srvFlags & (1 << 8)));
+        updateActive(DOM.flags.srvDisc, 'f_srv_disc', !!(srvFlags & (1 << 9)));
+        updateActive(DOM.flags.srvStall, 'f_srv_stall', !!(srvFlags & (1 << 10)));
+        updateActive(DOM.flags.srvShell, 'f_srv_shl', !!(srvFlags & (1 << 11)));
+        updateActive(DOM.flags.srvSsh, 'f_srv_ssh', !!(srvFlags & (1 << 12)));
+        updateActive(DOM.flags.srvDhcp, 'f_srv_dhcp', !!(srvFlags & (1 << 13)));
+
+        if (Array.isArray(telem.services.daemons)) {
+            for (let i = 0; i < telem.services.daemons.length && i < 4; ++i) {
+                const d = telem.services.daemons[i];
+                const dSlot = DOM.daemons[i];
+                if (dSlot) {
+                    const isOnline = d.status === 1;
+                    const statusText = isOnline ? 'Actif' : 'Inactif';
+                    updateText(dSlot.status, `d_${i}_st`, statusText);
+                    updateText(dSlot.err, `d_${i}_err`, '0x' + valNum(d.error_code, 0).toString(16).toUpperCase().padStart(2, '0'));
+
+                    if (dSlot.status && lastRendered[`d_${i}_st_col`] !== isOnline) {
+                        dSlot.status.className = isOnline ? 'status-online' : 'status-offline';
+                        lastRendered[`d_${i}_st_col`] = isOnline;
+                    }
+                    if (dSlot.container) {
+                        if (isOnline) dSlot.container.classList.add('online');
+                        else dSlot.container.classList.remove('online');
+                    }
+                }
+            }
         }
     }
 }
@@ -386,5 +639,8 @@ function logConsole(message, type = 'system') {
     entry.textContent = `[${time}] ${message}`;
 
     DOM.cmdLogs.appendChild(entry);
+    while (DOM.cmdLogs.children.length > 200) {
+        DOM.cmdLogs.removeChild(DOM.cmdLogs.firstChild);
+    }
     DOM.cmdLogs.scrollTop = DOM.cmdLogs.scrollHeight;
 }

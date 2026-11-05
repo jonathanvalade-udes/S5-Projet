@@ -42,7 +42,6 @@ private:
     float m_reverse_speed{picar::constants::DEFAULT_REVERSE_SPEED};
     float m_auto_start_delay{0.0f};
     float m_avoid_side{1.0f};
-    float m_predictive_brake_gain{picar::constants::DEFAULT_PREDICTIVE_BRAKE_GAIN};
 
     FsmNavigator m_navigator;
     FsmEventPipe m_event_pipe;

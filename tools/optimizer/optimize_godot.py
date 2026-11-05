@@ -116,11 +116,6 @@ class FastSimulator:
                     v_curve = p['safety'] * math.sqrt(MAX_ACCELERATION * R)
                     target_spd = max(p['min_curve'], min(p['cruise'], v_curve))
 
-                # Feedforward prédictif
-                if p['brake_gain'] > 0.0:
-                    reduction = min(p['brake_gain'] * abs(d_err), 0.35 * target_spd)
-                    target_spd = max(p['min_curve'], target_spd - reduction)
-
                 # Rampe d'accélération MotionProfiler
                 max_dv = MAX_ACCELERATION * DT
                 dv = target_spd - current_spd
@@ -165,8 +160,22 @@ class FastSimulator:
 # ---------------------------------------------------------------------------
 def run_godot_trial(p: Dict[str, float], time_scale: float = 5.0, timeout: float = 30.0) -> Tuple[float, float, bool, str]:
     """Exécute un tour complet dans Godot headless et extrait le résultat."""
-    # 1. Mettre à jour picar.conf pour que SimBridge/FSM prenne les nouveaux réglages
+    # 1. Mettre à jour fsm.conf et picar.conf
     write_picar_conf(p)
+
+    # 2. Transmettre les paramètres dynamiques à SimBridge si connecté
+    try:
+        import socket
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(0.5)
+            s.connect(("127.0.0.1", 9000))
+            s.sendall(f"STRAIGHT_CRUISE_SPEED={p['cruise']:.4f}\n".encode())
+            s.sendall(f"MIN_CURVE_SPEED={p['min_curve']:.4f}\n".encode())
+            s.sendall(f"CURVE_SAFETY_FACTOR={p['safety']:.4f}\n".encode())
+            s.sendall(f"LINE_KP={p['kp']:.4f}\n".encode())
+            s.sendall(f"LINE_KD={p['kd']:.4f}\n".encode())
+    except Exception:
+        pass
 
     cmd = [
         "godot",
@@ -205,24 +214,30 @@ def run_godot_trial(p: Dict[str, float], time_scale: float = 5.0, timeout: float
 
 
 def write_picar_conf(p: Dict[str, float]):
-    """Écrit les paramètres dans picar.conf."""
+    """Écrit les paramètres dans fsm.conf et picar.conf."""
     content = f"""# ==========================================
-# CONFIGURATION FASTDRINK - PICAR-S (OPTUNA)
+# CONFIGURATION FSM - PICAR-S (OPTUNA)
 # ==========================================
+HZ=100.0
 MAX_ACCELERATION=0.735
 STRAIGHT_CRUISE_SPEED={p['cruise']:.4f}
 MIN_CURVE_SPEED={p['min_curve']:.4f}
 CURVE_SAFETY_FACTOR={p['safety']:.4f}
-PREDICTIVE_BRAKE_GAIN={p['brake_gain']:.4f}
 
 LINE_KP={p['kp']:.4f}
 LINE_KD={p['kd']:.4f}
 
 OBSTACLE_STOP_DIST_CM=20.0
 REVERSE_SPEED=0.12
+AVOID_SIDE=1.0
+AUTO_START_DELAY=0.0
 """
-    with open(CONF_PATH, "w") as f:
-        f.write(content)
+    for path in ["fsm.conf", "picar.conf"]:
+        try:
+            with open(path, "w") as f:
+                f.write(content)
+        except Exception:
+            pass
 
 
 def export_header(best_p: Dict[str, float], lap_time: float):
@@ -235,13 +250,12 @@ def export_header(best_p: Dict[str, float], lap_time: float):
         f.write("namespace Config {\n")
         f.write(f"    constexpr float OPTIMIZED_KP = {best_p['kp']:.4f}f;\n")
         f.write(f"    constexpr float OPTIMIZED_KD = {best_p['kd']:.4f}f;\n")
-        f.write(f"    constexpr float OPTIMIZED_KI = {best_p['ki']:.4f}f;\n")
+        f.write(f"    constexpr float OPTIMIZED_KI = {best_p.get('ki', 0.10):.4f}f;\n")
         f.write(f"    constexpr float OPTIMIZED_CRUISE_SPEED = {best_p['cruise']:.4f}f; // m/s\n")
         f.write(f"    constexpr float OPTIMIZED_MIN_CURVE_SPEED = {best_p['min_curve']:.4f}f; // m/s\n")
         f.write(f"    constexpr float OPTIMIZED_SAFETY_FACTOR = {best_p['safety']:.4f}f;\n")
-        f.write(f"    constexpr float OPTIMIZED_BRAKE_GAIN = {best_p['brake_gain']:.4f}f;\n")
-        f.write(f"    constexpr float OPTIMIZED_ERROR_ALPHA = {best_p['alpha']:.4f}f;\n")
-        f.write(f"    constexpr float OPTIMIZED_CENTER_KNEE = {best_p['knee']:.4f}f;\n")
+        f.write(f"    constexpr float OPTIMIZED_ERROR_ALPHA = {best_p.get('alpha', 0.40):.4f}f;\n")
+        f.write(f"    constexpr float OPTIMIZED_CENTER_KNEE = {best_p.get('knee', 0.15):.4f}f;\n")
         f.write("}\n")
     print(f"[Export] En-tête C++ généré dans : {HEADER_PATH}")
 
@@ -268,17 +282,15 @@ def main():
     fast_sim = FastSimulator() if args.mode == "fast" else None
 
     def objective(trial: optuna.Trial) -> float:
-        # Plages élargies pour chercher la limite physique absolue ("on the edge")
         p = {
-            'cruise': trial.suggest_float("cruise", 0.35, 0.55),
-            'min_curve': trial.suggest_float("min_curve", 0.14, 0.28),
-            'safety': trial.suggest_float("safety", 0.80, 0.98),
-            'brake_gain': trial.suggest_float("brake_gain", 0.03, 0.15),
-            'kp': trial.suggest_float("kp", 0.50, 1.20),
-            'kd': trial.suggest_float("kd", 0.02, 0.15),
-            'ki': trial.suggest_float("ki", 0.00, 0.35),
-            'alpha': trial.suggest_float("alpha", 0.25, 0.70),
-            'knee': trial.suggest_float("knee", 0.05, 0.20),
+            'cruise': trial.suggest_float("cruise", 0.38, 0.52),
+            'min_curve': trial.suggest_float("min_curve", 0.18, 0.28),
+            'safety': trial.suggest_float("safety", 0.85, 0.98),
+            'kp': trial.suggest_float("kp", 0.45, 0.70),
+            'kd': trial.suggest_float("kd", 0.025, 0.055),
+            'ki': 0.10,
+            'alpha': 0.40,
+            'knee': 0.15,
         }
 
         if args.mode == "fast":
@@ -306,15 +318,11 @@ def main():
 
     # Enqueue le jeu de paramètres actuels comme point de départ
     baseline_params = {
-        'cruise': 0.40,
-        'min_curve': 0.14,
-        'safety': 0.85,
-        'brake_gain': 0.06,
-        'kp': 0.65,
-        'kd': 0.05,
-        'ki': 0.30,
-        'alpha': 0.40,
-        'knee': 0.15,
+        'cruise': 0.38,
+        'min_curve': 0.20,
+        'safety': 0.90,
+        'kp': 0.55,
+        'kd': 0.035,
     }
     study.enqueue_trial(baseline_params)
     
@@ -333,12 +341,11 @@ def main():
     print(f"  • STRAIGHT_CRUISE_SPEED         : {best['cruise']:.4f} m/s")
     print(f"  • MIN_CURVE_SPEED               : {best['min_curve']:.4f} m/s")
     print(f"  • CURVE_SAFETY_FACTOR           : {best['safety']:.4f}")
-    print(f"  • PREDICTIVE_BRAKE_GAIN         : {best['brake_gain']:.4f}")
     print(f"  • LINE_KP                       : {best['kp']:.4f}")
     print(f"  • LINE_KD                       : {best['kd']:.4f}")
-    print(f"  • DEFAULT_KI                    : {best['ki']:.4f}")
-    print(f"  • ANALOG_ERROR_ALPHA            : {best['alpha']:.4f}")
-    print(f"  • ANALOG_CENTER_KNEE            : {best['knee']:.4f}")
+    print(f"  • DEFAULT_KI                    : {best.get('ki', 0.10):.4f}")
+    print(f"  • ANALOG_ERROR_ALPHA            : {best.get('alpha', 0.40):.4f}")
+    print(f"  • ANALOG_CENTER_KNEE            : {best.get('knee', 0.15):.4f}")
     print("=" * 70)
 
     # Sauvegarde dans picar.conf et export C++

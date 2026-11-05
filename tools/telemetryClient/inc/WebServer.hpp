@@ -27,6 +27,12 @@ public:
         m_command_cb = cb;
     }
 
+    // Définit le chemin du fichier CSV pour téléchargement direct via /api/export_csv
+    void set_csv_filepath(const std::string& path) {
+        std::lock_guard<std::mutex> lock(m_csv_mutex);
+        m_csv_filepath = path;
+    }
+
     // Diffusion temps réel d'un paquet de télémétrie JSON vers tous les navigateurs connectés (SSE)
     void broadcast_telemetry(const std::string& json_data);
 
@@ -39,6 +45,7 @@ private:
     void server_loop();
     void handle_http_request(int client_fd, const std::string& request);
     void serve_file(int client_fd, const std::string& filepath, const std::string& content_type);
+    void serve_csv_download(int client_fd);
     void send_response(int client_fd, int status_code, const std::string& content_type, const std::string& body);
 
     int m_port{8080};
@@ -48,6 +55,9 @@ private:
     std::thread m_thread;
 
     CommandCallback m_command_cb;
+
+    std::mutex m_csv_mutex;
+    std::string m_csv_filepath{"telemetry_data.csv"};
 
     // Gestion des clients Server-Sent Events (SSE)
     std::mutex m_sse_mutex;

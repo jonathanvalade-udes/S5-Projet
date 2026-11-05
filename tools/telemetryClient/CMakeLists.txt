@@ -24,6 +24,7 @@ find_package(Threads REQUIRED)
 set(SRCS
     src/TcpClient.cpp
     src/ProtocolHandler.cpp
+    src/CsvLogger.cpp
     src/WebServer.cpp
     src/TelemetryClient.cpp
     src/main.cpp
@@ -56,6 +57,7 @@ add_executable(test_client
     tests/test_client.cpp
     src/TcpClient.cpp
     src/ProtocolHandler.cpp
+    src/CsvLogger.cpp
     src/WebServer.cpp
 )
 target_include_directories(test_client PRIVATE

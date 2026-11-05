@@ -21,6 +21,8 @@ static void print_usage(const char* prog) {
               << "  --port <port>        Port TCP du TelemetryService (défaut: 91 ou PICAR_PORT)\n"
               << "  --web-port <port>    Port HTTP pour l'UI Web (défaut: 8080 ou WEB_PORT)\n"
               << "  --web-root <dir>     Chemin vers les assets web HTML/JS/CSS (défaut: web)\n"
+              << "  --csv <path>         Fichier d'enregistrement CSV (défaut: telemetry_data.csv ou TELEMETRY_CSV)\n"
+              << "  --no-csv             Désactiver l'enregistrement CSV sur disque\n"
               << "  --no-web             Désactiver l'interface web locale\n"
               << "  --help               Afficher cette aide\n";
 }
@@ -49,6 +51,10 @@ int main(int argc, char* argv[]) {
         config.web_root = env_root;
     }
 
+    if (const char* env_csv = std::getenv("TELEMETRY_CSV")) {
+        config.csv_path = env_csv;
+    }
+
     // 2. Parser les arguments CLI prioritaires
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -60,6 +66,10 @@ int main(int argc, char* argv[]) {
             config.web_port = std::stoi(argv[++i]);
         } else if (arg == "--web-root" && i + 1 < argc) {
             config.web_root = argv[++i];
+        } else if (arg == "--csv" && i + 1 < argc) {
+            config.csv_path = argv[++i];
+        } else if (arg == "--no-csv") {
+            config.enable_csv = false;
         } else if (arg == "--no-web") {
             config.enable_web = false;
         } else if (arg == "--help" || arg == "-h") {

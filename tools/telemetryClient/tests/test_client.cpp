@@ -9,10 +9,12 @@
 #include <unistd.h>
 #include <poll.h>
 #include <limits>
+#include <fstream>
 
 #include "TcpClient.hpp"
 #include "ProtocolHandler.hpp"
 #include "WebServer.hpp"
+#include "CsvLogger.hpp"
 #include "header/header.hpp"
 #include "crc/crc_global.hpp"
 #include "commands/global_commands.hpp"
@@ -72,12 +74,30 @@ void mock_telemetry_server(std::atomic<bool>& server_running, std::atomic<bool>&
     handshake_done.store(true);
     assert(send(cfd, pong_pkt.data(), pong_pkt.size(), 0) == static_cast<ssize_t>(pong_pkt.size()));
 
-    // 3. Envoi d'une trame de télémétrie
+    // 3. Envoi d'une trame de télémétrie complète avec registres et démons
     shared::car::CarTelemetry telem{};
+    telem.fsm.currentState = shared::fsm::MachineStates::LineFollowingForward;
+    telem.fsm.requestedState = shared::fsm::MachineStates::LineFollowingForward;
+    telem.fsm.flags = 0x0201;
+    telem.fsm.errorCode = 0;
+
     telem.sensors.ultrasonicSensor.calculatedDistance = 37.5f;
     telem.sensors.ultrasonicSensor.rawDistanceCm = 38.0f;
+    telem.sensors.ultrasonicSensor.flags = 1;
+    telem.sensors.ultrasonicSensor.errorCode = 0;
+
+    telem.motors.state = shared::motors::MotorStates::Running;
     telem.motors.leftMotor.normalizedMotorThrottleApplied = 0.45f;
-    telem.fsm.currentState = shared::fsm::MachineStates::LineFollowingForward;
+    telem.motors.leftMotor.motorEncoder = 1250;
+    telem.motors.rightMotor.motorEncoder = 1248;
+    telem.motors.steeringServo.currentCCR = 307;
+    telem.motors.steeringServo.targetedCCR = 310;
+
+    telem.services.deamonsLenght = 4;
+    telem.services.daemons[0] = {1, 1, 0, 0};
+    telem.services.daemons[1] = {2, 1, 0, 0};
+    telem.services.daemons[2] = {3, 1, 0, 0};
+    telem.services.daemons[3] = {4, 1, 0, 0};
 
     shared::headers::PacketHeader telem_hdr{};
     telem_hdr.type = shared::headers::HeadersType::Telemetry;
@@ -134,13 +154,19 @@ int main() {
     assert(seq == 42);
     assert(received_telem.sensors.ultrasonicSensor.calculatedDistance > 37.0f);
     assert(received_telem.fsm.currentState == shared::fsm::MachineStates::LineFollowingForward);
+    assert(received_telem.motors.leftMotor.motorEncoder == 1250);
+    assert(received_telem.motors.steeringServo.currentCCR == 307);
     std::cout << "  ✓ Réception, désérialisation et CRC32 du paquet de télémétrie validés." << std::endl;
 
-    // Test conversion JSON
+    // Test conversion JSON enrichie
     std::string json_str = telemetry::ProtocolHandler::telemetry_to_json(received_telem, seq);
     assert(json_str.find("\"state_name\":\"LineFollowingForward\"") != std::string::npos);
+    assert(json_str.find("\"requested_state_name\":\"LineFollowingForward\"") != std::string::npos);
     assert(json_str.find("\"calc_dist_cm\":37.50") != std::string::npos);
-    std::cout << "  ✓ Génération du flux JSON pour le dashboard Web validée." << std::endl;
+    assert(json_str.find("\"encoder\":1250") != std::string::npos);
+    assert(json_str.find("\"current_ccr\":307") != std::string::npos);
+    assert(json_str.find("\"daemons\"") != std::string::npos);
+    std::cout << "  ✓ Génération du flux JSON enrichi (registres, drapeaux, démons) validée." << std::endl;
 
     // Test conversion JSON avec valeurs NaN et Inf (sécurité RFC 8259)
     shared::car::CarTelemetry nan_telem = received_telem;
@@ -152,6 +178,30 @@ int main() {
     assert(nan_json.find("\"calc_dist_cm\":0.00") != std::string::npos);
     std::cout << "  ✓ Protection contre les valeurs NaN / Inf dans le flux JSON validée." << std::endl;
 
+    // Test CsvLogger
+    {
+        std::string test_csv = "test_telemetry.csv";
+        unlink(test_csv.c_str());
+        telemetry::CsvLogger logger;
+        assert(logger.open(test_csv));
+        assert(logger.is_open());
+        logger.log_record(42, received_telem);
+        logger.flush();
+        assert(logger.get_record_count() == 1);
+        logger.close();
+
+        std::ifstream f(test_csv);
+        assert(f.is_open());
+        std::string header, data_line;
+        std::getline(f, header);
+        std::getline(f, data_line);
+        assert(header.find("timestamp_ms,seq_number") != std::string::npos);
+        assert(header.find("steering_current_ccr") != std::string::npos);
+        assert(data_line.find(",42,") != std::string::npos);
+        unlink(test_csv.c_str());
+        std::cout << "  ✓ CsvLogger création d'en-tête, écriture de trames et flush validés." << std::endl;
+    }
+
     // Test envoi de commande
     assert(proto.send_command(client, "trigger_start", 200));
     std::cout << "  ✓ Transmission de commande avec padding multiple de 4 et CRC validée." << std::endl;
@@ -160,9 +210,15 @@ int main() {
         srv_thread.join();
     }
 
-    // Test WebServer diffusion non-bloquante avec SSE et route /api/telemetry
+    // Test WebServer diffusion non-bloquante avec SSE et route /api/telemetry et /api/export_csv
     {
         telemetry::WebServer web(8999, "web");
+        web.set_csv_filepath("test_export.csv");
+        {
+            std::ofstream f("test_export.csv");
+            f << "test,csv,data\n1,2,3\n";
+        }
+
         assert(web.start());
         web.broadcast_telemetry("{\"test\":1}");
         web.broadcast_status(true, "127.0.0.1", 91);
@@ -185,8 +241,24 @@ int main() {
         assert(resp.find("{\"test\":1}") != std::string::npos);
         close(s);
 
+        // Connexion client HTTP pour tester /api/export_csv
+        int s2 = socket(AF_INET, SOCK_STREAM, 0);
+        assert(connect(s2, (struct sockaddr*)&srv, sizeof(srv)) == 0);
+        std::string req_csv = "GET /api/export_csv HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
+        send(s2, req_csv.data(), req_csv.size(), 0);
+        char buf2[512];
+        ssize_t n2 = recv(s2, buf2, sizeof(buf2) - 1, 0);
+        assert(n2 > 0);
+        buf2[n2] = '\0';
+        std::string resp2(buf2);
+        assert(resp2.find("200 OK") != std::string::npos);
+        assert(resp2.find("text/csv") != std::string::npos);
+        assert(resp2.find("test,csv,data") != std::string::npos);
+        close(s2);
+        unlink("test_export.csv");
+
         web.stop();
-        std::cout << "  ✓ WebServer diffusion SSE non-bloquante et endpoint /api/telemetry validés." << std::endl;
+        std::cout << "  ✓ WebServer diffusion SSE, route /api/telemetry et /api/export_csv validés." << std::endl;
     }
 
     std::cout << "\n✅ Tous les tests unitaires et d'intégration du TelemetryClient sont VALIDÉS !" << std::endl;
