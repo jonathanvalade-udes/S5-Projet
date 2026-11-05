@@ -33,6 +33,11 @@ bool Sensors::init() {
     m_filter_alpha = m_ipc_handler.get_float("FILTER_ALPHA", m_filter_alpha);
     m_median_window = static_cast<size_t>(m_ipc_handler.get_float("MEDIAN_WINDOW", static_cast<float>(m_median_window)));
 
+    if(!m_acquisition.init()){
+        std::cerr << "[SENSORS] Failed to initialize the acquisition" << std::endl;
+        return false;
+    }
+    
     m_acquisition.update_filter_params(m_filter_alpha, m_median_window);
 
     if (!m_shm_bridge.init()) {
