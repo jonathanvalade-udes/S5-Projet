@@ -150,7 +150,10 @@ FsmNavOutput FsmNavigator::step(shared::fsm::MachineStates current_state, float 
         case shared::fsm::MachineStates::RightDeviation:
         case shared::fsm::MachineStates::LeftDeviation: {
             float side = (current_state == shared::fsm::MachineStates::RightDeviation) ? 1.0f : -1.0f;
-            auto res = m_obstacle_avoidance.update(side, dt, line_darkness, curr_v, min_curve_spd, out.desired_steering, out.desired_velocity);
+            // Vitesse RÉELLE : la vitesse du FSM est convertie en puissance moteur avec la croisière = 50 %, donc elle ne vaut pas
+            // des m/s réels (sur le robot, 50 % de puissance = ~0,32 m/s, que la croisière configurée soit 0,35 ou 0,45).
+            const float odo_scale = picar::constants::PHYSICAL_SPEED_AT_HALF_THROTTLE / std::max(m_cruise_speed, 0.05f);
+            auto res = m_obstacle_avoidance.update(side, dt, line_darkness, curr_v * odo_scale, min_curve_spd, out.desired_steering, out.desired_velocity);
             if (res == ObstacleAvoidance::DeviationResult::LineFound) {
                 set_transition(shared::fsm::MachineStates::LineDetected);
             } else if (res == ObstacleAvoidance::DeviationResult::SearchLine) {
