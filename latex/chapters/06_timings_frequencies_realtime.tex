@@ -1,0 +1,145 @@
+\chapter{Contraintes Temporelles, Fréquences \& Analyse Temps Réel}
+\label{chap:realtime_timings}
+
+\section{Tableau Récapitulatif des Fréquences et Périodicités Système}
+La conception en microservices asynchrones impose un cadencement rigoureux de chaque boucle d'exécution afin de concilier la réactivité face aux événements imprévus et la bande passante limitée des bus matériels. 
+
+Le Tableau~\ref{tab:frequencies_master} synthétise les fréquences nominales, les périodes associées, les mécanismes de synchronisation et les chemins critiques de chaque composant de la pile FastDrink.
+
+\begin{table}[htbp]
+\centering
+\footnotesize
+\begin{tabularx}{\textwidth}{lccccX}
+\toprule
+\textbf{Composant / Service} & \textbf{Fréquence} & \textbf{Période ($T$)} & \textbf{Gigue Max.} & \textbf{Mécanisme} & \textbf{Chemin Critique / Rôle} \\
+\midrule
+\textbf{\texttt{ServiceManager}} & 10~Hz & 100~ms & $\pm 5$~ms & \code{usleep()} & Supervision démons, lien Ethernet filaire, Dropbear SSH. \\
+\textbf{\texttt{FSM}} (Contrôle) & \textbf{50~Hz} & \textbf{20~ms} & $\pm 0{,}5$~ms & \code{sleep\_until} & Décision, régulateur PD, profileur de vitesse trapézoïdal. \\
+\textbf{\texttt{Motors}} (Loop) & 100~kHz & 10~$\mu$s & $\pm 2$~$\mu$s & \code{sleep\_until} & Polling SHM, slew-rate limiter de direction continu. \\
+\textbf{PCA9685 PWM} & 50~Hz & 20~ms & Matériel & Hardware & Période PWM servomoteur RC (impulsions 1 à 2~ms). \\
+\textbf{\texttt{Sensors}} (Loop) & 100~kHz & 10~$\mu$s & $\pm 2$~$\mu$s & \code{sleep\_until} & Scrutation I2C ligne, calcul barycentrique, mise à jour SHM. \\
+\textbf{HC-SR04 Sonar} & \textbf{50~Hz} & \textbf{20~ms} & $\pm 1$~ms & Diviseur $N$ & Impulsion 10~$\mu$s, écoute écho (5 à 25~ms max). \\
+\textbf{\texttt{PeripheralsService}}& 200~Hz & 5~ms & $\pm 0{,}5$~ms & \code{poll(5ms)} & Échantillonnage boutons (anti-rebond $\ge 10$~ms), buzzer. \\
+\textbf{\texttt{TelemetryService}} & 50~Hz & 20~ms & $\pm 1$~ms & \code{sleep\_until} & Collecte SHM, dérivation d'accélération, UDP broadcast. \\
+\textbf{Console Télémétrie} & 5~Hz & 200~ms & $\pm 10$~ms & Modulo loop & Affichage synthétique des métriques sur terminal console. \\
+\textbf{\texttt{SimBridge} (Godot)} & 50~Hz & 20~ms & $\pm 0{,}5$~ms & Socket TCP & Synchronisation avec \code{\_physics\_process} de Godot 4. \\
+\bottomrule
+\end{tabularx}
+\caption{Table maîtresse des fréquences d'exécution et contraintes temporelles.}
+\label{tab:frequencies_master}
+\end{table}
+
+\section{Stratégie d'Isolation Temporelle des Périphériques Lents}
+L'un des défis majeurs dans la programmation temps réel sous Linux consiste à éviter qu'une opération d'entrée-sortie lente ne bloque une boucle de contrôle rapide.
+
+Le capteur ultrasonique HC-SR04 en est l'illustration parfaite~: la mesure par écho sonore requiert entre $1\text{ ms}$ (pour un obstacle à 17~cm) et $25\text{ ms}$ (pour la portée maximale). Si cette lecture était exécutée directement à l'intérieur de la boucle rapide de \code{Sensors}, le thread subirait un gel imprévisible, rendant impossible la détection haute fréquence de la ligne optique.
+
+La solution mise en œuvre repose sur une \textbf{isolation de fréquence synchrone par diviseur d'horloge}~:
+\begin{equation}
+    N = \left\lfloor \frac{f_{\text{loop}}}{f_{\text{ultrason}}} \right\rfloor = \left\lfloor \frac{100\,000}{50} \right\rfloor = 2\,000 \text{ cycles}
+\end{equation}
+La mesure acoustique n'est déclenchée que lorsque $\text{loop\_tick} \pmod N = 0$. Durant les 1999 autres cycles, le service réutilise la dernière distance filtrée tout en continuant d'échantillonner le ruban noir à pleine vitesse sans aucun retard.
+
+\section{Chronogramme d'Exécution Temps Réel}
+La Figure~\ref{fig:timing_diagram} illustre le cadencement relatif des processus sur un intervalle type de 40~ms (deux trames de contrôle à 50~Hz).
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+    scale=0.78, every node/.style={transform shape},
+    timeline/.style={->, thick, >=stealth},
+    gridline/.style={help lines, dashed, gray!50},
+    slot/.style={draw=black!70, fill=blue!15, rounded corners=2pt, minimum height=0.45cm, font=\scriptsize},
+    sonarslot/.style={draw=green!60!black, fill=green!20, rounded corners=2pt, minimum height=0.45cm, font=\scriptsize},
+    fsmslot/.style={draw=purple!70!black, fill=purple!20, rounded corners=2pt, minimum height=0.45cm, font=\scriptsize},
+    motorslot/.style={draw=orange!70!black, fill=orange!20, rounded corners=2pt, minimum height=0.45cm, font=\scriptsize}
+]
+
+% Axes temporels
+\draw[timeline] (0, 4) -- (13.5, 4) node[right, font=\footnotesize] {$t$ (ms)};
+\draw[timeline] (0, 2.7) -- (13.5, 2.7) node[right, font=\footnotesize] {$t$ (ms)};
+\draw[timeline] (0, 1.4) -- (13.5, 1.4) node[right, font=\footnotesize] {$t$ (ms)};
+\draw[timeline] (0, 0.1) -- (13.5, 0.1) node[right, font=\footnotesize] {$t$ (ms)};
+
+% Labels de canaux
+\node[anchor=east, font=\small\bfseries] at (-0.2, 4.3) {Sensors (I2C Ligne)};
+\node[anchor=east, font=\small\bfseries] at (-0.2, 3.0) {Sensors (HC-SR04 Sonar)};
+\node[anchor=east, font=\small\bfseries] at (-0.2, 1.7) {FSM (Régulation 50~Hz)};
+\node[anchor=east, font=\small\bfseries] at (-0.2, 0.4) {Motors (PCA9685 PWM)};
+
+% Lignes de repère temporel
+\foreach \x/\t in {0/0, 3/10, 6/20, 9/30, 12/40} {
+    \draw[gridline] (\x, -0.3) -- (\x, 4.8);
+    \node[above, font=\tiny\bfseries] at (\x, 4.8) {\t~ms};
+}
+
+% Activités Sensors I2C (haute fréquence régulière)
+\foreach \x in {0.2, 0.8, 1.4, 2.0, 2.6, 3.2, 3.8, 4.4, 5.0, 5.6, 6.2, 6.8, 7.4, 8.0, 8.6, 9.2, 9.8, 10.4, 11.0, 11.6, 12.2} {
+    \draw[fill=blue!30, draw=blue!80] (\x, 3.9) rectangle ++(0.35, 0.4);
+}
+
+% Activité HC-SR04 Sonar (rafale 50 Hz avec temps de vol)
+\draw[sonarslot, minimum width=1.5cm] (0.8, 2.95) rectangle ++(1.4, 0.45) node[midway] {Echo (7~ms)};
+\draw[sonarslot, minimum width=1.3cm] (6.8, 2.95) rectangle ++(1.2, 0.45) node[midway] {Echo (6~ms)};
+
+% Activité FSM (déclenchée à chaque frontière 20 ms)
+\draw[fsmslot, minimum width=1.6cm] (2.3, 1.65) rectangle ++(1.8, 0.45) node[midway] {PD + Profiler};
+\draw[fsmslot, minimum width=1.6cm] (8.3, 1.65) rectangle ++(1.8, 0.45) node[midway] {PD + Profiler};
+
+% Activité Motors PCA9685 (émission PWM hardware 50 Hz)
+\draw[motorslot, minimum width=2.4cm] (0.1, 0.35) rectangle ++(2.0, 0.45) node[midway] {PWM Période 1 (20~ms)};
+\draw[motorslot, minimum width=2.4cm] (6.1, 0.35) rectangle ++(2.0, 0.45) node[midway] {PWM Période 2 (20~ms)};
+
+% Flèches de synchronisation IPC
+\draw[-{Stealth}, thick, purple!80!black] (2.2, 3.8) to[out=-90, in=90] (2.5, 2.1);
+\node[right, font=\tiny, purple!80!black] at (2.4, 2.8) {SHM Write};
+
+\draw[-{Stealth}, thick, orange!80!black] (4.1, 1.65) to[out=-90, in=90] (4.5, 0.8);
+\node[right, font=\tiny, orange!80!black] at (4.5, 1.2) {Consigne $\mathbf{u}$};
+
+\end{tikzpicture}
+\caption{Chronogramme temps réel illustrant l'isolation de fréquence et l'absence d'inversion de priorité.}
+\label{fig:timing_diagram}
+\end{figure}
+
+\section{Justification Mathématique des Limites Physiques FastDrink}
+
+\subsection{\texorpdfstring{Démonstration du Seuil Critique d'Accélération ($a_{\max} \le 0{,}735\text{ m/s}^2$)}{Démonstration du Seuil Critique d'Accélération (a <= 0.735 m/s2)}}
+Considérons une bille de masse $m$ reposant au fond d'une coupelle sphérique de profondeur utile $\Delta h = 1{,}50\text{ mm} = 0{,}0015\text{ m}$ et de rayon horizontal bord-à-centre $d = 20{,}0\text{ mm} = 0{,}020\text{ m}$.
+
+Le travail mécanique fourni par la force d'inertie lors d'une accélération linéaire $a$ sur la distance $d$ pour franchir la bordure s'écrit~:
+\begin{equation}
+    W_{\text{inertie}} = F_{\text{inertie}} \cdot d = (m \cdot a) \cdot d
+\end{equation}
+L'énergie potentielle de pesanteur nécessaire pour faire monter la bille sur la hauteur $\Delta h$ est~:
+\begin{equation}
+    \Delta E_p = m \cdot g \cdot \Delta h
+\end{equation}
+À la limite du basculement, par le théorème de l'énergie mécanique ($W_{\text{inertie}} = \Delta E_p$)~:
+\begin{equation}
+    m \cdot a \cdot d = m \cdot g \cdot \Delta h \implies a = g \cdot \frac{\Delta h}{d}
+\end{equation}
+En retenant l'accélération gravitationnelle standard $g = 9{,}80665\text{ m/s}^2$~:
+\begin{equation}
+    a_{\max} = 9{,}80665 \times \frac{0{,}0015}{0{,}020} = 0{,}735498\text{ m/s}^2 \approx \mathbf{0{,}735\text{ m/s}^2}
+\end{equation}
+Toute accélération instantanée supérieure à cette valeur éjecte irrémédiablement la bille.
+
+\subsection{\texorpdfstring{Quantum Maximal de Vitesse par Pas Temporel ($\Delta t = 20\text{ ms}$)}{Quantum Maximal de Vitesse par Pas Temporel (Delta t = 20 ms)}}
+Pour la boucle décisionnelle cadencée à 50~Hz ($\Delta t = 0{,}020\text{ s}$), le saut maximal de vitesse permis par le \code{MotionProfiler} entre deux itérations consécutives est rigoureusement borné par~:
+\begin{equation}
+    \Delta v_{\text{cycle}} \le a_{\max} \cdot \Delta t = 0{,}735 \times 0{,}020 = 0{,}0147\text{ m/s} \quad (1{,}47\text{ cm/s par cycle})
+\end{equation}
+
+\subsection{\texorpdfstring{Vitesse Maximale Admissible en Courbe ($R_{\min} = 120\text{ mm}$)}{Vitesse Maximale Admissible en Courbe (Rmin = 120 mm)}}
+Lors du franchissement d'un virage de rayon minimal imposé $R_{\min} = 120\text{ mm} = 0{,}12\text{ m}$ (Spécification S3), l'accélération centripète $a_c = \frac{v^2}{R}$ ne doit pas excéder $a_{\max}$~:
+\begin{equation}
+    v_{\text{virage}} \le \sqrt{a_{\max} \cdot R_{\min}} = \sqrt{0{,}735 \cdot 0{,}12} = \sqrt{0{,}0882} \approx \mathbf{0{,}297\text{ m/s}} \quad (29{,}7\text{ cm/s})
+\end{equation}
+
+\subsection{\texorpdfstring{Profil de Freinage Ciblé et Arrêt de Précision ($\pm 30\text{ mm}$)}{Profil de Freinage Ciblé et Arrêt de Précision (+/- 30 mm)}}
+Pour satisfaire la spécification \textbf{S1} (immobilisation devant un obstacle à la distance cible $d_{\text{cible}} = 200\text{ mm}$ avec tolérance stricte $\pm 30\text{ mm}$), la vitesse résiduelle en fonction de la distance mesurée $d$ est régie par la loi de décélération quadratique optimale~:
+\begin{equation}
+    v_{\text{freinage}}(d) = \sqrt{2 \cdot a_{\max} \cdot (d - d_{\text{cible}})}
+\end{equation}
+Lorsque $|d - d_{\text{cible}}| \le 2\text{ cm}$, la commande commute sur l'état \code{Stopped} sans choc mécanique, garantissant la parfaite stabilité de la bille.

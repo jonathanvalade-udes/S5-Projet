@@ -1,0 +1,146 @@
+\documentclass[11pt,a4paper,titlepage]{report}
+
+% --- Packages fondamentaux ---
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french,english]{babel}
+\usepackage{geometry}
+\geometry{top=2.5cm, bottom=2.5cm, left=2.5cm, right=2.5cm}
+
+% --- Mathématiques et symboles ---
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsfonts}
+\usepackage{mathtools}
+
+% --- Graphiques et diagrammes TikZ ---
+\usepackage{tikz}
+\usetikzlibrary{shapes,arrows,arrows.meta,positioning,calc,fit,backgrounds,decorations.pathreplacing,patterns}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+
+% --- Tableaux ---
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{xltabular}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{colortbl}
+
+% --- Code source et encadrés ---
+\usepackage{listings}
+\usepackage{xcolor}
+
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.96,0.97,0.98}
+\definecolor{darkblue}{rgb}{0.0,0.2,0.6}
+\definecolor{alertred}{rgb}{0.8,0.1,0.1}
+
+\lstdefinestyle{cppstyle}{
+    backgroundcolor=\color{backcolour},   
+    commentstyle=\color{codegreen}\itshape,
+    keywordstyle=\color{darkblue}\bfseries,
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=2,
+    frame=single,
+    rulecolor=\color{codegray!30}
+}
+\lstset{style=cppstyle}
+
+% --- Liens et références ---
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=darkblue,
+    filecolor=magenta,      
+    urlcolor=cyan,
+    citecolor=darkblue,
+    pdftitle={Spécifications Techniques et Documentation d'Ingénierie - Architecture Logicielle PiCar-S FastDrink},
+    pdfauthor={Équipe S5-GI FastDrink},
+    pdfsubject={Documentation Complète des Services, Bibliothèques, Pilotes et Registres},
+    pdfkeywords={PiCar-S, Microservices, Temps Réel, IPC, POSIX SHM, C++17, FSM, HAL, I2C}
+}
+
+\usepackage{fancyhdr}
+\setlength{\headheight}{28pt}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\slshape \leftmark}
+\fancyhead[R]{\slshape FastDrink S5-GI}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
+
+% --- Commandes pratiques ---
+\newcommand{\reg}[1]{\texttt{0x#1}}
+\newcommand{\file}[1]{\texttt{\detokenize{#1}}}
+\newcommand{\code}[1]{\texttt{\detokenize{#1}}}
+
+\begin{document}
+
+% ================= PAGE DE TITRE =================
+\begin{titlepage}
+    \centering
+    \vspace*{1cm}
+    
+    {\Huge \bfseries FASTDRINK S5-GI}\\[0.5cm]
+    {\LARGE \bfseries Manuel d'Ingénierie Système \& Spécification Complète}\\[0.3cm]
+    {\Large Architecture Microservices, Registres Matériels, Protocoles IPC et Analyse des Défaillances}\\[1.5cm]
+    
+    \rule{\linewidth}{0.5mm}\\[0.4cm]
+    {\huge \bfseries DOCUMENTATION TECHNIQUE INTÉGRALE}\\[0.2cm]
+    {\large Plateforme SunFounder PiCar-S (ARM64 Linux) \& Jumeau Numérique Godot 4}\\[0.4cm]
+    \rule{\linewidth}{0.5mm}\\[2.5cm]
+    
+    \begin{minipage}{0.48\textwidth}
+        \begin{flushleft} \large
+            \textbf{Projet :} FastDrink S5-GI\\
+            \textbf{Système :} PiCar-S / Raspberry Pi\\
+            \textbf{Noyau :} Linux RT / Sysfs / POSIX IPC\\
+            \textbf{Langage :} C++17 / C++20
+        \end{flushleft}
+    \end{minipage}
+    \begin{minipage}{0.48\textwidth}
+        \begin{flushright} \large
+            \textbf{Version du document :} 2.4.0\\
+            \textbf{Date :} Novembre 2026\\
+            \textbf{Statut :} Spécification Formelle\\
+            \textbf{Validation :} Banc de Test \& Godot
+        \end{flushright}
+    \end{minipage}
+
+    \vfill
+    {\small Document technique confidentiel élaboré pour la réalisation du véhicule autonome FastDrink S5-GI.\par}
+\end{titlepage}
+
+% ================= TABLE DES MATIÈRES =================
+\tableofcontents
+\newpage
+
+% ================= LISTE DES FIGURES ET TABLEAUX =================
+\listoffigures
+\listoftables
+\newpage
+
+% ================= CHAPITRES =================
+\include{chapters/01_system_architecture}
+\include{chapters/02_kernel_drivers_hardware}
+\include{chapters/03_shared_libraries}
+\include{chapters/04_services_specification}
+\include{chapters/05_state_machine_failures}
+\include{chapters/06_timings_frequencies_realtime}
+
+\end{document}

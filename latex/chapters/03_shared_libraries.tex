@@ -1,0 +1,184 @@
+\chapter{Spécification Détaillée des Bibliothèques Partagées}
+\label{chap:shared_libraries}
+
+\section{Organisation et Statut des Bibliothèques}
+L'écosystème logiciel FastDrink repose sur deux ensembles de bibliothèques distincts~:
+\begin{enumerate}
+    \item \textbf{\texttt{libs/shared-headers/}} (\textbf{GELÉ / INTÉGRITÉ STRICTE})~: Contient l'ensemble des définitions de types fondamentaux, formats de trames binaires, drapeaux d'état, interfaces HAL et algorithmes de régulation mathématique. \textbf{Cette bibliothèque est strictement en lecture seule} afin de garantir la pérennité de l'interface IPC binaire entre tous les processus.
+    \item \textbf{\texttt{libs/shared-services/}}~: Fournit l'implémentation opérationnelle des abstractions système partagées (serveur/abonnés de mémoire partagée cyclique, serveurs de sockets UNIX et gestionnaire de fichiers de configuration).
+\end{enumerate}
+
+\section{Protocole Binaire et En-tête de Trames (\texttt{header/})}
+Toutes les communications sérialisées (sur socket UNIX ou TCP) partagent un en-tête binaire commun de 8 octets à alignement strict sur 32 bits, défini dans \file{header/header.hpp}.
+
+\subsection{Structure \texttt{PacketHeader}}
+\begin{lstlisting}[language=C++]
+struct PacketHeader {
+    HeadersType type;        // 1 octet  : Command (0x01), Telemetry (0x02), Response (0x03)
+    uint8_t     headerFlag;  // 1 octet  : Masque de bits (REPLY_REQUESTED, CRC_ENABLED)
+    uint16_t    seqNumber;   // 2 octets : Numero de sequence sequentiel (detection de perte)
+    uint32_t    payloadLength;// 4 octets: Longueur du payload (DOIT etre multiple de 4)
+};
+\end{lstlisting}
+
+\subsection{Drapeaux d'En-tête (\texttt{shared::headers::flags})}
+\begin{itemize}
+    \item \code{REPLY\_REQUESTED} (\reg{01})~: L'émetteur attend une confirmation immédiate (\code{Ack} ou \code{Nack}).
+    \item \code{FIRE\_AND\_FORGET} (\reg{02})~: Envoi asynchrone sans attente de réponse.
+    \item \code{CRC\_ENABLED} (\reg{04})~: La trame se termine par un mot de contrôle d'intégrité CRC-32 de 4 octets.
+\end{itemize}
+
+\subsection{Algorithme de Sérialisation et Contrôle d'Intégrité}
+La fonction \code{serializePacket} applique un contrôle strict sur la longueur du payload~:
+\begin{equation}
+    \text{payloadLength} \pmod 4 = 0
+\end{equation}
+Si le drapeau \code{CRC\_ENABLED} est actif, la trame sérialisée est prolongée d'un mot de 32 bits calculé selon la norme IEEE 802.3 (\file{crc/crc_global.hpp}) avec le polynôme inverse standard~:
+\begin{equation}
+    P(x) = \texttt{0xEDB88320}, \quad \text{Valeur initiale} = \texttt{0xFFFFFFFF}
+\end{equation}
+
+\section{Segment Mémoire Partagée POSIX (\texttt{ipc/shared\_memory.hpp})}
+La structure \code{RobotTelemetry} constitue la mémoire centrale d'échange à latence sub-microseconde entre \code{Sensors}, \code{FSM} et \code{Motors}.
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabularx}{\textwidth}{lp{2.5cm}cX}
+\toprule
+\textbf{Champ Membre} & \textbf{Type} & \textbf{Taille} & \textbf{Description \& Rôle Fonctionnel} \\
+\midrule
+\code{filtered\_dist} & \texttt{float} & 4 octets & Distance acoustique filtrée (en cm, Médian + Kalman/EMA). \\
+\code{speed} & \texttt{float} & 4 octets & Vitesse estimée actuelle du véhicule (en m/s ou cm/s). \\
+\code{line\_error} & \texttt{float} & 4 octets & Écart barycentrique latéral de la ligne $[-1{,}0, +1{,}0]$. \\
+\code{line\_sensors[5]} & \texttt{uint8\_t[5]} & 5 octets & État logique binaire binarisé des 5 TCRT5000 (1 = ligne noire). \\
+\code{line\_darkness[5]} & \texttt{float[5]} & 20 octets & Mesure de noirceur continue normalisée $[0{,}0 = \text{blanc}, 1{,}0 = \text{noir}]$. \\
+\code{target\_speed} & \texttt{float} & 4 octets & Consigne de vitesse issue du MotionProfiler (écrite par FSM). \\
+\code{target\_steering} & \texttt{float} & 4 octets & Consigne de braquage en degrés (écrite par le PD FSM). \\
+\code{steering\_offset} & \texttt{float} & 4 octets & Trim logiciel de correction angulaire mécanique (en degrés). \\
+\code{state} & \texttt{uint32\_t} & 4 octets & État machine FSM en cours (cast de \code{MachineStates}). \\
+\code{emergency\_stop} & \texttt{bool} & 1 octet & Drapeau d'arrêt d'urgence absolu (Failsafe logiciel immédiat). \\
+\code{heartbeat} & \texttt{uint64\_t} & 8 octets & Compteur incrémenté à 50~Hz servant de chien de garde temporel. \\
+\code{mtx} & \texttt{pthread\_mutex\_t} & 40 octets & Mutex POSIX inter-processus (\code{PTHREAD\_PROCESS\_SHARED}). \\
+\code{cfg\_max\_acceleration} & \texttt{float} & 4 octets & Accélération maximale bornée ($a \le 0{,}735\text{ m/s}^2$). \\
+\code{cfg\_cruise\_speed} & \texttt{float} & 4 octets & Vitesse de croisière nominale en ligne droite (m/s). \\
+\code{cfg\_min\_curve\_speed} & \texttt{float} & 4 octets & Vitesse plancher en courbe serrée $R = 120\text{ mm}$ (m/s). \\
+\code{cfg\_line\_kp} & \texttt{float} & 4 octets & Gain proportionnel du régulateur de trajectoire. \\
+\code{cfg\_line\_kd} & \texttt{float} & 4 octets & Gain dérivé du régulateur de trajectoire. \\
+\code{cfg\_curve\_safety\_factor} & \texttt{float} & 4 octets & Coefficient de sécurité dynamique virage ($0{,}85 \text{ à } 0{,}93$). \\
+\code{cfg\_predictive\_brake\_gain}& \texttt{float} & 4 octets & Gain feedforward sur la dérivée d'erreur pour anticipation. \\
+\code{cfg\_version} & \texttt{uint32\_t} & 4 octets & Compteur de version incrémenté à chaque modification en vol. \\
+\bottomrule
+\end{tabularx}
+\caption{Organisation détaillée de la structure mémoire partagée \texttt{RobotTelemetry}.}
+\label{tab:robot_telemetry}
+\end{table}
+
+\section{Ensemble de Commandes \& Réponses (\texttt{commands/} \& \texttt{responses/})}
+Les commandes asynchrones transmises au format \code{PacketHeader} embarquent un sous-en-tête de commande \code{CommandsHeader}~:
+\begin{lstlisting}[language=C++]
+enum class ServiceID : uint8_t { TELEMETRY = 0x00, SENSORS = 0x01, MOTORS = 0x02, FSM = 0x03 };
+enum class CommandID : uint8_t { Ping = 0x01, SetActive = 0x02, SetControlFlags = 0x03, SetConfigKey = 0x04 };
+
+struct CommandsHeader {
+    ServiceID serviceID;     // Service cible
+    CommandID commandID;     // Type d'action
+    uint16_t  payloadLen;    // Longueur des arguments
+};
+\end{lstlisting}
+Pour la commande \code{SetConfigKey}, le payload est constitué de la structure \code{SetConfigPayload}~:
+\begin{lstlisting}[language=C++]
+struct SetConfigPayload {
+    char key[64];            // Cle alphanumerique (ex: "LINE_KP", "MAX_ACCELERATION")
+    float value;             // Valeur flottante a appliquer
+};
+\end{lstlisting}
+En retour, le service interrogé émet une réponse \code{ResponseID::Ack} (\reg{02}) ou \code{ResponseID::Nack} (\reg{03}) accompagnée d'un code de rejet \code{NackResponse}~:
+\begin{lstlisting}[language=C++]
+struct NackResponse {
+    uint16_t explanation_len;
+    uint16_t nackCode;       // 1 = Erreur inconnue, 2 = Cle invalide, 3 = Valeur hors bornes
+};
+\end{lstlisting}
+
+\section{Algorithmes de Contrôle et Cinématique (\texttt{control/})}
+
+\subsection{Profileur de Vitesse et Limiteur d'Accélération (\texttt{MotionProfiler})}
+Le module \code{MotionProfiler} implémente un générateur de rampe cinématique trapézoïdale garantissant le respect absolu de la contrainte FastDrink. 
+
+\subsubsection{1. Évolution Temporelle Discrète}
+À chaque pas temporel $\Delta t$, la vitesse $v_k$ est ajustée selon la consigne désirée $v_{\text{cible}}$ sans jamais dépasser le quantum $\Delta v_{\max} = a_{\max} \cdot \Delta t$~:
+\begin{equation}
+    v_k = \begin{cases}
+        \min(v_{\text{cible}}, \; v_{k-1} + a_{\max} \cdot \Delta t) & \text{si } v_{\text{cible}} > v_{k-1} \quad \text{(Phase d'accélération)} \\
+        \max(v_{\text{cible}}, \; v_{k-1} - a_{\max} \cdot \Delta t) & \text{si } v_{\text{cible}} < v_{k-1} \quad \text{(Phase de décélération)}
+    \end{cases}
+\end{equation}
+
+\subsubsection{2. Vitesse Limite en Virage (Modèle Cinématique d'Ackermann)}
+Soit $L = 0{,}14\text{ m}$ l'empattement du véhicule et $\delta$ l'angle de braquage des roues directrices avant. Le rayon de courbure instantané $R$ du centre de l'essieu arrière est~:
+\begin{equation}
+    R = \frac{L}{\tan(|\delta|)}
+\end{equation}
+L'accélération centrifuge s'écrivant $a_c = \frac{v^2}{R} \le a_{\max}$, la vitesse critique maximale admissible en virage est~:
+\begin{equation}
+    v_{\text{virage}}(\delta) = \eta_{\text{safety}} \cdot \sqrt{a_{\max} \cdot \frac{L}{\tan(|\delta|)}}
+\end{equation}
+où $\eta_{\text{safety}} \in [0{,}85, 0{,}95]$ représente le facteur de sécurité paramétrable (\code{CURVE\_SAFETY\_FACTOR}).
+
+\subsubsection{3. Freinage Prédictif par Anticipation}
+Pour éviter les à-coups violents à l'entrée soudaine d'un virage, un terme de freinage prédictif feedforward atténue la consigne de vitesse proportionnellement à la vitesse de variation de l'erreur latérale~:
+\begin{equation}
+    v_{\text{adapt}} = v_{\text{virage}} - K_{\text{brake}} \cdot \left|\frac{de}{dt}\right|
+\end{equation}
+
+\subsection{Asservissement Suivi de Trajectoire (\texttt{LineFollowerController})}
+L'orientation du train avant est régulée par un contrôleur proportionnel-dérivé-intégral (PID) barycentrique optimisé.
+
+\subsubsection{1. Calcul d'Écart Barycentrique Analogique}
+Chaque capteur $i \in \{0, 1, 2, 3, 4\}$ est affecté d'un coefficient spatial $W = \{-2{,}0, -1{,}0, 0{,}0, 1{,}0, 2{,}0\}$. L'erreur latérale normalisée $e \in [-1{,}0, +1{,}0]$ est calculée par pondération de la noirceur continue $D_i$~:
+\begin{equation}
+    e = \frac{\sum_{i=0}^{4} W_i \cdot D_i}{2{,}0 \cdot \sum_{i=0}^{4} D_i}
+\end{equation}
+Si la somme totale $\sum D_i < 0{,}25$, le robot est considéré en perte totale de ruban.
+
+\subsubsection{2. Équation de Contrôle de l'Angle de Braquage}
+L'angle de braquage commandé au servomoteur (en degrés) est~:
+\begin{equation}
+    \theta(t) = K_p \cdot e(t) + K_d \cdot \frac{de(t)}{dt} + K_i \int e(\tau) \, d\tau
+\end{equation}
+Le terme intégral n'est actif qu'au voisinage immédiat du centre ($|e| < 0{,}6$) afin de compenser les dérives mécaniques de parallélisme sans provoquer d'effet de saturation (\emph{wind-up}) en virage prononcé.
+
+\section{Pipeline de Traitement du Signal (\texttt{filters/})}
+Les lectures du capteur ultrasonique HC-SR04 subissent un traitement numérique à deux étages en cascade dans la classe \code{UltrasonicPipeline}~:
+
+\subsection{Étage 1 : Filtre Médian Glissant à 5 Échantillons (\texttt{MedianFilter})}
+Le filtre médian élimine strictement les bruits impulsifs, réflexions acoustiques multiples et lectures fantômes à 0~cm~:
+\begin{equation}
+    y_1[k] = \text{médiane}\Big(x[k], x[k-1], x[k-2], x[k-3], x[k-4]\Big)
+\end{equation}
+
+\subsection{Étage 2 : Filtre de Kalman 1D Compensé par la Vitesse}
+Le signal débruité alimente un filtre de Kalman 1D dont l'équation de prédiction intègre la vitesse réelle du véhicule~:
+\begin{align}
+    \hat{d}_{k|k-1} &= \hat{d}_{k-1|k-1} - v \cdot \Delta t \\
+    P_{k|k-1} &= P_{k-1|k-1} + Q \\
+    K_k &= \frac{P_{k|k-1}}{P_{k|k-1} + R} \\
+    \hat{d}_{k|k} &= \hat{d}_{k|k-1} + K_k \cdot \Big(y_1[k] - \hat{d}_{k|k-1}\Big) \\
+    P_{k|k} &= (1 - K_k) \cdot P_{k|k-1}
+\end{align}
+En mode allégé, le Kalman est remplacé par une moyenne mobile exponentielle (\code{LowPassEMA})~:
+\begin{equation}
+    y[k] = \alpha \cdot y_1[k] + (1 - \alpha) \cdot y[k-1], \quad \text{avec } \alpha = 0{,}25
+\end{equation}
+
+\section{Services d'Infrastructure Partagés (\texttt{libs/shared-services/})}
+
+\subsection{Mémoire Pub/Sub par Anneau Circulaire (\texttt{shared::services::memory})}
+Les classes \code{MemoryShareComponentServer} et \code{MemoryShareComponentSubscriber} fournissent une communication multi-abonnés sans verrou basée sur un compteur de publication atomique 32 bits et un tampon circulaire en mémoire partagée. L'abonné vérifie si un nouvel échantillon est disponible en comparant son dernier index lu avec l'index de publication exposé par le serveur.
+
+\subsection{Serveur et Client Sockets IPC UNIX (\texttt{shared::services::ipc})}
+La classe \code{ServiceIPCSocketServer} crée un socket d'écoute \code{AF\_UNIX} en mode \textbf{non-bloquant} (\code{O\_NONBLOCK}). La méthode \code{process\_pending\_commands()} utilise l'appel système \code{poll()} avec un délai d'attente nul ($0\text{ ms}$) pour consommer les requêtes en instance sans suspendre la boucle de contrôle temps réel critique.
+
+\subsection{Gestionnaire de Configuration (\texttt{shared::services::config})}
+La classe \code{ServiceConfig} résout automatiquement le chemin du fichier de configuration en examinant séquentiellement~: \file{/root/<conf>}, \file{./<conf>}, \file{../<conf>}, \file{../../<conf>} et \file{/etc/<conf>}. Elle offre l'écriture synchrone persistante sur disque pour sauvegarder les paramètres calibrés en cours de session.

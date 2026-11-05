@@ -1,0 +1,185 @@
+\chapter{Spécification Exhaustive des Services Logiciels}
+\label{chap:services}
+
+\section{\texorpdfstring{\texttt{ServiceManager}}{ServiceManager} (Superviseur Système \& Init PID 1)}
+
+\subsection{Rôle Architectural et Responsabilités}
+Le \code{ServiceManager} constitue le processus racine (\code{PID 1}) du système embarqué lorsque le Raspberry Pi démarre sur une image Linux minimale de production, ou un orchestrateur utilisateur en phase de développement. Ses missions sont~:
+\begin{enumerate}
+    \item Montage initial des pseudo-systèmes de fichiers virtuels indispensables au noyau~: \file{devtmpfs} sur \file{/dev}, \file{proc} sur \file{/proc}, \file{sysfs} sur \file{/sys}, \file{tmpfs} sur \file{/dev/shm} et \file{/run}, \file{devpts} sur \file{/dev/pts}.
+    \item Réarmement et nettoyage préventif des ressources IPC résiduelles (\code{unlink("/dev/shm/picar_shm")}, \code{unlink("/tmp/*.sock")}).
+    \item Configuration réseau de l'interface de bouclage \code{lo} (127.0.0.1) et attribution d'une adresse IP statique sur le lien Ethernet filaire \code{eth0} (192.168.0.100).
+    \item Lancement et surveillance active du serveur SSH léger \code{dropbear} (port 22) pour la maintenance à distance.
+    \item Gestion du cycle de vie des cinq microservices opérationnels (\code{FSM}, \code{Sensors}, \code{Motors}, \code{TelemetryService}, \code{PeripheralsService}) avec réapparition automatique en cas de crash.
+\end{enumerate}
+
+\subsection{Boucle de Supervision et Paramètres Temporels}
+La boucle de surveillance s'exécute à une fréquence de \textbf{10~Hz} (période de scrutation de \textbf{100~ms}) via l'appel système \code{usleep(100000)}~:
+\begin{itemize}
+    \item \textbf{Collecte asynchrone des processus défunts}~: Appel non bloquant \code{waitpid(-1, \&status, WNOHANG)}.
+    \item \textbf{Délai de refroidissement de redémarrage (Cooldown)}~: Un délai minimum de \textbf{100~ms} est imposé entre deux tentatives de relance d'un service défaillant.
+    \item \textbf{Protection anti-emballement (Exponential Backoff)}~: Si un service subit plus de 5 échecs consécutifs, le gestionnaire temporise la relance pendant au moins \textbf{2~000~ms} (2 secondes) pour éviter la saturation du CPU par des boucles de crash infinies.
+    \item \textbf{Extinction propre (Graceful Shutdown)}~: Lors de la réception de \code{SIGINT} ou \code{SIGTERM}, le superviseur envoie d'abord \code{SIGINT} à tous ses démons enfants, accorde une période de grâce de \textbf{1~500~ms}, puis élimine les processus récalcitrants par \code{SIGKILL} avant de nettoyer la mémoire partagée et les sockets.
+\end{itemize}
+
+\subsection{Codes d'Erreur et Conditions de Déclenchement}
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabularx}{\textwidth}{lp{4cm}X}
+\toprule
+\textbf{Condition Détectée} & \textbf{Constat Système} & \textbf{Action \& Code Associé} \\
+\midrule
+Arrêt inopiné d'un service & \code{WIFEXITED(status) == true} & Log \code{[SUPERVISOR]}, incrémente \code{restart\_count}, re-planifie l'exécution. \\
+Mort par signal noyau & \code{WIFSIGNALED(status) == true} & Log du numéro de signal (\code{SIGSEGV}, \code{SIGABRT}), réarmement différé. \\
+Instabilité répétée & $\text{restart\_count} \ge 5$ en $< 5\text{ s}$ & Blocage temporaire 2~s, activation du drapeau d'anomalie système. \\
+Câble Ethernet débranché & \code{check\_carrier(iface) == false} & Déréférencement de la route IP, log \code{[NET] link DOWN}. \\
+Gel d'un processus enfant & Aucun battement depuis $> 500\text{ ms}$ & Déclenchement du drapeau \code{PROCESS\_STALLED} (\reg{0400}). \\
+\bottomrule
+\end{tabularx}
+\caption{Gestion des défaillances par le ServiceManager.}
+\label{tab:servicemanager_failures}
+\end{table}
+
+% -------------------------------------------------------------
+\section{\texorpdfstring{\texttt{FSM}}{FSM} (Machine à États Finis \& Contrôle de Trajectoire)}
+
+\subsection{Rôle Architectural et Composants Internes}
+Le service \code{FSM} héberge l'intelligence décisionnelle du robot. Il intègre quatre sous-composants majeurs~:
+\begin{enumerate}
+    \item \code{FsmNavigator}~: Orchestre le régulateur de suivi de ligne optique (\code{LineFollowerController}), le profileur cinématique trapézoïdal (\code{MotionProfiler}) et la machine d'état de contournement (\code{ObstacleAvoidance}).
+    \item \code{FsmShmBridge}~: Assure la lecture non bloquante des capteurs et l'écriture synchrone des consignes moteur/servo dans \file{/dev/shm/picar_shm}.
+    \item \code{FsmEventPipe}~: Détecte l'impulsion de départ en provenance du bouton physique via \file{/tmp/peripherals.sock}.
+    \item \code{FsmIpcHandler}~: Réceptionne les ordres de réglage dynamique sur \file{/tmp/fsm.sock}.
+\end{enumerate}
+
+\subsection{Fréquence d'Exécution et Cadencement Déterministe}
+La boucle principale s'exécute à \textbf{50~Hz} (période nominale $T = 20\text{ ms}$). Le respect de la cadence est assuré par un calcul d'échéance absolue anti-dérive (\emph{anti-drift deadline pacing})~:
+\begin{lstlisting}[language=C++]
+const auto period = std::chrono::nanoseconds(1000000000LL / m_hz);
+auto next_deadline = std::chrono::steady_clock::now();
+while (m_running.load()) {
+    next_deadline += period;
+    // ... execution de la logique temps reel ...
+    std::this_thread::sleep_until(next_deadline);
+}
+\end{lstlisting}
+
+\subsection{Paramètres de Configuration (\texttt{fsm.conf})}
+\begin{itemize}
+    \item \code{HZ} ($50{,}0$)~: Fréquence d'itération de la boucle FSM.
+    \item \code{MAX\_ACCELERATION} ($0{,}735\text{ m/s}^2$)~: Accélération maximale admissible (Seuil FastDrink).
+    \item \code{STRAIGHT\_CRUISE\_SPEED} ($0{,}35\text{ à } 0{,}45\text{ m/s}$)~: Vitesse cible en ligne droite.
+    \item \code{MIN\_CURVE\_SPEED} ($0{,}14\text{ à } 0{,}17\text{ m/s}$)~: Vitesse plancher en courbe de rayon $R = 120\text{ mm}$.
+    \item \code{LINE\_KP} ($1{,}1453$) et \code{LINE\_KD} ($0{,}1416$)~: Coefficients proportionnel et dérivé du suivi de ligne.
+    \item \code{OBSTACLE\_STOP_DIST\_CM} ($20{,}0\text{ cm}$)~: Distance d'arrêt d'urgence devant un obstacle frontal.
+    \item \code{REVERSE\_SPEED} ($0{,}12\text{ m/s}$)~: Vitesse de recul guidé en cas de perte de ruban.
+\end{itemize}
+
+\subsection{Codes d'Erreur et Drapeaux Composant (\texttt{shared::fsm::flags})}
+\begin{itemize}
+    \item \code{DISCOVERABLE} (\reg{0001})~: Service présent et connecté à la SHM.
+    \item \code{ANOMALIES\_DETECTED} (\reg{0002})~: Violation de contrainte ou comportement anormal détecté.
+    \item \code{WARNING\_DETECTED} (\reg{0004})~: Avertissement mineur (ex: perte momentanée de ligne).
+    \item \code{CONFIG\_ERROR} (\reg{0008})~: Fichier de configuration absent ou paramètre hors bornes.
+    \item \code{DRIVER\_ERROR} (\reg{0010})~: Défaillance d'accès à la mémoire partagée.
+    \item \code{SOCKET\_ERROR} (\reg{0020})~: Échec de création ou d'écoute sur \file{/tmp/fsm.sock}.
+    \item \code{SHM\_ERROR} (\reg{0040})~: Segment \file{/dev/shm/picar_shm} introuvable ou verrou bloqué.
+    \item \code{STALLED} (\reg{0080})~: Chien de garde capteurs expiré ($> 250\text{ ms}$).
+\end{itemize}
+
+% -------------------------------------------------------------
+\section{\texorpdfstring{\texttt{Motors}}{Motors} (Actionnement Propulsion \& Direction)}
+
+\subsection{Rôle Architectural et Composants Internes}
+Le service \code{Motors} transforme les consignes cinématiques ($v_{\text{target}}, \delta_{\text{target}}$) en signaux matériels physiques (PWM et états logiques GPIO). Il s'appuie sur~:
+\begin{enumerate}
+    \item \code{MotorActuator}~: Instancie le pilote matériel \code{PiCarHatsMotorDriver} et applique un filtre de limitation de variation angulaire (\emph{slew-rate limiter}) continu pour éviter les à-coups sur le servo de direction ($175^\circ/\text{s}$ en ligne droite, $300^\circ/\text{s}$ en courbe).
+    \item \code{MotorShmBridge}~: Lit les consignes de navigation dans la SHM et met à jour la télémétrie locale.
+    \item \code{MotorIpcHandler}~: Réceptionne les ajustements de trim de direction sur \file{/tmp/motors.sock}.
+\end{enumerate}
+
+\subsection{Fréquence d'Exécution et Cadencement}
+La boucle d'actionnement tourne à très haute fréquence (\textbf{100~kHz} par défaut dans \file{motors.conf}), garantissant une latence minimale de réaction et une intégration temporelle continue du slew-rate limiter. La sortie PWM matérielle vers le servo et les moteurs est quant à elle cadencée à \textbf{50~Hz} par le contrôleur PCA9685.
+
+\subsection{Mécanismes de Chien de Garde et Failsafe}
+\begin{itemize}
+    \item \textbf{Chien de garde FSM (250~ms)}~: Si le compteur \code{heartbeat} de la SHM ne progresse plus pendant 250~ms, le service force immédiatement la consigne de vitesse à $0{,}0\text{ m/s}$ (coupure automatique de sécurité).
+    \item \textbf{Arrêt d'urgence immédiat}~: Dès que \code{emergency\_stop} passe à \code{true}, le service invoque \code{emergency\_stop()} qui force les sorties du PCA9685 à 0V via le registre \code{ALL\_LED\_OFF\_H} (\reg{FD}) et bascule les broches de direction TB6612 à l'état BAS.
+\end{itemize}
+
+% -------------------------------------------------------------
+\section{\texorpdfstring{\texttt{Sensors}}{Sensors} (Acquisition Frontale \& Traitement du Signal)}
+
+\subsection{Rôle Architectural et Composants Internes}
+Le service \code{Sensors} effectue la capture de l'environnement physique et son pré-traitement numérique~:
+\begin{enumerate}
+    \item \code{SensorAcquisition}~: Gère le pilote matériel \code{PiCarHatsSensorDriver} et exécute le pipeline de filtrage ultrasonique (\code{UltrasonicPipeline}).
+    \item \code{LineEstimator}~: Calcule l'écart barycentrique continu $e \in [-1{,}0, +1{,}0]$ à partir des noirceurs analogiques des 5 TCRT5000.
+    \item \code{SensorShmBridge}~: Écrit les grandeurs filtrées dans la mémoire partagée POSIX et publie la structure \code{SensorsTelemetry} sur l'anneau Pub/Sub.
+\end{enumerate}
+
+\subsection{Fréquence d'Échantillonnage et Isolation Acoustique}
+Alors que la boucle logicielle scrute la mémoire et le suiveur de ligne jusqu'à \textbf{100~kHz}, \textbf{l'acquisition ultrasonique est strictement isolée à 50~Hz}~:
+\begin{lstlisting}[language=C++]
+const uint64_t us_interval = (hz > 50) ? static_cast<uint64_t>(hz / 50) : 1;
+if (loop_tick % us_interval == 0) {
+    float raw = m_driver->read_raw_ultrasonic_cm();
+    // Traitement du signal ...
+}
+\end{lstlisting}
+Cette isolation évite de suspendre le thread de perception pendant les 5 à 25~ms nécessaires à la propagation acoustique de l'onde ultrasonore du HC-SR04.
+
+\subsection{Gestion des Anomalies Capteurs}
+\begin{itemize}
+    \item \textbf{Perte du bus I2C}~: Si plus de 3 lectures I2C consécutives échouent ($\approx 60\text{ ms}$), le capteur de ligne passe en état de repli (toutes les noirceurs à 0) et positionne le drapeau \code{LINE\_LOST}.
+    \item \textbf{Timeout acoustique}~: Si aucun écho n'est reçu dans les 5~ms, la valeur $-1{,}0\text{ cm}$ est retournée et \code{consecutive\_us\_errors} est incrémenté.
+\end{itemize}
+
+% -------------------------------------------------------------
+\section{\texorpdfstring{\texttt{PeripheralsService}}{PeripheralsService} (Interface Matérielle \& Signalisation)}
+
+\subsection{Rôle Architectural et Interfaces}
+Le service \code{PeripheralsService} contrôle les interactions physiques locales~:
+\begin{itemize}
+    \item \textbf{Bouton Start (GPIO 13)}~: Déclenche la transition de l'état \code{Armed} vers le départ de la course.
+    \item \textbf{Bouton WiFi (GPIO 6)}~: Déclenche l'activation / bascule de l'interface réseau sans fil.
+    \item \textbf{Buzzer (GPIO 5)}~: Fournit des retours auditifs distincts (mélodie d'initialisation, bip de confirmation WiFi, tonalité de départ).
+    \item \textbf{Socket IPC UNIX (\file{/tmp/peripherals.sock})}~: Serveur non-bloquant diffusant les notifications d'événements aux services abonnés (notamment \code{FSM} et \code{TelemetryService}).
+\end{itemize}
+
+\subsection{Algorithme d'Anti-Rebond Matériel/Logiciel}
+La scrutation est cadencée à \textbf{200~Hz} (délai de poll de 5~ms). Un état de bouton n'est validé comme front actif que s'il demeure stable à l'état bas (\emph{Active LOW}) pendant une fenêtre minimale de \textbf{10~ms}~:
+\begin{lstlisting}[language=C++]
+auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(now - tracker.press_start).count();
+if (duration >= DEBOUNCE_MIN_MS && !tracker.triggered) {
+    tracker.triggered = true;
+    on_trigger(); // Emission de l'evenement
+}
+\end{lstlisting}
+
+% -------------------------------------------------------------
+\section{\texorpdfstring{\texttt{TelemetryService}}{TelemetryService} (Concentrateur \& Télémétrie Temps Réel)}
+
+\subsection{Rôle Architectural et Diffusion Réseau}
+Le \code{TelemetryService} assure la surveillance centralisée de l'ensemble du robot~:
+\begin{enumerate}
+    \item \textbf{Agrégation SHM \& Pub/Sub}~: Échantillonne simultanément la SHM globale et les anneaux Pub/Sub de \code{Sensors}, \code{Motors}, \code{FSM} et \code{Servo}.
+    \item \textbf{Calcul Dynamique des Accélérations}~: Dérive en temps réel la vitesse estimée ($a = \frac{\Delta v}{\Delta t}$) et comptabilise le nombre de violations du seuil critique FastDrink ($|a| > 0{,}785\text{ m/s}^2$).
+    \item \textbf{Odométrie}~: Intègre la distance parcourue $d = \int |v| \, dt$.
+    \item \textbf{Chien de Garde Global}~: Détecte le gel du compteur de heartbeat ($> 500\text{ ms}$) et lève le drapeau \code{PROCESS\_STALLED}.
+    \item \textbf{Serveur TCP (Port 91)}~: Permet la connexion d'un banc de diagnostic graphique distant.
+    \item \textbf{Émetteur UDP Broadcast (Port 9002)}~: Diffuse les trames de diagnostic en clair à 50~Hz sur le réseau local.
+    \item \textbf{Enregistreur USB (\code{UsbLogger})}~: Exporte les métriques de vol sur clé USB externe.
+\end{enumerate}
+
+% -------------------------------------------------------------
+\section{\texorpdfstring{\texttt{SimBridge}}{SimBridge} (Passerelle Jumeau Numérique Godot 4)}
+
+\subsection{Rôle Architectural et Interchangeabilité}
+Le service \code{SimBridge} assure l'interopérabilité complète avec le jumeau numérique sous Godot Engine 4~:
+\begin{itemize}
+    \item \textbf{Mode SIMULATION}~: Écoute sur le port TCP \textbf{9000}. Le client Godot (\file{network_client.gd}) transmet les données des capteurs virtuels (distances des \code{RayCast3D} et \code{ShapeCast3D}) que le bridge injecte directement dans \file{/dev/shm/picar_shm}. En retour, le bridge transmet à Godot les consignes de vitesse et d'angle de braquage calculées par \code{FSM}.
+    \item \textbf{Mode VEHICLE (Réel)}~: Le bridge lit la télémétrie des capteurs physiques et la transmet à Godot uniquement pour la visualisation 3D en temps réel, sans écraser les lectures capteurs matérielles.
+\end{itemize}
+La synchronisation est verrouillée à \textbf{50~Hz} (20~ms par cycle), correspondant rigoureusement au pas physique (\code{\_physics\_process}) du moteur de jeu.

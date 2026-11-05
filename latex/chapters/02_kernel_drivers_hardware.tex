@@ -1,0 +1,316 @@
+\chapter{Pilotes Matériels, Registres I2C \& Communication Noyau}
+\label{chap:hardware_drivers}
+
+\section{Sous-Système Matériel et Cartographie des Bus}
+Le robot SunFounder PiCar-S repose sur une carte fille de puissance (Robot HATS) connectée au connecteur d'extension GPIO 40 broches du Raspberry Pi. L'interfaçage matériel est pris en charge par le noyau Linux standard à travers deux mécanismes principaux du noyau~:
+\begin{enumerate}
+    \item \textbf{Le pilote de périphérique caractère I2C (\file{/dev/i2c-1})}~: Permet la communication sérielle synchrone avec le contrôleur PWM PCA9685, le microcontrôleur du suiveur de ligne et le convertisseur analogique-numérique PCF8591.
+    \item \textbf{Le sous-système de contrôle GPIO en espace utilisateur (\file{/sys/class/gpio})}~: Offre un contrôle bas niveau déterministe des signaux discrets pour la commande de direction des ponts en H, les signaux impulsionnels du télémètre ultrasonique et les entrées/sorties d'IHM (boutons et buzzer).
+\end{enumerate}
+
+Le Tableau~\ref{tab:hardware_map} récapitule l'assignation matérielle complète des périphériques, leurs adresses physiques et les broches BCM associées.
+
+\begin{table}[htbp]
+\centering
+\footnotesize
+\begin{tabularx}{\textwidth}{lccccX}
+\toprule
+\textbf{Périphérique} & \textbf{Interface} & \textbf{Adresse / Broche} & \textbf{Fréquence} & \textbf{Direction} & \textbf{Rôle Fonctionnel} \\
+\midrule
+\textbf{PCA9685} & I2C-1 & \reg{40} (\reg{70}) & 50~Hz PWM & OUT & Générateur PWM (Servo direction + Vitesse moteurs) \\
+\textbf{Suiveur Ligne} & I2C-1 & \reg{11} (alt \reg{0B}) & 50~Hz / 100~kHz & IN & Lecture ADC 10 bits des 5 phototransistors TCRT5000 \\
+\textbf{PCF8591 ADC} & I2C-1 & \reg{48} & Sur demande & IN & Mesure analogique photorésistances \& tension batterie \\
+\textbf{TB6612 DirA} & Sysfs GPIO & BCM 17 & Statique & OUT & Sens de rotation Moteur Gauche (1 = AV, 0 = AR) \\
+\textbf{TB6612 DirB} & Sysfs GPIO & BCM 27 & Statique & OUT & Sens de rotation Moteur Droit (1 = AV, 0 = AR) \\
+\textbf{HC-SR04 Trig} & Sysfs GPIO & BCM 12 & 50~Hz (10~$\mu$s) & OUT & Déclenchement de la salve acoustique ultrasonique \\
+\textbf{HC-SR04 Echo} & Sysfs GPIO & BCM 16 & 50~Hz & IN & Mesure de durée du signal d'écho réfléchi \\
+\textbf{Buzzer Piézo} & Sysfs GPIO & BCM 5 & 200~Hz polling & OUT & Signalisation sonore (bips de démarrage, wifi, alerte) \\
+\textbf{Bouton WiFi} & Sysfs GPIO & BCM 6 & 200~Hz ($\ge 10$~ms) & IN & Bascule du point d'accès / client WiFi (Active LOW) \\
+\textbf{Bouton Start} & Sysfs GPIO & BCM 13 & 200~Hz ($\ge 10$~ms) & IN & Déclencheur physique du départ de course (Active LOW) \\
+\bottomrule
+\end{tabularx}
+\caption{Cartographie matérielle des périphériques PiCar-S sous Linux.}
+\label{tab:hardware_map}
+\end{table}
+
+\section{Détection Dynamique de la Base GPIO du Noyau (\texttt{sysfs})}
+Dans les versions récentes du noyau Linux (notamment sur les kernels 5.x et 6.x pour Raspberry Pi 3, 4 et Zero 2W), la numérotation absolue des broches GPIO sous \file{/sys/class/gpio} n'est plus garantie de débuter à 0. Selon le pilote SoC activé (\code{bcm2835-gpio}, \code{pinctrl-bcm2711} ou \code{pinctrl-rp1}), la base peut être décalée à 512 ou toute autre valeur entière.
+
+Pour garantir une portabilité absolue sans recompilation, la classe \code{PiCarHatsSensorDriver} et le service \code{PeripheralsService} implémentent un algorithme de détection automatique de la base GPIO~:
+\begin{lstlisting}[language=C++]
+static int detect_gpio_base() {
+    DIR* dir = opendir("/sys/class/gpio");
+    if (!dir) return 0;
+    struct dirent* entry;
+    int found_base = 0;
+    while ((entry = readdir(dir)) != nullptr) {
+        if (strncmp(entry->d_name, "gpiochip", 8) == 0) {
+            char label_path[256];
+            snprintf(label_path, sizeof(label_path), "/sys/class/gpio/%s/label", entry->d_name);
+            int lfd = open(label_path, O_RDONLY);
+            if (lfd >= 0) {
+                char label[64] = {0};
+                ssize_t n = read(lfd, label, sizeof(label) - 1);
+                close(lfd);
+                if (n > 0 && (strstr(label, "bcm2835") || strstr(label, "3f200000.gpio") || strstr(label, "fe200000.gpio"))) {
+                    char base_path[256];
+                    snprintf(base_path, sizeof(base_path), "/sys/class/gpio/%s/base", entry->d_name);
+                    int bfd = open(base_path, O_RDONLY);
+                    if (bfd >= 0) {
+                        char base_str[32] = {0};
+                        ssize_t bn = read(bfd, base_str, sizeof(base_str) - 1);
+                        close(bfd);
+                        if (bn > 0) {
+                            found_base = std::atoi(base_str);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    closedir(dir);
+    return found_base;
+}
+\end{lstlisting}
+Toute broche physique $\text{BCM}_x$ est ainsi mappée sur le numéro de descripteur système réel $\text{actual\_pin} = \text{found\_base} + \text{BCM}_x$.
+
+\section{Contrôleur PWM PCA9685 (Adresse I2C \texttt{0x40})}
+Le PCA9685 est un générateur PWM 16 canaux à résolution 12 bits (4096 pas) piloté par bus I2C. Il dispose d'un oscillateur interne typique à 25~MHz et d'un registre de prédivision d'horloge (\code{PRESCALE}).
+
+\subsection{Plan Mémoire des Registres PCA9685}
+Le Tableau~\ref{tab:pca9685_regs} décrit les registres exploités par le pilote d'actionnement \code{PiCarHatsMotorDriver} (\file{libs/shared-headers/hal/picar\_i2c\_registers.hpp}).
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabularx}{\textwidth}{ccp{3.5cm}X}
+\toprule
+\textbf{Registre} & \textbf{Adresse} & \textbf{Nom Symbolique} & \textbf{Description \& Rôle} \\
+\midrule
+\texttt{MODE1} & \reg{00} & \code{picar::i2c::pca9685::MODE1} & Registre de mode 1 (Mise en veille, auto-incrémentation, redémarrage). \\
+\texttt{MODE2} & \reg{01} & \code{picar::i2c::pca9685::MODE2} & Registre de mode 2 (Configuration des sorties : Totem-Pole vs Open-Drain). \\
+\texttt{SUBADR1-3} & \reg{02} -- \reg{04} & \code{SUBADR1, SUBADR2, SUBADR3} & Sous-adresses I2C secondaires (non utilisées). \\
+\texttt{ALLCALLADR} & \reg{05} & \code{ALLCALLADR} & Adresse d'appel général I2C (défaut \reg{70}). \\
+\texttt{LED0\_ON\_L} & \reg{06} & \code{LED0\_ON\_L} & Octet de poids faible du tick de passage à l'état HAUT du canal 0. \\
+\texttt{LED0\_ON\_H} & \reg{07} & \code{LED0\_ON\_H} & Octet de poids fort (bits 0--3) du tick ON du canal 0. \\
+\texttt{LED0\_OFF\_L} & \reg{08} & \code{LED0\_OFF\_L} & Octet de poids faible du tick de passage à l'état BAS du canal 0. \\
+\texttt{LED0\_OFF\_H} & \reg{09} & \code{LED0\_OFF\_H} & Octet de poids fort (bits 0--3) du tick OFF du canal 0. \\
+\texttt{ALL\_LED\_ON\_L} & \reg{FA} & \code{ALL\_LED\_ON\_L} & Commande globale ON de l'ensemble des 16 canaux. \\
+\texttt{ALL\_LED\_OFF\_H} & \reg{FD} & \code{ALL\_LED\_OFF\_H} & Commande globale OFF (Bit 4 = Forçage à 0V pour Failsafe). \\
+\texttt{PRESCALE} & \reg{FE} & \code{PRESCALE} & Registre de prédivision d'horloge fixant la fréquence PWM globale. \\
+\bottomrule
+\end{tabularx}
+\caption{Registres principaux du contrôleur PWM I2C PCA9685.}
+\label{tab:pca9685_regs}
+\end{table}
+
+\subsection{Configuration des Bits de Contrôle (\texttt{MODE1} et \texttt{MODE2})}
+\begin{itemize}
+    \item \textbf{Bits de \texttt{MODE1}}~:
+    \begin{itemize}
+        \item \code{RESTART} (\reg{80})~: Autorise le redémarrage logique avec réactivation des sorties.
+        \item \code{AUTO\_INC} (\reg{20})~: Active l'auto-incrémentation automatique des adresses de registres lors des écritures séquentielles par bloc I2C.
+        \item \code{SLEEP} (\reg{10})~: Place l'oscillateur interne en mode basse consommation. \textbf{Obligatoire} pour autoriser l'écriture dans le registre \code{PRESCALE}.
+        \item \code{ALLCALL} (\reg{01})~: Répond aux trames adressées sur \reg{70}.
+    \end{itemize}
+    \item \textbf{Bits de \texttt{MODE2}}~:
+    \begin{itemize}
+        \item \code{OUTDRV} (\reg{04})~: Configure les 16 sorties en structure \textbf{Totem-Pole} (Push-Pull, $5\text{V} / 0\text{V}$) plutôt qu'en drain ouvert, assurant des fronts montants francs pour le pilotage des servomoteurs RC et des entrées PWM du TB6612.
+    \end{itemize}
+\end{itemize}
+
+\subsection{Formules Mathématiques de Calcul des Registres}
+\subsubsection{1. Calcul du Prescaler d'Horloge}
+Pour obtenir une fréquence de commande de servomoteurs RC standard de $f_{\text{PWM}} = 50\text{ Hz}$ à partir de l'horloge $f_{\text{osc}} = 25\text{ MHz}$ et d'une résolution de 4096 points~:
+\begin{equation}
+    \text{prescale} = \text{round}\left(\frac{f_{\text{osc}}}{4096 \times f_{\text{PWM}}}\right) - 1 = \text{round}\left(\frac{25 \times 10^6}{4096 \times 50}\right) - 1 = 122 - 1 = 121 \quad (\texttt{0x79})
+\end{equation}
+
+\subsubsection{2. Conversion d'Angle de Braquage en Ticks PWM}
+Le servomoteur de direction est alimenté sur une période $T = 20\text{ ms}$ (soit 4096 ticks).
+\begin{itemize}
+    \item Neutre ($0^\circ$) $\to \tau = 1{,}50\text{ ms} \implies \text{ticks} = \frac{1{,}50}{20} \times 4096 \approx 307\text{ ticks}$.
+    \item Braquage Gauche maximal ($-45^\circ$) $\to \tau = 1{,}00\text{ ms} \implies \text{ticks} \approx 205\text{ ticks}$.
+    \item Braquage Droit maximal ($+45^\circ$) $\to \tau = 2{,}00\text{ ms} \implies \text{ticks} \approx 410\text{ ticks}$.
+\end{itemize}
+L'équation d'interpolation affine bornée implémentée dans \code{steering\_angle\_to\_pwm} est~:
+\begin{equation}
+    \text{ticks}(\theta) = \text{clamp}\left(307{,}0 + \frac{\text{clamp}(\theta, -45^\circ, +45^\circ)}{45{,}0} \times 102{,}0, \; 205, \; 410\right)
+\end{equation}
+
+\subsubsection{3. Conversion du Pourcentage de Vitesse en Ticks PWM}
+La puissance moteur $[0{,}0\%, 100{,}0\%]$ est transformée en rapport cyclique de 0 à 4095~:
+\begin{equation}
+    \text{ticks}(P) = \text{clamp}(|P|, 0{,}0, 100{,}0) \times 40{,}95
+\end{equation}
+
+\subsubsection{4. Coupure d'Urgence Immédiate (Failsafe Matériel)}
+Pour désexciter instantanément tous les canaux PWM sans effectuer 16 transactions individuelles, le pilote injecte la valeur \reg{10} dans le registre \code{ALL\_LED\_OFF\_H} (\reg{FD})~:
+\begin{lstlisting}[language=C++]
+void PiCarHatsMotorDriver::emergency_stop() {
+    m_i2c.write_byte_data(picar::i2c::pca9685::ALL_LED_OFF_H, 0x10); // Bit 4 = Full OFF
+}
+\end{lstlisting}
+
+\section{Pont en H Double TB6612FNG (Propulsion Arrière)}
+Le circuit intégré Toshiba TB6612FNG commande les deux moteurs à courant continu du train arrière. La vitesse de rotation est modulée par les canaux PWM 4 (Moteur Gauche) et 5 (Moteur Droit) du PCA9685. Le sens de rotation est contrôlé par deux broches logiques directes du Raspberry Pi~:
+\begin{itemize}
+    \item \textbf{Moteur Gauche (\code{DirA})}~: BCM 17 (\file{/sys/class/gpio/gpio17/value}).
+    \item \textbf{Moteur Droit (\code{DirB})}~: BCM 27 (\file{/sys/class/gpio/gpio27/value}).
+\end{itemize}
+
+Le Tableau~\ref{tab:tb6612_truth} présente la table de vérité opérationnelle appliquée par le pilote.
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{ccccc}
+\toprule
+\textbf{Consigne Vitesse} & \textbf{DirA (BCM 17)} & \textbf{DirB (BCM 27)} & \textbf{PWM (CH 4 \& 5)} & \textbf{Comportement Véhicule} \\
+\midrule
+$v > 0$ & 1 (HIGH) & 1 (HIGH) & Ticks proportionnels & Marche Avant Nominale \\
+$v < 0$ & 0 (LOW) & 0 (LOW) & Ticks proportionnels & Marche Arrière Guidée \\
+$v = 0$ & Inchangé & Inchangé & 0 tick & Roue libre / Arrêt doux \\
+Arrêt Urgence & 0 (LOW) & 0 (LOW) & 0 tick (Forcé \reg{FD}) & Coupure Totale d'Alimentation \\
+\bottomrule
+\end{tabular}
+\caption{Table de vérité du pont en H double TB6612FNG.}
+\label{tab:tb6612_truth}
+\end{table}
+
+\section{Module Suiveur de Ligne 5 Voies TCRT5000 (Adresses \texttt{0x11} / \texttt{0x0B})}
+Le capteur de détection de trajectoire comporte cinq phototransistors infrarouges TCRT5000 alignés transversalement sur une barrette frontale, espacés d'environ $19\text{ mm}$. Un microcontrôleur embarqué échantillonne les tensions analogiques de réflexion et met à disposition un registre I2C de lecture continue.
+
+\subsection{Protocole de Lecture et Décodage des Trames}
+La lecture est initiée par une lecture en bloc de 10 octets consécutifs à partir du registre \code{REG\_START} (\reg{00})~:
+\begin{equation}
+    \text{Trame I2C} = \begin{bmatrix} H_0 & L_0 & H_1 & L_1 & H_2 & L_2 & H_3 & L_3 & H_4 & L_4 \end{bmatrix}
+\end{equation}
+Chaque capteur $i \in \{0, 1, 2, 3, 4\}$ dispose d'une mesure analogique sur 10 bits ($0 \le \text{ADC}_i \le 1023$) recomposée selon~:
+\begin{equation}
+    \text{ADC}_i = (H_i \ll 8) \;|\; L_i
+\end{equation}
+
+\subsection{Transformation en Noirceur Continue et Calibration}
+Sur un revêtement blanc réfléchissant, les photodiodes reçoivent un flux lumineux élevé, générant une tension et une valeur ADC élevées ($\text{ADC}_{\text{blanc}} \approx 80 \text{ à } 140$). Sur le ruban isolant noir absorbant, le signal chute drastiquement ($\text{ADC}_{\text{noir}} \approx 15 \text{ à } 40$).
+
+La fonction \code{adc\_to\_darkness} projette de manière continue la lecture brute sur l'intervalle $[0{,}0, 1{,}0]$ (où $1{,}0$ désigne le noir absolu)~:
+\begin{equation}
+    D_i = \text{clamp}\left(\frac{\text{ADC}_{\text{blanc}, i} - \text{ADC}_i}{\text{ADC}_{\text{blanc}, i} - \text{ADC}_{\text{noir}, i}}, \; 0{,}0, \; 1{,}0\right)
+\end{equation}
+Les seuils de calibration peuvent être personnalisés individuellement par capteur via le fichier persistant \file{/etc/picar\_line\_calibration} ou les variables d'environnement \code{PICAR\_LINE\_BLACK\_ADC} et \code{PICAR\_LINE\_WHITE\_ADC}.
+
+\subsection{Tolérance aux Pannes I2C}
+En cas de déconnexion transitoire ou de parasites sur le bus I2C, le pilote tolère jusqu'à 2 lectures erronées consécutives en conservant la dernière valeur acquise valide. Si le compteur dépasse 3 erreurs consécutives ($\approx 60\text{ ms}$), le pilote applique un repli sécuritaire (\emph{failsafe}) en forçant toutes les valeurs à zéro ($D_i = 0$), déclenchant ainsi immédiatement la gestion de perte de ligne par le FSM.
+
+\section{Télémètre Ultrasonique HC-SR04 (GPIOs Sysfs 12 \& 16)}
+Le capteur HC-SR04 mesure la distance par temps de vol d'une onde acoustique à 40~kHz.
+\begin{enumerate}
+    \item \textbf{Impulsion Trigger (BCM 12)}~: Le pilote génère une impulsion haute calibrée d'au moins $10\text{ }\mu\text{s}$ sur la broche \code{actual\_trig}.
+    \item \textbf{Mesure Echo (BCM 16)}~: La broche \code{actual\_echo} passe à l'état HAUT pendant la durée de propagation aller-retour.
+\end{enumerate}
+
+\subsection{Equation Acoustique et Gestion des Délais}
+La vitesse du son dans l'air à $20^\circ\text{C}$ étant $c \approx 343\text{ m/s} = 0{,}0343\text{ cm/}\mu\text{s}$, la distance en centimètres est donnée par~:
+\begin{equation}
+    d_{\text{cm}} = \frac{\Delta t_{\mu\text{s}} \times c}{2} = \frac{\Delta t_{\mu\text{s}}}{58{,}3} \approx \frac{\Delta t_{\mu\text{s}}}{58}
+\end{equation}
+
+\subsection{Protection Contre les Opérations Bloquantes}
+Pour préserver les contraintes temps réel strictes sans bloquer le thread d'acquisition~:
+\begin{itemize}
+    \item \textbf{Chien de garde de front montant}~: Si le signal \code{Echo} ne monte pas dans les 5~ms suivant l'impulsion Trigger, la mesure est avortée avec le code $-1{,}0\text{ cm}$ (obstacle absent ou capteur déconnecté).
+    \item \textbf{Chien de garde de front descendant}~: La boucle d'attente s'interrompt automatiquement après 25~ms, ce qui correspond à la portée utile maximale du robot ($\approx 430\text{ cm}$).
+\end{itemize}
+
+\section{Diagramme Synthétique de l'Interfaçage Matériel}
+La Figure~\ref{fig:hw_schematic} expose le câblage direct entre le microprocesseur BCM2835 et les périphériques de puissance et de détection.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+    scale=0.78, every node/.style={transform shape},
+    box/.style={rectangle, draw=black!70, thick, rounded corners=3pt, align=center, fill=white, inner sep=6pt},
+    rpi/.style={box, fill=red!15, draw=red!70!black, font=\bfseries},
+    chip/.style={box, fill=blue!10, draw=blue!70, font=\bfseries},
+    sensor/.style={box, fill=green!12, draw=green!60!black, font=\bfseries},
+    actuator/.style={box, fill=orange!15, draw=orange!70!black, font=\bfseries},
+    bus/.style={-{Stealth[length=2.5mm]}, thick}
+]
+
+% RPi Box
+\node[rpi, minimum width=4.5cm, minimum height=6.5cm, text width=4.2cm] (rpi) at (-4, 0) {
+    \centering\textbf{Raspberry Pi}\\
+    \textbf{SoC BCM2835}\\
+    \footnotesize (Linux Kernel 5.x/6.x)\\[0.4cm]
+    \raggedright\scriptsize
+    $\bullet$ I2C-1 SDA (GPIO 2 / Pin 3)\\
+    $\bullet$ I2C-1 SCL (GPIO 3 / Pin 5)\\
+    $\bullet$ TB6612 DirA (GPIO 17 / Pin 11)\\
+    $\bullet$ TB6612 DirB (GPIO 27 / Pin 13)\\
+    $\bullet$ Sonar Trig (GPIO 12 / Pin 32)\\
+    $\bullet$ Sonar Echo (GPIO 16 / Pin 36)\\
+    $\bullet$ Buzzer Out (GPIO 5 / Pin 29)\\
+    $\bullet$ Bouton WiFi (GPIO 6 / Pin 31)\\
+    $\bullet$ Bouton Start (GPIO 13 / Pin 33)
+};
+
+% I2C Bus line
+\draw[line width=1.5pt, blue!70] (-1.5, 2.2) -- (4.5, 2.2) node[midway, above, font=\footnotesize\bfseries] {Bus I2C-1 (3.3V)};
+\draw[bus, blue!70] (-1.7, 2.2) -- (-1.5, 2.2);
+
+% I2C Chips
+\node[chip] (pca) at (1.5, 3.2) {
+    \textbf{PCA9685 PWM (0x40)}\\
+    \scriptsize 16 Canaux 12 bits \textbar{} 50~Hz
+};
+\draw[bus, blue!70] (1.5, 2.2) -- (pca.south);
+
+\node[sensor] (tcrt) at (4.5, 3.2) {
+    \textbf{TCRT5000 MCU (0x11)}\\
+    \scriptsize 5 Voies Suiveur \textbar{} 10 octets ADC
+};
+\draw[bus, blue!70] (4.5, 2.2) -- (tcrt.south);
+
+% Actuators from PCA
+\node[actuator] (servo) at (1.5, 4.8) {
+    \textbf{Servo Direction}\\
+    \scriptsize Canal 0 PWM (1.0--2.0 ms)
+};
+\draw[bus, orange!80!black] (pca.north) -- (servo.south);
+
+\node[chip] (tb) at (1.5, 0.5) {
+    \textbf{TB6612FNG}\\
+    \scriptsize Pont en H Double
+};
+\draw[bus, orange!80!black] (pca.south) -- node[right, font=\tiny] {CH4/5 PWM} (tb.north);
+
+% Direct GPIO lines
+\draw[bus, green!60!black] (-1.7, 0.6) -- node[above, font=\tiny] {DirA (GPIO17)} (tb.west);
+\draw[bus, green!60!black] (-1.7, 0.2) -- node[below, font=\tiny] {DirB (GPIO27)} (tb.south west);
+
+\node[actuator] (dc_motors) at (4.8, 0.5) {
+    \textbf{Moteurs DC Arrière}\\
+    \scriptsize Roues Motrices Gauche \& Droite
+};
+\draw[bus, orange!80!black] (tb.east) -- (dc_motors.west);
+
+% HC-SR04
+\node[sensor] (sonar) at (1.5, -1.8) {
+    \textbf{Sonar HC-SR04}\\
+    \scriptsize Télémètre Ultrasonique
+};
+\draw[bus, green!60!black] (-1.7, -1.6) -- node[above, font=\tiny] {Trig (GPIO12)} (sonar.north west);
+\draw[bus, green!60!black] (sonar.south west) -- node[below, font=\tiny] {Echo (GPIO16)} (-1.7, -2.0);
+
+% Peripherals
+\node[box, fill=purple!10, draw=purple!70] (periph_box) at (1.5, -3.8) {
+    \textbf{IHM \& Signalisation}\\
+    \scriptsize Buzzer (GPIO5) \textbar{} Start (GPIO13) \textbar{} WiFi (GPIO6)
+};
+\draw[bus, purple!80!black] (-1.7, -3.8) -- (periph_box.west);
+
+\end{tikzpicture}
+\caption{Schéma fonctionnel des connexions physiques et adressage des périphériques.}
+\label{fig:hw_schematic}
+\end{figure}

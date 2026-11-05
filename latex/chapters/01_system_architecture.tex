@@ -1,0 +1,209 @@
+\chapter{Architecture Globale \& Interfaces Noyau / Processus}
+\label{chap:architecture}
+
+\section{Introduction et Contexte Système}
+Le projet FastDrink S5-GI vise la conception d'un véhicule autonome capable de naviguer de manière autonome sur un tracé balisé (ruban noir de largeur 18~mm) tout en maintenant l'intégrité dynamique d'un chargement fragile (une bille métallique reposant au sein d'une coupelle concave peu profonde). 
+
+La contrainte physique fondamentale impose une accélération totale (linéaire et centripète) strictement bornée~:
+\begin{equation}
+    \|\mathbf{a}\| = \sqrt{a_{\text{tangentiel}}^2 + a_{\text{centripète}}^2} \le a_{\max} = 0{,}735\text{ m/s}^2
+\end{equation}
+Tout dépassement de ce seuil critique conduit immédiatement au déversement de la bille par franchissement de la bordure ($\Delta h = 1{,}50\text{ mm}$ pour un rayon de cuvette $r = 20\text{ mm}$).
+
+Pour garantir la résilience, le déterminisme temps réel et la testabilité unitaire, le logiciel est articulé autour d'une \textbf{architecture microservices modulaire en C++17}, s'exécutant directement sous Linux (noyau ARM64 sur Raspberry Pi ou x86\_64 en simulation Godot). Chaque brique fonctionnelle est isolée dans un processus indépendant possédant son propre espace d'adressage virtuel, protégeant l'ensemble de la pile contre les fautes de segmentation locales.
+
+\section{Topologie des Processus et Découpage Fonctionnel}
+La pile logicielle se décompose en sept services autonomes, orchestrés par un superviseur système faisant office de gestionnaire de cycle de vie~:
+\begin{enumerate}
+    \item \textbf{\texttt{ServiceManager} (PID 1 / Init)}~: Initialise les points de montage virtuels du noyau (\file{/dev}, \file{/proc}, \file{/sys}, \file{/dev/shm}), configure l'interface réseau Ethernet statique, lance le démon SSH Dropbear et supervise l'ensemble des démons applicatifs avec réarmement automatique.
+    \item \textbf{\texttt{FSM} (Finite State Machine / Cœur Décisionnel)}~: Exécute la logique de haut niveau, le régulateur de suivi de trajectoire (PD barycentrique), le profileur cinématique trapézoïdal et les manœuvres d'évitement d'obstacle et de marche arrière guidée.
+    \item \textbf{\texttt{Motors} (Contrôle d'Actionnement)}~: Pilote le contrôleur PWM/Servo PCA9685 via le bus I2C et les ponts en H TB6612 via les GPIOs Sysfs. Intègre un filtre de limitation de pente angulaire (slew-rate limiter) pour la direction.
+    \item \textbf{\texttt{Sensors} (Acquisition et Traitement du Signal)}~: Échantillonne le module suiveur de ligne à 5 phototransistors TCRT5000 sur bus I2C et le télémètre ultrasonique HC-SR04 via GPIOs à déclenchement impulsionnel. Applique un pipeline de filtrage numérique à double étage (médian glissant + Kalman 1D / EMA).
+    \item \textbf{\texttt{PeripheralsService} (Interface Homme-Machine et Événements)}~: Scrute les boutons poussoirs physiques (Start, WiFi) avec anti-rebond matériel/logiciel, module le buzzer piézo-électrique et diffuse les événements d'initialisation sur socket Unix.
+    \item \textbf{\texttt{TelemetryService} (Concentrateur de Diagnostic et Diffusion)}~: Agrège l'état global du robot depuis la mémoire partagée, effectue la surveillance dynamique des violations d'accélération, publie un flux TCP unifié et diffuse des trames UDP broadcast sur le réseau local.
+    \item \textbf{\texttt{SimBridge} (Passerelle Jumeau Numérique Godot 4)}~: Établit une passerelle réseau TCP bidirectionnelle (port 9000) avec le moteur physique Godot Engine, permettant l'interchangeabilité parfaite entre robot physique et simulateur sans modifier une seule ligne du code de décision.
+\end{enumerate}
+
+\section{Mécanismes de Communication Inter-Processus (IPC)}
+Pour assurer des transferts à latence sub-microseconde sans surcharge système, trois canaux de communication spécialisés coexistent~:
+
+\subsection{Mémoire Partagée POSIX Globale (\texttt{/dev/shm/picar\_shm})}
+Ce segment de mémoire partagée POSIX (\code{shm\_open}, \code{mmap}) stocke la structure \code{RobotTelemetry}. Il permet un échange \emph{zero-copy} bidirectionnel entre la perception (\code{Sensors}), la décision (\code{FSM}) et l'actionnement (\code{Motors}). 
+La cohérence des données est protégée par un verrou d'exclusion mutuelle inter-processus POSIX (\code{pthread\_mutex\_t}) initialisé avec l'attribut \code{PTHREAD\_PROCESS\_SHARED}. Un compteur de battements de cœur (\code{heartbeat}) 64 bits est incrémenté périodiquement par la navigation pour servir de chien de garde matériel/logiciel.
+
+\subsection{Bus Mémoire Pub/Sub par Anneau Circulaire (\texttt{MemoryShareComponent})}
+En complément de la SHM globale, une infrastructure Pub/Sub sans verrou basée sur des anneaux circulaires mémoire (\file{libs/shared-services/memory}) permet à chaque service d'émettre des trames typées horodatées (\code{SensorsTelemetry}, \code{MotorsComponentTelemetry}, \code{FSMTelemetry}, \code{ServoTelemetry}) à destination du concentrateur de télémétrie.
+
+\subsection{Sockets de Domaine UNIX (\texttt{AF\_UNIX} / \texttt{SOCK\_STREAM})}
+Des sockets locaux créés dans \file{/tmp/} assurent le transport fiable des ordres asynchrones, des signaux d'activation et de reconfiguration dynamique en vol~:
+\begin{itemize}
+    \item \file{/tmp/fsm.sock}~: Contrôle et télécommande du FSM (ex: \code{trigger\_start}, configuration de gains).
+    \item \file{/tmp/motors.sock}~: Décalage de trim (\code{STEERING\_OFFSET}), inversion de polarité.
+    \item \file{/tmp/sensors.sock}~: Paramètres de filtrage (\code{FILTER\_ALPHA}, seuils ADC).
+    \item \file{/tmp/peripherals.sock}~: Diffusion des événements boutons poussoirs et sonneries buzzer.
+\end{itemize}
+
+\section{Diagramme d'Architecture Système et Interfaces Noyau}
+La Figure~\ref{fig:arch_globale} illustre l'organisation modulaire, le découplage des espaces mémoire, les chemins de communication IPC et l'interaction avec le sous-système matériel via les interfaces du noyau Linux.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+    scale=0.92, every node/.style={transform shape},
+    box/.style={rectangle, draw=black!70, rounded corners=3pt, thick, align=center, fill=white, inner sep=6pt},
+    svcbox/.style={box, fill=blue!8, draw=blue!60, font=\bfseries},
+    driverbox/.style={box, fill=orange!12, draw=orange!70, font=\small},
+    kernelbox/.style={box, fill=green!10, draw=green!60!black, font=\small},
+    ipcbox/.style={box, fill=purple!10, draw=purple!70, dashed, font=\small},
+    hwbox/.style={box, fill=red!10, draw=red!70, font=\bfseries},
+    arr/.style={-{Stealth[length=2.5mm]}, thick},
+    biarr/.style={{Stealth[length=2.5mm]}-{Stealth[length=2.5mm]}, thick},
+    dasharr/.style={-{Stealth[length=2.5mm]}, thick, dashed}
+]
+
+% Conteneur Utilisateur
+\draw[fill=blue!2, draw=blue!30, dashed, rounded corners=6pt] (-7.2, 5.5) rectangle (7.8, -3.2);
+\node[anchor=north west, blue!60!black, font=\bfseries\small] at (-7.0, 5.3) {Espace Utilisateur (Userland - Linux Microservices)};
+
+% ServiceManager
+\node[svcbox, fill=gray!20, draw=gray!70, minimum width=14.5cm] (sm) at (0.3, 4.5) {
+    \textbf{ServiceManager (PID 1 / Init)} \\
+    \footnotesize Montage FS (/dev, /proc, /sys, /dev/shm) \textbar{} Superviseur Daemons (waitpid) \textbar{} IP Statique \textbar{} Dropbear SSH
+};
+
+% Services applicatifs
+\node[svcbox, minimum width=3.2cm] (sensors) at (-5.2, 2.5) {
+    \texttt{Sensors}\\
+    \scriptsize 50~Hz / 100~kHz\\
+    \tiny TCRT5000 + HC-SR04
+};
+
+\node[svcbox, minimum width=3.4cm] (fsm) at (-1.3, 2.5) {
+    \texttt{FSM}\\
+    \scriptsize 50~Hz (Nominal)\\
+    \tiny Décision, PD, Profiler
+};
+
+\node[svcbox, minimum width=3.2cm] (motors) at (2.6, 2.5) {
+    \texttt{Motors}\\
+    \scriptsize 100~kHz (Loop)\\
+    \tiny TB6612 + PCA9685
+};
+
+\node[svcbox, minimum width=2.4cm] (periph) at (6.2, 2.5) {
+    \texttt{Peripherals}\\
+    \scriptsize Polling 5~ms\\
+    \tiny Start/WiFi, Buzzer
+};
+
+\node[svcbox, minimum width=3.2cm] (telemetry) at (-3.3, 0.4) {
+    \texttt{TelemetryService}\\
+    \scriptsize 50~Hz / TCP 91 / UDP 9002\\
+    \tiny Agrégation métriques \& Chien de garde
+};
+
+\node[svcbox, minimum width=3.2cm] (simbridge) at (4.5, 0.4) {
+    \texttt{SimBridge}\\
+    \scriptsize 50~Hz / TCP 9000\\
+    \tiny Jumeau Godot 4 (JSON / IPC)
+};
+
+% Mémoire partagée centrale
+\node[ipcbox, minimum width=14.5cm, fill=purple!12, draw=purple!80] (shm) at (0.3, -1.8) {
+    \textbf{Segment Mémoire Partagée POSIX : \texttt{/dev/shm/picar\_shm} (\texttt{RobotTelemetry})}\\
+    \scriptsize Verrou \texttt{pthread\_mutex\_t} (Process-Shared) \textbar{} Vitesse \& Braquage Cibles \textbar{} Distance filtrée \textbar{} 5x Capteurs optiques \textbar{} Heartbeat Chien de Garde
+};
+
+% Liaisons SHM
+\draw[biarr, purple!80!black] (sensors.south) -- (-5.2, -1.3);
+\draw[biarr, purple!80!black] (fsm.south) -- (-1.3, -1.3);
+\draw[biarr, purple!80!black] (motors.south) -- (2.6, -1.3);
+\draw[biarr, purple!80!black] (telemetry.south) -- (-3.3, -1.3);
+\draw[biarr, purple!80!black] (simbridge.south) -- (4.5, -1.3);
+
+% Sockets Unix
+\draw[dasharr, red!70!black] (periph.west) -- node[above, font=\tiny] {/tmp/peripherals.sock} (motors.east);
+\draw[dasharr, red!70!black] (fsm.north east) -- ++(0.3, 0.4) -| node[pos=0.25, above, font=\tiny] {/tmp/fsm.sock} (telemetry.north);
+
+% Conteneur Noyau Linux
+\draw[fill=green!3, draw=green!40!black, dashed, rounded corners=6pt] (-7.2, -3.7) rectangle (7.8, -5.6);
+\node[anchor=north west, green!50!black, font=\bfseries\small] at (-7.0, -3.8) {Noyau Linux (Kernel Space - Drivers \& Sous-Systèmes)};
+
+\node[kernelbox] (i2c_core) at (-4.5, -4.7) {
+    \textbf{Bus I2C-1 Driver}\\
+    \texttt{/dev/i2c-1} (ioctl, smbus)
+};
+
+\node[kernelbox] (gpio_core) at (1.5, -4.7) {
+    \textbf{Sous-système GPIO (Sysfs / Libgpiod)}\\
+    \texttt{/sys/class/gpio} (Base BCM2835 auto-détectée)
+};
+
+\node[kernelbox] (net_core) at (6.0, -4.7) {
+    \textbf{Stack Réseau (TCP/IP)}\\
+    Sockets AF\_INET / eth0
+};
+
+% Conteneur Matériel Physique
+\draw[fill=red!2, draw=red!40!black, dashed, rounded corners=6pt] (-7.2, -6.1) rectangle (7.8, -8.0);
+\node[anchor=north west, red!60!black, font=\bfseries\small] at (-7.0, -6.2) {Matériel Embarqué PiCar-S (Hardware Layer)};
+
+\node[hwbox] (tcrt) at (-6.0, -7.2) {
+    \textbf{TCRT5000 (5 Voies)}\\
+    \scriptsize MCU I2C \texttt{0x11} / \texttt{0x0B}\\
+    \tiny 10 octets ADC
+};
+
+\node[hwbox] (pca) at (-3.0, -7.2) {
+    \textbf{PCA9685 PWM}\\
+    \scriptsize I2C \texttt{0x40} (50~Hz)\\
+    \tiny Servo + Moteurs
+};
+
+\node[hwbox] (tb) at (0.2, -7.2) {
+    \textbf{Pont TB6612}\\
+    \scriptsize DirA: GPIO17\\
+    \tiny DirB: GPIO27
+};
+
+\node[hwbox] (sonar) at (2.8, -7.2) {
+    \textbf{HC-SR04}\\
+    \scriptsize Trig: GPIO12\\
+    \tiny Echo: GPIO16
+};
+
+\node[hwbox] (periph_hw) at (5.8, -7.2) {
+    \textbf{Buzzer / Boutons}\\
+    \scriptsize Buzzer: GPIO5\\
+    \tiny Start: 13, WiFi: 6
+};
+
+% Liaisons Noyau vers Matériel
+\draw[biarr] (i2c_core.south) -- (tcrt.north);
+\draw[biarr] (i2c_core.south) -- (pca.north);
+\draw[biarr] (gpio_core.south) -- (tb.north);
+\draw[biarr] (gpio_core.south) -- (sonar.north);
+\draw[biarr] (gpio_core.south) -- (periph_hw.north);
+
+% Liaisons Utilisateur vers Noyau
+\draw[biarr, blue!80!black] (sensors.south west) to[out=230, in=120] (i2c_core.north west);
+\draw[biarr, blue!80!black] (sensors.south west) to[out=250, in=140] (gpio_core.north west);
+\draw[biarr, blue!80!black] (motors.south east) to[out=300, in=50] (i2c_core.north east);
+\draw[biarr, blue!80!black] (motors.south east) to[out=320, in=60] (gpio_core.north);
+\draw[biarr, blue!80!black] (periph.south) to[out=270, in=70] (gpio_core.north east);
+\draw[biarr, blue!80!black] (telemetry.east) to[out=0, in=130] (net_core.north);
+\draw[biarr, blue!80!black] (simbridge.east) to[out=0, in=70] (net_core.north);
+
+\end{tikzpicture}
+\caption{Architecture globale de la pile microservices FastDrink et interfaçage avec le noyau Linux.}
+\label{fig:arch_globale}
+\end{figure}
+
+\section{Couche d'Abstraction Matérielle (HAL)}
+Conformément à la spécification technique \textbf{S10} (symétrie algorithmique), les couches décisionnelles du véhicule ne dépendent d'aucune bibliothèque matérielle directe (\code{sysfs}, \code{smbus}, \code{wiringPi}). 
+Toutes les interactions matérielles sont encapsulées derrière deux interfaces virtuelles pures~:
+\begin{itemize}
+    \item \code{IMotorDriver}~: Définit les fonctions d'actionnement \code{set\_speed(float)}, \code{set\_steering(float)}, \code{set\_steering\_offset(float)} et l'arrêt d'urgence \code{emergency\_stop()}.
+    \item \code{ISensorDriver}~: Définit les méthodes d'acquisition \code{read\_raw\_ultrasonic\_cm()}, \code{read\_line\_sensors(uint8\_t[5])} et \code{read\_line\_darkness(float[5])}.
+\end{itemize}
+Cette conception garantit qu'en mode simulation, le service \code{SimBridge} peut injecter les grandeurs physiques virtuelles dans la SHM POSIX sans qu'aucun changement ne soit nécessaire dans l'exécutable \code{FSM}.

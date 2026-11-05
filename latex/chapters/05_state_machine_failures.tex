@@ -1,0 +1,156 @@
+\chapter{Machine à États Finis (FSM) \& Analyse des Défaillances}
+\label{chap:fsm_failures}
+
+\section{Formalisation Mathématique de l'Automate Décisionnel}
+L'automate à états finis (\code{FSM}) régit le comportement autonome global du robot selon un sextuplet formel~:
+\begin{equation}
+    \mathcal{M} = \langle \mathcal{S}, \; \Sigma, \; \mathcal{O}, \; \delta, \; \lambda, \; s_0 \rangle
+\end{equation}
+où~:
+\begin{itemize}
+    \item $\mathcal{S}$ représente l'ensemble des 15 états discrets (\code{MachineStates}).
+    \item $\Sigma$ est l'ensemble des événements d'entrée (télémétrie capteurs, distances acoustiques, noirceurs optiques, chiens de garde, commandes utilisateur).
+    \item $\mathcal{O}$ est le vecteur de consigne d'actionnement en sortie~: $\mathbf{u} = \begin{bmatrix} v_{\text{cible}} & \theta_{\text{cible}} & \text{emergency\_flag} \end{bmatrix}^T$.
+    \item $\delta : \mathcal{S} \times \Sigma \to \mathcal{S}$ est la fonction de transition d'état.
+    \item $\lambda : \mathcal{S} \times \Sigma \to \mathcal{O}$ est la fonction de sortie cinématique.
+    \item $s_0 = \texttt{Init}$ est l'état initial au démarrage.
+\end{itemize}
+
+\section{Catalogue Complet des États (\texttt{shared::fsm::MachineStates})}
+Le Tableau~\ref{tab:fsm_states} décrit les 15 états définis dans \file{libs/shared-headers/fsm/machine\_states.hpp}.
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabularx}{\textwidth}{ccp{4.2cm}X}
+\toprule
+\textbf{État} & \textbf{Code Binaire} & \textbf{Nom Symbolique} & \textbf{Signification Opérationnelle \& Actionneurs} \\
+\midrule
+$S_0$ & \reg{00} & \code{Init} & Initialisation des ressources matérielles, IPC et fichiers de configuration ($t < 0{,}1\text{ s}$). $v = 0, \theta = 0$. \\
+$S_1$ & \reg{01} & \code{Unarmed} & Calibrage statique des capteurs optiques et repos ($t < 0{,}4\text{ s}$). $v = 0, \theta = 0$. \\
+$S_2$ & \reg{02} & \code{Armed} & Système armé prêt pour le départ. Attente de l'impulsion Start ou du délai auto-start. \\
+$S_3$ & \reg{03} & \code{LineFollowingForward} & Régulation nominale de trajectoire par PD barycentrique et profil de vitesse adaptatif. \\
+$S_4$ & \reg{04} & \code{CollisionRisk} & Décélération progressive d'urgence bornée ($a \le 0{,}735\text{ m/s}^2$) devant un obstacle ($d \le 20\text{ cm}$). \\
+$S_5$ & \reg{05} & \code{Stopped} & Véhicule complètement immobilisé ($v < 0{,}03\text{ m/s}$). Analyse de l'obstacle ou fin de course. \\
+$S_6$ & \reg{06} & \code{CollisionOccured} & Impact matériel ou obstacle infranchissable. Coupure totale des moteurs. \\
+$S_7$ & \reg{07} & \code{RightDeviation} & Manœuvre d'évitement latérale par la droite (+25°) à $0{,}15\text{ m/s}$ (contournement S4). \\
+$S_8$ & \reg{08} & \code{LeftDeviation} & Manœuvre d'évitement latérale par la gauche (-25°) à $0{,}15\text{ m/s}$. \\
+$S_9$ & \reg{09} & \code{Reverse} & Marche arrière guidée autonome ($v = -0{,}12\text{ m/s}$, recul maximal $< 150\text{ mm}$ - Spécification S5). \\
+$S_{10}$ & \reg{0A} & \code{LineSearching} & Contre-braquage directionnel (-24°) pour recouper le ruban noir après évitement. \\
+$S_{11}$ & \reg{0B} & \code{LineDetected} & Ruban noir ré-acquis ($D \ge 0{,}55$). Stabilisation de la trajectoire pendant $0{,}2\text{ s}$. \\
+$S_{12}$ & \reg{0C} & \code{LineSearchingTimedOut} & Échec de réacquisition de ligne après $4{,}0\text{ s}$. Coupure d'urgence sécuritaire. \\
+$S_{13}$ & \reg{0D} & \code{Abort} & Abandon de mission sur demande utilisateur ou opérateur distant. $v = 0, \theta = 0$. \\
+$S_{14}$ & \reg{0E} & \code{Failure} & Arrêt d'urgence de sécurité (violation accélération, perte de capteurs, rupture watchdog). \\
+\bottomrule
+\end{tabularx}
+\caption{Définition complète des états de la machine FSM FastDrink.}
+\label{tab:fsm_states}
+\end{table}
+
+\section{Diagramme de Transition d'États FSM}
+La Figure~\ref{fig:fsm_diagram} synthétise le graphe complet des transitions d'états, les conditions de garde temporelles et événementielles associées.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+    scale=0.82, every node/.style={transform shape},
+    state/.style={circle, draw=blue!70, fill=blue!10, thick, minimum size=1.6cm, align=center, font=\bfseries\footnotesize},
+    initstate/.style={state, fill=gray!25, draw=black},
+    failstate/.style={state, fill=red!20, draw=red!80},
+    trans/.style={-{Stealth[length=2.5mm]}, thick},
+    failtrans/.style={-{Stealth[length=2.5mm]}, thick, dashed, red!70!black}
+]
+
+% Ligne Supérieure : Initialisation et Armement
+\node[initstate] (init) at (-6, 5) {Init\\(0x00)};
+\node[state] (unarmed) at (-2, 5) {Unarmed\\(0x01)};
+\node[state] (armed) at (2, 5) {Armed\\(0x02)};
+
+\draw[trans] (init) -- node[above, font=\tiny] {$t \ge 0.1\text{ s}$} (unarmed);
+\draw[trans] (unarmed) -- node[above, font=\tiny] {$t \ge 0.4\text{ s}$} (armed);
+
+% Ligne Centrale : Suivi Nominal et Arrêt
+\node[state, fill=green!15, draw=green!60!black] (line_follow) at (2, 1.5) {LineFollowing\\Forward\\(0x03)};
+\node[state] (coll_risk) at (7, 1.5) {CollisionRisk\\(0x04)};
+\node[state] (stopped) at (7, -2.5) {Stopped\\(0x05)};
+
+\draw[trans] (armed) -- node[right, font=\tiny] {Start Event} (line_follow);
+\draw[trans] (line_follow) -- node[above, font=\tiny] {$d \le 20\text{ cm}$} (coll_risk);
+\draw[trans] (coll_risk) -- node[right, font=\tiny] {$v < 0.03\text{ m/s}$} (stopped);
+
+% Fin de parcours en T
+\draw[trans] (line_follow) to[out=45, in=135] node[above, font=\tiny] {Barre T $\implies$ Finished} (stopped);
+\draw[trans] (stopped) to[out=160, in=-40] node[pos=0.5, below, font=\tiny] {$t \ge 0.5\text{ s}$ \& finished} (armed);
+
+% Ligne Inférieure : Évitement d'obstacle (S4)
+\node[state] (dev) at (2, -2.5) {RightDeviation\\(0x07)};
+\node[state] (search) at (-2, -2.5) {LineSearching\\(0x0A)};
+\node[state] (detected) at (-2, 1.5) {LineDetected\\(0x0B)};
+
+\draw[trans] (stopped) -- node[above, font=\tiny] {$t \ge 0.2\text{ s}$ \& $d \le 25\text{ cm}$} (dev);
+\draw[trans] (dev) -- node[above, font=\tiny] {Waypoints ok} (search);
+\draw[trans] (search) -- node[right, font=\tiny] {$D_{\max} \ge 0.55$} (detected);
+\draw[trans] (detected) -- node[above, font=\tiny] {$t \ge 0.2\text{ s}$} (line_follow);
+
+% Perte de Ligne et Marche Arrière (S5)
+\node[state, fill=orange!20, draw=orange!80] (reverse) at (-6, 1.5) {Reverse\\(0x09)};
+\draw[trans] (line_follow) to[out=190, in=0] node[below, font=\tiny] {Perte Ligne} (reverse);
+\draw[trans] (reverse) to[out=45, in=135] node[above, font=\tiny] {Ligne vue \& $t \ge 0.2\text{ s}$} (line_follow);
+
+% États de Défaillance Terminale
+\node[failstate] (timeout_search) at (-2, -5.5) {Searching\\Timeout\\(0x0C)};
+\node[failstate] (failure) at (-6, -2.5) {Failure\\(0x0E)};
+
+\draw[failtrans] (search) -- node[right, font=\tiny] {$t \ge 4.0\text{ s}$} (timeout_search);
+\draw[failtrans] (reverse) -- node[left, font=\tiny] {$\Delta d \ge 150\text{ mm}$ ou $t \ge 3\text{ s}$} (failure);
+\draw[failtrans] (line_follow) to[out=230, in=60] node[pos=0.4, above, font=\tiny] {Watchdog $> 250\text{ ms}$} (failure);
+\draw[failtrans] (stopped) to[out=250, in=330] node[pos=0.5, below, font=\tiny] {Urgence SHM} (failure);
+
+\end{tikzpicture}
+\caption{Diagramme de transition d'états complet de la machine FSM.}
+\label{fig:fsm_diagram}
+\end{figure}
+
+\section{Matrice Complète des Défaillances et Déclencheurs de Sécurité}
+Le Tableau~\ref{tab:failures_matrix} répertorie l'ensemble des modes de défaillance prévus par le système, les conditions exactes de leur déclenchement ainsi que la procédure d'arrêt d'urgence exécutée.
+
+\begin{small}
+\begin{xltabular}{\textwidth}{lp{3.5cm}p{3.5cm}X}
+\caption{Matrice d'analyse des modes de défaillance, seuils et mécanismes de repli.} \label{tab:failures_matrix} \\
+\toprule
+\textbf{Mode de Panne} & \textbf{Condition de Déclenchement} & \textbf{Action Immédiate (Failsafe)} & \textbf{Comportement Système \& Reprise} \\
+\midrule
+\endfirsthead
+
+\multicolumn{4}{c}{\tablename\ \thetable\ -- \textit{Suite de la page précédente}} \\
+\toprule
+\textbf{Mode de Panne} & \textbf{Condition de Déclenchement} & \textbf{Action Immédiate (Failsafe)} & \textbf{Comportement Système \& Reprise} \\
+\midrule
+\endhead
+
+\midrule
+\multicolumn{4}{r}{\textit{Suite sur la page suivante...}} \\
+\endfoot
+
+\bottomrule
+\endlastfoot
+
+\textbf{Perte de Heartbeat Capteurs} & Aucun incrément du compteur \code{heartbeat} de la SHM pendant $\ge 250\text{ ms}$ & FSM bascule immédiatement en \code{Failure} ($S_{14}$). $v = 0, \theta = 0$. & Coupure moteur matérielle via \code{ALL\_LED\_OFF\_H}. Reprise uniquement après réinitialisation complète. \\
+\midrule
+\textbf{Perte de Heartbeat Navigation} & Le service \code{Motors} constate $> (hz \cdot 0{,}25)$ cycles sans variation de consigne & Moteurs coupent la vitesse ($v_{\text{target}} = 0{,}0$). & Protection contre l'emballement en cas de gel du FSM. Reprise dès rétablissement du flux. \\
+\midrule
+\textbf{Perte du Bus I2C Ligne} & Échec de lecture continue I2C pendant $\ge 3$ cycles ($\approx 60\text{ ms}$) & Forçage des noirceurs à zéro ($D_i = 0$), bascule en \code{Reverse} ($S_9$). & Le robot tente un recul autonome $< 150\text{ mm}$. Si toujours aucune ligne après 3~s, transition vers \code{Failure}. \\
+\midrule
+\textbf{Perte de Réflexion Ligne} & Détection de ruban nulle $\sum_{i=0}^4 D_i < 0{,}25$ en suivi nominal & Transition immédiate vers \code{Reverse} ($S_9$). & Vitesse inversée $v = -0{,}12\text{ m/s}$. Réalignement sur le ruban ou arrêt sécurité après $150\text{ mm}$. \\
+\midrule
+\textbf{Échec Évitement d'Obstacle} & Temps de recherche dans \code{LineSearching} ($S_{10}$) supérieur à $4{,}0\text{ s}$ & Transition vers \code{LineSearchingTimedOut} ($S_{12}$). & Levée de \code{emergency\_stop}, coupure des ponts en H. Intervention manuelle requise. \\
+\midrule
+\textbf{Gel Processus Système} & Absence de mise à jour SHM détectée par TelemetryService $> 500\text{ ms}$ & Positionnement du bit \code{PROCESS\_STALLED} (\reg{0400}). & Notification sur console de télémétrie et diffusion du code d'anomalie sur le réseau. \\
+\midrule
+\textbf{Violation Accélération} & Accélération estimée $|a| > 0{,}785\text{ m/s}^2$ ($a > a_{\max} + \epsilon$) & Incrémentation du compteur \code{accel\_violations}, alerte visuelle. & Alerte temps réel. Si rupture physique, signalement immédiat sur le flux télémétrique. \\
+\midrule
+\textbf{Crash Processus Fils} & Signal noyau \code{SIGSEGV}, \code{SIGBUS} ou \code{SIGABRT} sur un service & Le superviseur \code{ServiceManager} collecte le code via \code{waitpid}. & Pause de refroidissement de 100~ms, puis re-spawn automatique du binaire (backoff 2~s si $\ge 5$ crashs). \\
+\midrule
+\textbf{Timeout Télémètre Sonar} & Absence de front montant sur GPIO Echo après $5\text{ ms}$ & Retourne la distance invalide $-1{,}0\text{ cm}$. & Rejet de l'échantillon par le filtre médian. Si persistant, signalement de défaillance capteur. \\
+\end{xltabular}
+\end{small}
