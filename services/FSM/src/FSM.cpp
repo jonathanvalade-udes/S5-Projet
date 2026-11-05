@@ -99,6 +99,15 @@ bool FSM::init() {
     m_avoid_return_speed  = std::clamp(m_ipc_handler.get_float("AVOID_RETURN_SPEED", m_avoid_return_speed),
                                        ObstacleAvoidance::MIN_RETURN_SPEED, ObstacleAvoidance::MAX_RETURN_SPEED);
     m_navigator.set_avoidance_return(m_avoid_return_time_s, m_avoid_return_speed);
+    m_avoid_turn_angle_deg  = std::clamp(m_ipc_handler.get_float("AVOID_TURN_ANGLE_DEG", m_avoid_turn_angle_deg),
+                                         ObstacleAvoidance::MIN_TURN_ANGLE_DEG, ObstacleAvoidance::MAX_TURN_ANGLE_DEG);
+    m_avoid_turn_out_time_s = std::clamp(m_ipc_handler.get_float("AVOID_TURN_OUT_TIME_S", m_avoid_turn_out_time_s),
+                                         ObstacleAvoidance::MIN_TURN_OUT_TIME_S, ObstacleAvoidance::MAX_TURN_OUT_TIME_S);
+    m_avoid_turn_time_s     = std::clamp(m_ipc_handler.get_float("AVOID_TURN_TIME_S", m_avoid_turn_time_s),
+                                         ObstacleAvoidance::MIN_TURN_TIME_S, ObstacleAvoidance::MAX_TURN_TIME_S);
+    m_navigator.set_avoidance_turn(m_avoid_turn_angle_deg, m_avoid_turn_out_time_s, m_avoid_turn_time_s);
+    std::cout << "[FSM] Evitement, virages : roues a " << m_avoid_turn_angle_deg << " deg pendant " << m_avoid_turn_out_time_s
+              << " s (1er virage) puis " << m_avoid_turn_time_s << " s" << std::endl;
     std::cout << "[FSM] Evitement, diagonale de retour (phase 5) : " << m_avoid_return_speed << " m/s, "
               << m_avoid_return_time_s << " s maximum (~" << m_avoid_return_speed * m_avoid_return_time_s * 100.0f
               << " cm au plus)" << std::endl;
@@ -289,6 +298,24 @@ bool FSM::apply_config_key(const std::string& key, float value) {
         m_avoid_diag_speed = std::clamp(value, ObstacleAvoidance::MIN_DIAG_SPEED, ObstacleAvoidance::MAX_DIAG_SPEED);
         m_ipc_handler.set_float("AVOID_DIAG_SPEED", m_avoid_diag_speed);
         m_navigator.set_avoidance_diagonal(m_avoid_diag_time_s, m_avoid_diag_speed);
+        return true;
+    }
+    if (key == "AVOID_TURN_ANGLE_DEG") {
+        m_avoid_turn_angle_deg = std::clamp(value, ObstacleAvoidance::MIN_TURN_ANGLE_DEG, ObstacleAvoidance::MAX_TURN_ANGLE_DEG);
+        m_ipc_handler.set_float("AVOID_TURN_ANGLE_DEG", m_avoid_turn_angle_deg);
+        m_navigator.set_avoidance_turn(m_avoid_turn_angle_deg, m_avoid_turn_out_time_s, m_avoid_turn_time_s);
+        return true;
+    }
+    if (key == "AVOID_TURN_OUT_TIME_S") {
+        m_avoid_turn_out_time_s = std::clamp(value, ObstacleAvoidance::MIN_TURN_OUT_TIME_S, ObstacleAvoidance::MAX_TURN_OUT_TIME_S);
+        m_ipc_handler.set_float("AVOID_TURN_OUT_TIME_S", m_avoid_turn_out_time_s);
+        m_navigator.set_avoidance_turn(m_avoid_turn_angle_deg, m_avoid_turn_out_time_s, m_avoid_turn_time_s);
+        return true;
+    }
+    if (key == "AVOID_TURN_TIME_S") {
+        m_avoid_turn_time_s = std::clamp(value, ObstacleAvoidance::MIN_TURN_TIME_S, ObstacleAvoidance::MAX_TURN_TIME_S);
+        m_ipc_handler.set_float("AVOID_TURN_TIME_S", m_avoid_turn_time_s);
+        m_navigator.set_avoidance_turn(m_avoid_turn_angle_deg, m_avoid_turn_out_time_s, m_avoid_turn_time_s);
         return true;
     }
     if (key == "AVOID_RETURN_TIME_S") {

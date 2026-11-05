@@ -36,6 +36,11 @@ public:
     /// Deuxieme diagonale de l'evitement (phase 5) : duree maximale (s) et vitesse (m/s), lues dans fsm.conf.
     void set_avoidance_return(float time_s, float speed) { m_obstacle_avoidance.set_return(time_s, speed); }
 
+    /// Virages de l'evitement : angle de braquage (deg), duree du 1er virage et des virages suivants (s), lus dans fsm.conf.
+    void set_avoidance_turn(float angle_deg, float out_time_s, float time_s) {
+        m_obstacle_avoidance.set_turn(angle_deg, out_time_s, time_s);
+    }
+
     void reset_controllers();
     float get_current_speed() const;
     float compute_bounded_velocity(float desired_v, float dt);

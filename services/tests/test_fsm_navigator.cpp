@@ -127,6 +127,47 @@ int main() {
         assert(near(sp, 0.12f));
     }
 
+    // --- Evitement : virages reglables (AVOID_TURN_ANGLE_DEG / AVOID_TURN_OUT_TIME_S / AVOID_TURN_TIME_S) ---
+    {
+        using services::ObstacleAvoidance;
+        const float dark[5] = {0, 0, 0, 0, 0};
+        // Braquage commande 0,5 s apres le debut de la phase 2, et pas de la fin de la phase 2 (arrivee en phase 3)
+        auto run = [&](float angle, float out_time, float turn_time, float& steer_phase2, int& k_phase3) {
+            ObstacleAvoidance av;
+            av.set_turn(angle, out_time, turn_time);
+            av.reset(0.0f, 0.2f);
+            float steer = 0.0f, vel = 0.0f, v = 0.0f;
+            steer_phase2 = 0.0f;
+            k_phase3 = -1;
+            int p2 = -1;
+            for (int k = 0; k < 2000; ++k) {
+                v += (vel * 0.9f - v) * (0.02f / 0.1f);
+                av.update(1.0f, 0.02f, dark, v, 0.2f, steer, vel);
+                if (av.get_phase() == 2 && p2 < 0) p2 = k;
+                if (p2 >= 0 && k == p2 + 25) steer_phase2 = steer;
+                if (av.get_phase() == 3) { k_phase3 = k; return; }
+            }
+        };
+        float st = 0.0f;
+        int k_def = 0, k = 0;
+        run(ObstacleAvoidance::DEFAULT_TURN_ANGLE_DEG, ObstacleAvoidance::DEFAULT_TURN_OUT_TIME_S,
+            ObstacleAvoidance::DEFAULT_TURN_TIME_S, st, k_def);
+        assert(k_def > 0 && near(st, 45.0f));                       // defaut : roues a fond
+
+        run(30.0f, 1.10f, 0.70f, st, k);
+        assert(near(st, 30.0f));                                    // l'angle demande est bien applique
+
+        run(45.0f, 1.60f, 0.70f, st, k);                            // 1er virage plus long de 0,5 s : phase 2 plus longue de 25 pas
+        assert(k - k_def >= 24 && k - k_def <= 26);
+
+        run(99.0f, 1.10f, 0.70f, st, k);                            // hors bornes : 15..45 deg
+        assert(near(st, 45.0f));
+        run(1.0f, 1.10f, 0.70f, st, k);
+        assert(near(st, 15.0f));
+        run(45.0f, 0.0f, 0.70f, st, k);                             // 0 s -> 0,3 s : 0,8 s de moins = 40 pas
+        assert(k_def - k >= 39 && k_def - k <= 41);
+    }
+
     // --- Puissance moteur : vitesse / croisiere x puissance a la croisiere (MAX_POWER_PCT) ---
     {
         assert(near(nav.compute_motor_power(0.32f, 0.32f), 50.0f));            // defaut : 50 % a la croisiere

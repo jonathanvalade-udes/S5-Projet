@@ -38,6 +38,19 @@ public:
     static constexpr float MIN_RETURN_SPEED = 0.12f;
     static constexpr float MAX_RETURN_SPEED = 0.25f;
 
+    /// Virages (phases 2, 3 et 4) : AVOID_TURN_ANGLE_DEG = braquage des roues (45 = a fond), AVOID_TURN_OUT_TIME_S = duree du
+    /// premier virage (le robot repart de l'arret : plus long), AVOID_TURN_TIME_S = duree des deux virages suivants.
+    /// Avec 45 deg et ces durees, chaque virage tourne le cap d'environ 45 deg.
+    static constexpr float DEFAULT_TURN_ANGLE_DEG = 45.0f;
+    static constexpr float DEFAULT_TURN_OUT_TIME_S = 1.10f;
+    static constexpr float DEFAULT_TURN_TIME_S = 0.70f;
+    static constexpr float MIN_TURN_ANGLE_DEG = 15.0f;
+    static constexpr float MAX_TURN_ANGLE_DEG = 45.0f;
+    static constexpr float MIN_TURN_OUT_TIME_S = 0.3f;
+    static constexpr float MAX_TURN_OUT_TIME_S = 3.0f;
+    static constexpr float MIN_TURN_TIME_S = 0.2f;
+    static constexpr float MAX_TURN_TIME_S = 2.0f;
+
     /// Demarre une manoeuvre. trim_deg = biais de braquage appris (roues mal alignees).
     /// obstacle_dist (m) n'est plus utilise : la manoeuvre est reglee par des durees fixes.
     void reset(float trim_deg, float obstacle_dist);
@@ -53,6 +66,10 @@ public:
 
     /// Regle la deuxieme diagonale (phase 5) : duree maximale (s) et vitesse (m/s), bornees comme ci-dessus.
     void set_return(float time_s, float speed);
+
+    /// Regle les virages : angle de braquage (deg), duree du premier virage (phase 2) et duree des virages suivants
+    /// (phases 3 et 4). Tant que le virage dure, les roues restent braquees a cet angle. Valeurs bornees.
+    void set_turn(float angle_deg, float out_time_s, float time_s);
 
     void set_ignore_finish(float duration_s) { m_ignore_finish_s = duration_s; }
     void update_ignore_finish(float dt) { m_ignore_finish_s = std::max(0.0f, m_ignore_finish_s - dt); }
@@ -71,6 +88,7 @@ private:
     /// Vire a fond (turn_direction = +1 / -1) pendant turn_time_s, puis roule droit : braquage selon le temps ecoule dans la phase.
     float turn_then_straight(float turn_direction, float turn_time_s) const;
 
+    float total_timeout_s() const;   // securite : au moins la somme des durees reglees
     static bool line_seen(const float darkness[5]);
     void next_phase();
 
@@ -78,6 +96,9 @@ private:
     float m_diag_speed{DEFAULT_DIAG_SPEED};     // phase 2 : vitesse pendant la diagonale
     float m_return_time_s{DEFAULT_RETURN_TIME_S};   // phase 5 : duree maximale de la diagonale de retour
     float m_return_speed{DEFAULT_RETURN_SPEED};     // phase 5 : vitesse pendant la diagonale de retour
+    float m_turn_angle_deg{DEFAULT_TURN_ANGLE_DEG};     // virages : braquage des roues
+    float m_turn_out_time_s{DEFAULT_TURN_OUT_TIME_S};   // phase 2 : duree du premier virage
+    float m_turn_time_s{DEFAULT_TURN_TIME_S};           // phases 3 et 4 : duree des virages
 
     int m_phase{1};
     float m_phase_time{0.0f};        // temps ecoule dans la phase courante (s)

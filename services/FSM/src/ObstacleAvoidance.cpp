@@ -20,9 +20,8 @@ constexpr float REVERSE_DISTANCE_M = 0.25f;
 
 // --- Virages a fond (braquage 45 deg) qui changent le cap d'environ 45 deg ---
 // Le 1er virage est plus long : le robot repart de l'arret apres la marche arriere (acceleration + retard du servo).
-constexpr float TURN_STEER_DEG = 45.0f;
-constexpr float TURN_OUT_TIME_S = 1.10f;   // phase 2 (depart de l'arret)
-constexpr float TURN_TIME_S = 0.70f;       // phases 3 et 4 (robot deja en mouvement)
+// L'angle et les durees des virages se reglent dans fsm.conf (AVOID_TURN_ANGLE_DEG, AVOID_TURN_OUT_TIME_S, AVOID_TURN_TIME_S) ;
+// valeurs par defaut (45 deg, 1,10 s pour le premier virage, 0,70 s pour les suivants) dans ObstacleAvoidance.hpp.
 
 // --- Phase 2 : s'ecarter (virage de 45 deg puis diagonale) ---
 // La duree et la vitesse de la diagonale se reglent dans fsm.conf (AVOID_DIAG_TIME_S, AVOID_DIAG_SPEED) ;
@@ -66,6 +65,18 @@ void ObstacleAvoidance::set_return(float time_s, float speed) {
     m_return_speed = std::clamp(speed, MIN_RETURN_SPEED, MAX_RETURN_SPEED);
 }
 
+void ObstacleAvoidance::set_turn(float angle_deg, float out_time_s, float time_s) {
+    m_turn_angle_deg = std::clamp(angle_deg, MIN_TURN_ANGLE_DEG, MAX_TURN_ANGLE_DEG);
+    m_turn_out_time_s = std::clamp(out_time_s, MIN_TURN_OUT_TIME_S, MAX_TURN_OUT_TIME_S);
+    m_turn_time_s = std::clamp(time_s, MIN_TURN_TIME_S, MAX_TURN_TIME_S);
+}
+
+float ObstacleAvoidance::total_timeout_s() const {
+    // Recul (~2 s) + virages + diagonales + passage + recherche + marge : la securite ne doit jamais couper une manoeuvre reglee
+    const float budget = 2.0f + m_turn_out_time_s + m_diag_time_s + 2.0f * m_turn_time_s + PASS_TIME_S + m_return_time_s + 3.0f;
+    return std::max(TOTAL_TIMEOUT_S, budget);
+}
+
 void ObstacleAvoidance::next_phase() {
     std::cout << "[ObstacleAvoidance] Phase " << m_phase << " -> " << (m_phase + 1)
               << " (t=" << m_total_time << " s)" << std::endl;
@@ -82,7 +93,7 @@ bool ObstacleAvoidance::line_seen(const float darkness[5]) {
 }
 
 float ObstacleAvoidance::turn_then_straight(float turn_direction, float turn_time_s) const {
-    return m_phase_time < turn_time_s ? turn_direction * TURN_STEER_DEG : 0.0f;
+    return m_phase_time < turn_time_s ? turn_direction * m_turn_angle_deg : 0.0f;
 }
 
 // Phase 1 : reculer de 15 cm en ligne droite
@@ -94,23 +105,23 @@ bool ObstacleAvoidance::phase_reverse(float reverse_speed, float& steering_deg, 
 
 // Phase 2 : virer a 45 deg du cote choisi, puis avancer en diagonale
 bool ObstacleAvoidance::phase_move_away(float side, float forward_speed, float& steering_deg, float& velocity) const {
-    steering_deg = turn_then_straight(side, TURN_OUT_TIME_S);
-    velocity = (m_phase_time < TURN_OUT_TIME_S) ? forward_speed : m_diag_speed;   // virage, puis diagonale
-    return m_phase_time >= TURN_OUT_TIME_S + m_diag_time_s;
+    steering_deg = turn_then_straight(side, m_turn_out_time_s);
+    velocity = (m_phase_time < m_turn_out_time_s) ? forward_speed : m_diag_speed;   // virage, puis diagonale
+    return m_phase_time >= m_turn_out_time_s + m_diag_time_s;
 }
 
 // Phase 3 : virer de 45 deg de l'autre cote (cap parallele a la piste), puis avancer droit pour depasser le cube
 bool ObstacleAvoidance::phase_straighten(float side, float forward_speed, float& steering_deg, float& velocity) const {
-    steering_deg = turn_then_straight(-side, TURN_TIME_S);
+    steering_deg = turn_then_straight(-side, m_turn_time_s);
     velocity = forward_speed;
-    return m_phase_time >= TURN_TIME_S + PASS_TIME_S;
+    return m_phase_time >= m_turn_time_s + PASS_TIME_S;
 }
 
 // Phase 4 : virer encore de 45 deg de l'autre cote (cap dirige vers la piste)
 bool ObstacleAvoidance::phase_turn_back(float side, float forward_speed, float& steering_deg, float& velocity) const {
-    steering_deg = -side * TURN_STEER_DEG;
+    steering_deg = -side * m_turn_angle_deg;
     velocity = forward_speed;
-    return m_phase_time >= TURN_TIME_S;
+    return m_phase_time >= m_turn_time_s;
 }
 
 // Phase 5 : avancer en diagonale (braquage nul) ; la fin est decidee par la detection du ruban ou par le temps max
@@ -148,7 +159,7 @@ ObstacleAvoidance::DeviationResult ObstacleAvoidance::update(
     if (phase_done) next_phase();
 
     steering_deg = std::clamp(steering_deg + m_trim_deg, -45.0f, 45.0f);
-    return m_total_time >= TOTAL_TIMEOUT_S ? DeviationResult::SearchLine : DeviationResult::Running;
+    return m_total_time >= total_timeout_s() ? DeviationResult::SearchLine : DeviationResult::Running;
 }
 
 } // namespace services

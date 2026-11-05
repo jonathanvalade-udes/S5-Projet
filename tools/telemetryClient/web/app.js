@@ -703,6 +703,30 @@ function updateMaxPowerSpeed() {
 }
 document.addEventListener('DOMContentLoaded', updateMaxPowerSpeed);
 
+// Evitement, virages : estimation lineaire de la rotation du cap (45 deg pour 45 deg de braquage et la duree de reference).
+// Simple repere : la vraie rotation depend de la vitesse et du servo ; a valider en simulation.
+function updateAvoidTurn() {
+    const val = id => parseFloat((document.getElementById(id) || {}).value);
+    const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+    const a = val('cfg-avoid-turn-angle'), tOut = val('cfg-avoid-turn-out'), t = val('cfg-avoid-turn');
+    const tagA = document.getElementById('live-avoid-turn-angle');
+    const tagOut = document.getElementById('live-avoid-turn-out');
+    const tagT = document.getElementById('live-avoid-turn');
+    if (!tagA || !tagOut || !tagT) return;
+    if (isNaN(a)) {
+        tagA.textContent = 'Braquage : --';
+    } else {
+        const ac0 = clamp(a, 15, 45);
+        tagA.textContent = `Braquage : ${ac0}°${ac0 !== a ? ' (ramené aux bornes du FSM)' : ''}`;
+    }
+    const ac = clamp(isNaN(a) ? 45 : a, 15, 45);
+    tagOut.textContent = isNaN(tOut) ? 'Rotation du cap estimée : --'
+        : `Rotation du cap estimée : ~${Math.round(45 * clamp(tOut, 0.3, 3.0) / 1.10 * ac / 45)}°`;
+    tagT.textContent = isNaN(t) ? 'Rotation du cap estimée : --'
+        : `Rotation du cap estimée : ~${Math.round(45 * clamp(t, 0.2, 2.0) / 0.70 * ac / 45)}°`;
+}
+document.addEventListener('DOMContentLoaded', updateAvoidTurn);
+
 function updateAvoidDistance() {
     avoidDistanceText('cfg-avoid-diag-time', 'cfg-avoid-diag-speed', 'live-avoid-dist',
                       'Distance diagonale', 0.3, 3.0, 0.12, 0.25);
