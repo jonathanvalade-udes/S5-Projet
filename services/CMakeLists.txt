@@ -17,6 +17,7 @@ find_package(Threads REQUIRED)
 # Global static linking option (OFF by default)
 option(STATIC "Build with static linking (-static)" OFF)
 option(STATIC_BUILD "Build with static linking (-static)" OFF)
+option(STATIC_SERVICEMANAGER "Build ServiceManager with static linking (-static)" OFF)
 
 if(STATIC OR STATIC_BUILD)
     add_link_options(-static -no-pie)

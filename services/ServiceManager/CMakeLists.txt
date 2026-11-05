@@ -11,6 +11,7 @@ add_compile_options(-Wall -Wextra -O2)
 # Build options - static linking is optional (OFF by default)
 option(STATIC "Build with static linking (-static)" OFF)
 option(STATIC_BUILD "Build with static linking (-static)" OFF)
+option(STATIC_SERVICEMANAGER "Build ServiceManager with static linking (-static)" OFF)
 
 # Source files
 file(GLOB_RECURSE SRCS CONFIGURE_DEPENDS "src/*.cpp")
@@ -32,9 +33,9 @@ set_target_properties(${TARGET_NAME} PROPERTIES
     OUTPUT_NAME_RELEASE "${BINARY_OUTPUT_NAME}"
 )
 
-# Apply static linking if requested via -DSTATIC=ON or -DSTATIC_BUILD=ON
-if(STATIC OR STATIC_BUILD)
-    target_link_options(${TARGET_NAME} PRIVATE -static)
+# Apply static linking if requested via -DSTATIC=ON, -DSTATIC_BUILD=ON, or -DSTATIC_SERVICEMANAGER=ON
+if(STATIC OR STATIC_BUILD OR STATIC_SERVICEMANAGER)
+    target_link_options(${TARGET_NAME} PRIVATE -static -no-pie)
     set(EMBEDDED_STATIC_FLAG "-static")
 else()
     set(EMBEDDED_STATIC_FLAG "")

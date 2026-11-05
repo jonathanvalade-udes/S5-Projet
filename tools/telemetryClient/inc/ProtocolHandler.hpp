@@ -36,6 +36,9 @@ public:
 
     // Nom textuel d'un état FSM
     static std::string fsm_state_to_string(shared::fsm::MachineStates state);
+
+private:
+    std::vector<uint8_t> m_rx_buffer;
 };
 
 } // namespace telemetry

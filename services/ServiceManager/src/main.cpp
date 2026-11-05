@@ -124,6 +124,12 @@ int main(int argc, char* argv[])
     signal(SIGINT, handle_exit_signal);
     signal(SIGTERM, handle_exit_signal);
 
+
+    if (pid_dropbear <= 0) {
+            log_msg(1, "[INIT] Launching Dropbear SSH on %s:22...\n", eth0_ip);
+            pid_dropbear = spawn_dropbear();
+    }
+
     while (!g_shutdown_requested) {
         int status;
         pid_t dead_pid;
@@ -182,6 +188,8 @@ int main(int argc, char* argv[])
             }
         }
 
+        
+
         // Network carrier and Dropbear monitoring
         std::string iface = find_ethernet_interface();
         if (!iface.empty()) {
@@ -192,11 +200,6 @@ int main(int argc, char* argv[])
                 log_msg(1, "[NET] Interface %s link UP! Configuring IP: %s\n", iface.c_str(), eth0_ip);
                 configure_static_ip(iface.c_str(), eth0_ip, "255.255.255.0");
                 eth_configured = true;
-
-                if (pid_dropbear <= 0) {
-                    log_msg(1, "[INIT] Launching Dropbear SSH on %s:22...\n", eth0_ip);
-                    pid_dropbear = spawn_dropbear();
-                }
             } else if (!link_is_up && eth_configured) {
                 log_msg(1, "[NET] Interface %s link DOWN (cable unplugged).\n", iface.c_str());
                 eth_configured = false;
