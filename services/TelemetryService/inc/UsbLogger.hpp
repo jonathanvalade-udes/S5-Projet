@@ -53,7 +53,6 @@ private:
     std::condition_variable m_cv;
     std::thread m_thread;
 
-    std::string m_active_file_path;
     std::ofstream m_stream;
 
     static constexpr size_t MAX_FIFO_SIZE = 100000;

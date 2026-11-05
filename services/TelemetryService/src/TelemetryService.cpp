@@ -6,6 +6,7 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <csignal>
 #include <chrono>
 #include <thread>
 #include <algorithm>
@@ -35,11 +36,10 @@ static const char* state_to_string(uint32_t state) {
     }
 }
 
-TelemetryService::TelemetryService(int hz, bool enable_ui, int tcp_port, int udp_port,
+TelemetryService::TelemetryService(int hz, bool /*enable_ui*/, int tcp_port, int udp_port,
                                    std::string posix_socket_path)
     : m_running(false),
-      m_hz(hz > 0 ? hz : 50),
-      m_enable_ui(enable_ui),
+      m_hz(hz > 0 ? hz : 100),
       m_udp_port(udp_port),
       m_posix_client(std::move(posix_socket_path)),
       m_tcp_streamer(tcp_port),
@@ -54,6 +54,7 @@ TelemetryService::~TelemetryService() {
 }
 
 bool TelemetryService::init() {
+    std::signal(SIGPIPE, SIG_IGN);
     m_collector.init();
     m_posix_client.connect();
 
@@ -71,7 +72,7 @@ bool TelemetryService::init() {
         }
     }
 
-    m_usb_logger.init();
+    //m_usb_logger.init();
     m_running.store(true);
     return true;
 }
@@ -206,9 +207,9 @@ void TelemetryService::run() {
         broadcast_udp();
 
         // 6. Push to background USB logger (if active)
-        if (m_usb_logger.is_active()) {
+        /*if (m_usb_logger.is_active()) {
             m_usb_logger.push_sample(m_collector.get_sample());
-        }
+        }*/
 
         // 7. Deterministic RT sleep without delay
         auto now = std::chrono::steady_clock::now();
@@ -226,7 +227,7 @@ void TelemetryService::stop() {
     }
     m_tcp_streamer.stop();
     m_posix_client.disconnect();
-    m_usb_logger.stop();
+    //m_usb_logger.stop();
 }
 
 } // namespace services

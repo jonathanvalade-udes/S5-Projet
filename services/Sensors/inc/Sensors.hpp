@@ -11,7 +11,10 @@ namespace services {
 
 class Sensors {
 public:
-    explicit Sensors(int hz = 100000, int trig = 12, int echo = 16);
+    static constexpr int TRIG_PIN = 12;
+    static constexpr int ECHO_PIN = 16;
+
+    explicit Sensors(int hz = 100, int trig = TRIG_PIN, int echo = ECHO_PIN);
     ~Sensors();
 
     bool init();
@@ -29,9 +32,7 @@ public:
 
 private:
     std::atomic<bool> m_running{false};
-    int m_hz{100000};
-    int m_trig_pin{12};
-    int m_echo_pin{16};
+    int m_hz{100};
     float m_filter_alpha{0.25f};
     size_t m_median_window{5};
     float m_last_line_error{0.0f};

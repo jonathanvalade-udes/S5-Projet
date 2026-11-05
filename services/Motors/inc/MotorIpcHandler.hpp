@@ -13,7 +13,8 @@ public:
                              const std::string& socket_path = "/tmp/motors.sock");
     ~MotorIpcHandler() = default;
 
-    bool init(std::function<bool(const std::string&, float)> on_command);
+    bool init(std::function<bool(const std::string&, float)> on_command,
+              std::function<bool(uint32_t)> on_estop = nullptr);
     void process_pending_commands();
 
     float get_float(const std::string& key, float default_val) const;

@@ -6,7 +6,9 @@ namespace services {
 FsmIpcHandler::FsmIpcHandler(const std::string& config_file, const std::string& socket_path)
     : m_config_file(config_file), m_socket_path(socket_path), m_config(config_file) {}
 
-bool FsmIpcHandler::init(std::function<bool(const std::string&, float)> on_command) {
+bool FsmIpcHandler::init(std::function<bool(const std::string&, float)> on_command,
+                        std::function<bool(bool)> on_active,
+                        std::function<bool(uint32_t)> on_estop) {
     if (m_config.load(m_config_file)) {
         std::cout << "[FsmIpcHandler] Configuration loaded from " << m_config.get_active_filepath() << std::endl;
     } else {
@@ -17,6 +19,13 @@ bool FsmIpcHandler::init(std::function<bool(const std::string&, float)> on_comma
         std::cerr << "[FsmIpcHandler] Warning: Failed to init IPC socket at " << m_socket_path << std::endl;
     } else {
         std::cout << "[FsmIpcHandler] IPC Server listening on " << m_socket_path << std::endl;
+    }
+
+    if (on_active) {
+        m_ipc_server.set_active_callback(std::move(on_active));
+    }
+    if (on_estop) {
+        m_ipc_server.set_emergency_stop_callback(std::move(on_estop));
     }
 
     return true;

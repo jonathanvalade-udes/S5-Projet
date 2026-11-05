@@ -7,6 +7,7 @@ namespace shared::commands {
         Ping = 0x01,
         SetActive = 0x02,
         SetControlFlags = 0x03,
-        SetConfigKey = 0x04
+        SetConfigKey = 0x04,
+        EmergencyStop = 0x06
     };
 }

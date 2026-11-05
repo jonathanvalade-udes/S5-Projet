@@ -5,7 +5,10 @@
 #include <cmath>
 #include <algorithm>
 
-#include "ipc/shared_memory.hpp"
+#include "fsm/fsm_command.hpp"
+#include "sensors/sensors_telemetry.hpp"
+#include "shared-services/memory/server.hpp"
+#include "shared-services/memory/subscriber.hpp"
 #include "hal/motor_driver.hpp"
 #include "filters/ultrasonic_pipeline.hpp"
 #include "shared-services/config/service_config.hpp"
@@ -48,82 +51,67 @@ public:
 void test_ipc_communication_and_failsafe() {
     std::cout << "[TEST] Démarrage du test d'intégration IPC & Failsafe..." << std::endl;
 
-    SharedMemoryManager shm_mgr;
-    RobotTelemetry* telem = shm_mgr.open_shm(true);
-    assert(telem != nullptr);
+    shared::services::memory::MemoryShareComponentServer fsm_pub("FsmCommand");
+    shared::services::memory::MemoryShareComponentSubscriber fsm_sub("FsmCommand");
 
     // Initialisation
     MockMotorDriver mock_motor(false);
     mock_motor.emergency_stop();
     assert(mock_motor.is_stopped());
 
-    UltrasonicPipeline pipeline(5, 0.25f);
-    pipeline.reset(100.0f);
+    // 1. Simulation d'écriture par la FSM vers FsmCommand (100 Hz)
+    shared::fsm::FsmCommandPayload cmd{};
+    cmd.target_speed = 30.0f;
+    cmd.target_steering = 15.0f;
+    cmd.steering_offset = 0.0f;
+    cmd.emergency_stop = 0;
+    cmd.heartbeat = 1;
+    cmd.state = shared::fsm::MachineStates::LineFollowingForward;
+    fsm_pub.publish(cmd);
 
-    // 1. Simulation d'écriture par le service Capteurs (50 Hz)
-    float raw_sensor_distance = 42.0f;
-    float filtered = pipeline.process(raw_sensor_distance, 0.02f, 0.0f);
+    // 2. Simulation de lecture par le service Moteur via subscriber
+    shared::fsm::FsmCommandPayload read_cmd{};
+    bool has_cmd = fsm_sub.read(read_cmd);
+    assert(has_cmd);
+    assert(read_cmd.emergency_stop == 0);
+    assert(std::abs(read_cmd.target_speed - 30.0f) < 0.001f);
+    assert(std::abs(read_cmd.target_steering - 15.0f) < 0.001f);
 
-    pthread_mutex_lock(&(telem->mtx));
-    telem->filtered_dist = filtered;
-    telem->heartbeat = 1;
-    telem->target_speed = 30.0f;      // Consigne de vitesse 30%
-    telem->target_steering = 15.0f;   // Consigne de braquage 15°
-    telem->emergency_stop = false;
-    pthread_mutex_unlock(&(telem->mtx));
-
-    // 2. Simulation de lecture par le service Moteur
-    float read_speed = 0.0f;
-    float read_steering = 0.0f;
-    bool is_emergency = false;
-
-    pthread_mutex_lock(&(telem->mtx));
-    read_speed = telem->target_speed;
-    read_steering = telem->target_steering;
-    is_emergency = telem->emergency_stop;
-    pthread_mutex_unlock(&(telem->mtx));
-
-    assert(!is_emergency);
-    assert(std::abs(read_speed - 30.0f) < 0.001f);
-    assert(std::abs(read_steering - 15.0f) < 0.001f);
-
-    mock_motor.set_speed(read_speed);
-    mock_motor.set_steering(read_steering);
+    mock_motor.set_speed(read_cmd.target_speed);
+    mock_motor.set_steering(read_cmd.target_steering);
     assert(!mock_motor.is_stopped());
     assert(std::abs(mock_motor.get_speed() - 30.0f) < 0.001f);
 
-    std::cout << "  ✓ Transmission SHM Capteurs -> Moteur validée." << std::endl;
+    std::cout << "  ✓ Transmission SHM FsmCommand -> Moteur validée (Lock-Free)." << std::endl;
 
     // 3. Test de l'arrêt d'urgence Failsafe
-    pthread_mutex_lock(&(telem->mtx));
-    telem->emergency_stop = true;
-    pthread_mutex_unlock(&(telem->mtx));
+    cmd.emergency_stop = 1;
+    cmd.heartbeat++;
+    fsm_pub.publish(cmd);
 
-    pthread_mutex_lock(&(telem->mtx));
-    if (telem->emergency_stop) {
+    fsm_sub.read(read_cmd);
+    if (read_cmd.emergency_stop != 0) {
         mock_motor.emergency_stop();
     }
-    pthread_mutex_unlock(&(telem->mtx));
 
     assert(mock_motor.is_stopped());
     assert(std::abs(mock_motor.get_speed()) < 0.001f);
     std::cout << "  ✓ Failsafe d'urgence : Coupure moteur à 0V validée." << std::endl;
 
     // 4. Test du Watchdog (perte de heartbeat)
-    uint64_t stalled_heartbeat = telem->heartbeat;
+    uint32_t stalled_heartbeat = read_cmd.heartbeat;
     int watchdog_misses = 0;
-    // On simule 15 cycles sans incrément de heartbeat
     for (int i = 0; i < 15; ++i) {
-        if (telem->heartbeat == stalled_heartbeat) {
+        if (read_cmd.heartbeat == stalled_heartbeat) {
             watchdog_misses++;
         }
     }
     assert(watchdog_misses == 15);
-    std::cout << "  ✓ Watchdog : Détection d'inactivité capteurs validée." << std::endl;
+    std::cout << "  ✓ Watchdog : Détection d'inactivité FSM validée." << std::endl;
 }
 
 void test_service_config_and_ipc_sockets() {
-    std::cout << "[TEST] Validation des Fichiers .conf par Service et Sockets IPC (PacketHeader, ACK/NACK)..." << std::endl;
+    std::cout << "[TEST] Validation des Fichiers .conf par Service et Sockets IPC (PacketHeader, SetActive, EmergencyStop, SetConfigKey)..." << std::endl;
 
     // 1. Test du gestionnaire ServiceConfig
     const std::string test_conf = "/tmp/test_service.conf";
@@ -142,10 +130,12 @@ void test_service_config_and_ipc_sockets() {
     assert(std::abs(cfg_reloaded.get_float("LINE_KP", 0.0f) - 1.85f) < 0.001f);
     std::cout << "  ✓ ServiceConfig : Lecture, écriture et persistance validées." << std::endl;
 
-    // 2. Test du serveur et client IPC Socket (PacketHeader sans CRC, 72 octets payload, ACK/NACK)
+    // 2. Test du serveur et client IPC Socket (PacketHeader sans CRC, payloads alignés 32 bits, ACK/NACK)
     const std::string test_sock = "/tmp/test_ipc_config.sock";
     float running_val = 1.0f;
     bool callback_called = false;
+    bool active_called = false;
+    bool estop_called = false;
 
     shared::services::ipc::ServiceIPCSocketServer server;
     bool server_init = server.init(test_sock, shared::commands::ServiceID::FSM, [&](const std::string& key, float val) {
@@ -157,6 +147,16 @@ void test_service_config_and_ipc_sockets() {
         return false; // NACK
     });
     assert(server_init);
+
+    server.set_active_callback([&](bool active) {
+        active_called = active;
+        return true;
+    });
+
+    server.set_emergency_stop_callback([&](uint32_t reason) {
+        estop_called = (reason == 42);
+        return true;
+    });
 
     // Client dans un thread séparé qui envoie une commande SetConfigKey valide
     std::thread client_th([&]() {
@@ -170,7 +170,6 @@ void test_service_config_and_ipc_sockets() {
         assert(ok == true);
     });
 
-    // Le serveur traite la commande
     for (int i = 0; i < 20; ++i) {
         server.process_pending_commands();
         if (callback_called) break;
@@ -182,6 +181,46 @@ void test_service_config_and_ipc_sockets() {
     assert(std::abs(running_val - 2.42f) < 0.001f);
     std::cout << "  ✓ IPC Socket : Commande SetConfigKey reçue et acquittée par ACK." << std::endl;
 
+    // Test SetActive via socket
+    std::thread client_active_th([&]() {
+        bool ok = shared::services::ipc::ServiceIPCSocketClient::send_set_active(
+            test_sock,
+            shared::commands::ServiceID::FSM,
+            true,
+            43
+        );
+        assert(ok == true);
+    });
+
+    for (int i = 0; i < 20; ++i) {
+        server.process_pending_commands();
+        if (active_called) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    if (client_active_th.joinable()) client_active_th.join();
+    assert(active_called);
+    std::cout << "  ✓ IPC Socket : Commande SetActive reçue et acquittée par ACK." << std::endl;
+
+    // Test EmergencyStop via socket
+    std::thread client_estop_th([&]() {
+        bool ok = shared::services::ipc::ServiceIPCSocketClient::send_emergency_stop(
+            test_sock,
+            shared::commands::ServiceID::FSM,
+            42,
+            44
+        );
+        assert(ok == true);
+    });
+
+    for (int i = 0; i < 20; ++i) {
+        server.process_pending_commands();
+        if (estop_called) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    if (client_estop_th.joinable()) client_estop_th.join();
+    assert(estop_called);
+    std::cout << "  ✓ IPC Socket : Commande EmergencyStop reçue et acquittée par ACK." << std::endl;
+
     // Test de rejet NACK sur clé invalide
     bool nack_received = false;
     std::thread client_nack_th([&]() {
@@ -190,7 +229,7 @@ void test_service_config_and_ipc_sockets() {
             shared::commands::ServiceID::FSM,
             "INVALID_KEY_XYZ",
             99.0f,
-            43
+            45
         );
         nack_received = !ok; // Doit retourner false car NACK
     });

@@ -8,15 +8,6 @@ ShmCollector::ShmCollector(int hz) : m_hz(hz > 0 ? hz : 50) {}
 ShmCollector::~ShmCollector() = default;
 
 bool ShmCollector::init() {
-    // 1. Open POSIX SHM read-only if present (fallback)
-    try {
-        m_shm_mgr = std::make_unique<SharedMemoryManager>();
-        m_telemetry = m_shm_mgr->open_shm(false);
-    } catch (...) {
-        m_telemetry = nullptr;
-    }
-
-    // 2. Open subscribers for other services
     try {
         m_sensor_sub = std::make_unique<shared::services::memory::MemoryShareComponentSubscriber>("Sensors");
     } catch (...) {}
@@ -31,6 +22,10 @@ bool ShmCollector::init() {
 
     try {
         m_servo_sub = std::make_unique<shared::services::memory::MemoryShareComponentSubscriber>("Servo");
+    } catch (...) {}
+
+    try {
+        m_fsm_cmd_sub = std::make_unique<shared::services::memory::MemoryShareComponentSubscriber>("FsmCommand");
     } catch (...) {}
 
     m_start_time = std::chrono::steady_clock::now();
@@ -50,6 +45,9 @@ void ShmCollector::collect(float dt) {
 
     shared::fsm::FSMTelemetry fsm_data{};
     bool has_fsm = m_fsm_sub && m_fsm_sub->read(fsm_data);
+
+    shared::fsm::FsmCommandPayload fsm_cmd{};
+    bool has_fsm_cmd = m_fsm_cmd_sub && m_fsm_cmd_sub->read(fsm_cmd);
 
     {
         std::lock_guard<std::mutex> lock(m_mutex);
@@ -81,59 +79,38 @@ void ShmCollector::collect(float dt) {
             m_metrics.fsm_state = static_cast<uint32_t>(fsm_data.currentState);
         }
 
-        // 2. Fallback: Read POSIX SHM if services did not publish to individual memory regions
-        if (!m_telemetry && m_shm_mgr) {
-            try {
-                m_telemetry = m_shm_mgr->open_shm(false);
-            } catch (...) {
-                m_telemetry = nullptr;
-            }
-        }
+        if (has_fsm_cmd) {
+            m_metrics.target_speed_percent = fsm_cmd.target_speed;
+            m_metrics.target_steering_deg = fsm_cmd.target_steering;
+            m_metrics.steering_offset_deg = fsm_cmd.steering_offset;
+            m_metrics.emergency_stop = (fsm_cmd.emergency_stop != 0);
+            m_metrics.heartbeat = fsm_cmd.heartbeat;
+            m_metrics.fsm_state = static_cast<uint32_t>(fsm_cmd.state);
 
-        if (m_telemetry) {
-            pthread_mutex_lock(&(m_telemetry->mtx));
-            if (!has_sensors) {
-                m_metrics.filtered_dist_cm = m_telemetry->filtered_dist;
-                for (int i = 0; i < 5; ++i) {
-                    m_metrics.line_sensors[i] = m_telemetry->line_sensors[i];
-                    m_car_telemetry.sensors.lineFollower.sensorsData[i].rawADCValue = m_telemetry->line_sensors[i] ? 1023 : 0;
-                    m_car_telemetry.sensors.lineFollower.sensorsData[i].normalizedValue = m_telemetry->line_sensors[i] ? 1.0f : 0.0f;
-                }
-                m_car_telemetry.sensors.ultrasonicSensor.calculatedDistance = m_metrics.filtered_dist_cm;
-                m_car_telemetry.sensors.ultrasonicSensor.rawDistanceCm = m_metrics.filtered_dist_cm;
-                m_car_telemetry.sensors.flags = shared::sensors::flags::DISCOVERABLE;
-            }
             if (!has_motors) {
-                m_metrics.target_speed_percent = m_telemetry->target_speed;
-                m_car_telemetry.motors.leftMotor.normalizedMotorThrottleApplied = m_metrics.target_speed_percent / 100.0f;
-                m_car_telemetry.motors.rightMotor.normalizedMotorThrottleApplied = m_metrics.target_speed_percent / 100.0f;
-                m_car_telemetry.motors.leftMotor.normalizedMotorThrottleTargetted = m_metrics.target_speed_percent / 100.0f;
-                m_car_telemetry.motors.rightMotor.normalizedMotorThrottleTargetted = m_metrics.target_speed_percent / 100.0f;
-                m_car_telemetry.motors.state = (std::abs(m_metrics.target_speed_percent) > 1.0f)
+                m_car_telemetry.motors.leftMotor.normalizedMotorThrottleApplied = fsm_cmd.target_speed / 100.0f;
+                m_car_telemetry.motors.rightMotor.normalizedMotorThrottleApplied = fsm_cmd.target_speed / 100.0f;
+                m_car_telemetry.motors.leftMotor.normalizedMotorThrottleTargetted = fsm_cmd.target_speed / 100.0f;
+                m_car_telemetry.motors.rightMotor.normalizedMotorThrottleTargetted = fsm_cmd.target_speed / 100.0f;
+                m_car_telemetry.motors.state = (std::abs(fsm_cmd.target_speed) > 1.0f)
                                                ? shared::motors::MotorStates::Running
                                                : shared::motors::MotorStates::Idle;
                 m_car_telemetry.motors.componentFlags = shared::motors::flags::component::DISCOVERABLE;
             }
-            if (!has_servo) {
-                m_metrics.target_steering_deg = m_telemetry->target_steering;
-                m_car_telemetry.servo.normalizedCurrentAngle = m_metrics.target_steering_deg / shared::servos::MAX_ANGLE;
-                m_car_telemetry.servo.normalizedTargettedAngle = m_metrics.target_steering_deg / shared::servos::MAX_ANGLE;
+            if (!has_servo && !has_motors) {
+                m_car_telemetry.servo.normalizedCurrentAngle = fsm_cmd.target_steering / shared::servos::MAX_ANGLE;
+                m_car_telemetry.servo.normalizedTargettedAngle = fsm_cmd.target_steering / shared::servos::MAX_ANGLE;
                 m_car_telemetry.servo.flags = shared::servos::flags::RDY;
                 m_car_telemetry.motors.steeringServo = m_car_telemetry.servo;
             }
             if (!has_fsm) {
-                m_metrics.fsm_state = m_telemetry->state;
-                m_car_telemetry.fsm.currentState = static_cast<shared::fsm::MachineStates>(m_metrics.fsm_state);
-                m_car_telemetry.fsm.requestedState = m_car_telemetry.fsm.currentState;
+                m_car_telemetry.fsm.currentState = fsm_cmd.state;
+                m_car_telemetry.fsm.requestedState = fsm_cmd.state;
                 m_car_telemetry.fsm.flags = shared::fsm::flags::RDY;
             }
-            m_metrics.emergency_stop = m_telemetry->emergency_stop;
-            m_metrics.heartbeat = m_telemetry->heartbeat;
-            m_metrics.steering_offset_deg = m_telemetry->steering_offset;
-            pthread_mutex_unlock(&(m_telemetry->mtx));
         }
 
-        // 3. Update service flags
+        // 2. Update service flags
         m_car_telemetry.services.flags = shared::services::flags::SYSTEM_STARTED |
                                          shared::services::flags::SHARE_MEMORY_MOUNTED |
                                          shared::services::flags::SOCKET_ENABLED |
@@ -162,7 +139,7 @@ void ShmCollector::collect(float dt) {
         m_car_telemetry.services.daemons[3].status = has_fsm ? 1 : 0;
     }
 
-    // 4. Update dynamic metrics
+    // 3. Update dynamic metrics
     m_metrics.current_speed_ms = (m_metrics.target_speed_percent / 50.0f) * 0.32f;
     m_metrics.current_accel_ms2 = (m_metrics.current_speed_ms - m_last_speed_ms) / dt;
 

@@ -4,7 +4,8 @@
 #include <csignal>
 #include <atomic>
 
-#include "ipc/shared_memory.hpp"
+#include "fsm/fsm_command.hpp"
+#include "shared-services/memory/server.hpp"
 
 std::atomic<bool> g_running(true);
 
@@ -12,33 +13,35 @@ void sig_handler(int) {
     g_running = false;
 }
 
-int main(int argc, char* argv[]) {
+int main(int /*argc*/, char* /*argv*/[]) {
     signal(SIGINT, sig_handler);
     signal(SIGTERM, sig_handler);
 
     std::cout << "==================================================" << std::endl;
-    std::cout << "  TEST DIRECT DU SERVICE PICAR_MOTOR (SHM POSIX)   " << std::endl;
+    std::cout << "  TEST DIRECT DU SERVICE PICAR_MOTOR (SHM FsmCommand) " << std::endl;
     std::cout << "==================================================" << std::endl;
 
-    SharedMemoryManager shm_mgr;
-    RobotTelemetry* telem = shm_mgr.open_shm(true);
-    if (!telem) {
-        std::cerr << "[ERREUR] Impossible d'ouvrir la mémoire partagée /dev/shm/picar_shm !" << std::endl;
+    shared::services::memory::MemoryShareComponentServer fsm_pub("FsmCommand");
+    if (!fsm_pub.isValid()) {
+        std::cerr << "[ERREUR] Impossible d'ouvrir la mémoire partagée /dev/shm/car/FsmCommand !" << std::endl;
         return 1;
     }
 
+    uint32_t heartbeat = 0;
     auto send_command = [&](float speed, float steering, int duration_ms) {
         std::cout << "-> Consigne: Vitesse = " << speed << "%, Angle = " << steering 
                   << "° (pendant " << duration_ms << " ms)..." << std::endl;
         
         int steps = duration_ms / 20; // 50 Hz = cycle de 20 ms
         for (int i = 0; i < steps && g_running; ++i) {
-            pthread_mutex_lock(&(telem->mtx));
-            telem->target_speed = speed;
-            telem->target_steering = steering;
-            telem->emergency_stop = false;
-            telem->heartbeat++; // Nourrit le Watchdog matériel
-            pthread_mutex_unlock(&(telem->mtx));
+            shared::fsm::FsmCommandPayload cmd{};
+            cmd.target_speed = speed;
+            cmd.target_steering = steering;
+            cmd.steering_offset = 0.0f;
+            cmd.emergency_stop = 0;
+            cmd.heartbeat = ++heartbeat;
+            cmd.state = shared::fsm::MachineStates::LineFollowingForward;
+            fsm_pub.publish(cmd);
 
             std::this_thread::sleep_for(std::chrono::milliseconds(20));
         }
@@ -59,13 +62,8 @@ int main(int argc, char* argv[]) {
     std::cout << "[5/5] Propulsion ARRIÈRE (25%)..." << std::endl;
     send_command(-25.0f, 0.0f, 1500);
 
-    // Arrêt complet
-    pthread_mutex_lock(&(telem->mtx));
-    telem->target_speed = 0.0f;
-    telem->target_steering = 0.0f;
-    telem->emergency_stop = true;
-    pthread_mutex_unlock(&(telem->mtx));
+    std::cout << "Arrêt complet des moteurs." << std::endl;
+    send_command(0.0f, 0.0f, 200);
 
-    std::cout << "\n>>> Test terminé : Moteurs arrêtés et Failsafe engagé. <<<" << std::endl;
     return 0;
 }

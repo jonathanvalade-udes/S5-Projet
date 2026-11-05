@@ -90,21 +90,6 @@ void PosixClient::disconnect(const std::string& path) {
     }
 }
 
-bool PosixClient::is_connected(const std::string& path) const {
-    std::string target = path.empty() ? m_default_socket_path : path;
-    auto it = m_connections.find(target);
-    return (it != m_connections.end() && it->second >= 0);
-}
-
-int PosixClient::get_fd(const std::string& path) const {
-    std::string target = path.empty() ? m_default_socket_path : path;
-    auto it = m_connections.find(target);
-    if (it != m_connections.end()) {
-        return it->second;
-    }
-    return -1;
-}
-
 bool PosixClient::send_packet(const void* data, size_t len, const std::string& target_path) {
     if (!data || len == 0) return false;
 

@@ -23,7 +23,7 @@ void apply_avoid_side_env(float& avoid_side) {
 
 FSM::FSM(int hz)
     : m_running(false),
-      m_hz(hz > 0 ? hz : 100000),
+      m_hz(hz > 0 ? hz : 100),
       m_event_pipe("/tmp/peripherals.sock"),
       m_ipc_handler("fsm.conf", "/tmp/fsm.sock") {}
 
@@ -45,9 +45,25 @@ void FSM::update_controllers() {
 bool FSM::init() {
     std::cout << "[FSM] Initializing Decision & Navigation engine at " << m_hz << " Hz..." << std::endl;
 
-    if (!m_ipc_handler.init([this](const std::string& key, float val) {
-        return apply_config_key(key, val);
-    })) {
+    if (!m_ipc_handler.init(
+        [this](const std::string& key, float val) { return apply_config_key(key, val); },
+        [this](bool active) {
+            std::cout << "[FSM] SetActive command received: " << (active ? "ACTIVE" : "INACTIVE") << std::endl;
+            if (active) {
+                if (m_current_state == shared::fsm::MachineStates::Stopped || m_current_state == shared::fsm::MachineStates::Init) {
+                    transition_to(shared::fsm::MachineStates::Armed);
+                }
+            } else {
+                transition_to(shared::fsm::MachineStates::Stopped);
+            }
+            return true;
+        },
+        [this](uint32_t reason) {
+            std::cerr << "[FSM] Emergency Stop command received! Reason: " << reason << std::endl;
+            transition_to(shared::fsm::MachineStates::Abort);
+            return true;
+        }
+    )) {
         std::cerr << "[FSM] Failed to initialize IPC handler!" << std::endl;
         return false;
     }
@@ -65,7 +81,7 @@ bool FSM::init() {
     apply_avoid_side_env(m_avoid_side);
     std::cout << "[FSM] Contournement des obstacles par la " << (m_avoid_side < 0.0f ? "GAUCHE" : "DROITE") << std::endl;
     m_predictive_brake_gain = m_ipc_handler.get_float("PREDICTIVE_BRAKE_GAIN", m_predictive_brake_gain);
-    m_hz = std::clamp(static_cast<int>(m_ipc_handler.get_float("HZ", static_cast<float>(m_hz))), 10, 100000);
+    m_hz = std::clamp(static_cast<int>(m_ipc_handler.get_float("HZ", static_cast<float>(m_hz))), 10, 10000);
 
     m_navigator.init(m_line_kp, m_line_kd, m_straight_cruise_speed, m_min_curve_speed, m_max_acceleration);
 
@@ -73,9 +89,6 @@ bool FSM::init() {
         std::cerr << "[FSM] Failed to initialize SHM bridge!" << std::endl;
         return false;
     }
-
-    m_shm_bridge.sync_config_to_shm(m_max_acceleration, m_straight_cruise_speed, m_min_curve_speed,
-                                    m_curve_safety_factor, m_predictive_brake_gain, m_line_kp, m_line_kd);
 
     transition_to(shared::fsm::MachineStates::Init);
     m_running.store(true);
@@ -97,13 +110,7 @@ void FSM::run() {
         // 1. Process non-blocking IPC commands (/tmp/fsm.sock)
         m_ipc_handler.process_pending_commands();
 
-        // 2. Dynamic config sync from SHM
-        if (m_shm_bridge.check_config_from_shm(m_max_acceleration, m_straight_cruise_speed, m_min_curve_speed,
-                                               m_curve_safety_factor, m_predictive_brake_gain, m_line_kp, m_line_kd)) {
-            update_controllers();
-        }
-
-        // 3. Read sensors from SHM
+        // 2. Read sensors from SHM
         float current_dist_cm = 100.0f;
         uint8_t line_sensors[5] = {0, 0, 0, 0, 0};
         float line_darkness[5] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
@@ -209,7 +216,7 @@ bool FSM::apply_config_key(const std::string& key, float value) {
         return true;
     }
     if (key == "HZ") {
-        m_hz = std::clamp(static_cast<int>(value), 10, 100000);
+        m_hz = std::clamp(static_cast<int>(value), 10, 10000);
         m_ipc_handler.set_float("HZ", static_cast<float>(m_hz));
         return true;
     }

@@ -8,7 +8,7 @@ namespace services {
 
 Motors::Motors(int hz, bool invert, float steering_offset, bool offset_specified)
     : m_running(false),
-      m_hz(hz > 0 ? hz : 100000),
+      m_hz(hz > 0 ? hz : 100),
       m_invert(invert),
       m_steering_offset(steering_offset),
       m_offset_specified(offset_specified),
@@ -22,9 +22,14 @@ Motors::~Motors() {
 bool Motors::init() {
     std::cout << "[Motors] Initializing Actuator driver (Propulsion + Direction) at " << m_hz << " Hz..." << std::endl;
 
-    if (!m_ipc_handler.init([this](const std::string& key, float val) {
-        return apply_config_key(key, val);
-    })) {
+    if (!m_ipc_handler.init(
+        [this](const std::string& key, float val) { return apply_config_key(key, val); },
+        [this](uint32_t reason) {
+            std::cerr << "[Motors] Emergency Stop received via IPC socket! Reason: " << reason << std::endl;
+            m_actuator.emergency_stop();
+            return true;
+        }
+    )) {
         std::cerr << "[Motors] Failed to initialize IPC handler!" << std::endl;
         return false;
     }
@@ -33,7 +38,7 @@ bool Motors::init() {
         m_steering_offset = m_ipc_handler.get_float("STEERING_OFFSET", m_steering_offset);
         m_actuator.set_steering_offset(m_steering_offset);
     }
-    m_hz = std::clamp(static_cast<int>(m_ipc_handler.get_float("HZ", static_cast<float>(m_hz))), 10, 100000);
+    m_hz = std::clamp(static_cast<int>(m_ipc_handler.get_float("HZ", static_cast<float>(m_hz))), 10, 10000);
     m_invert = (m_ipc_handler.get_float("INVERT", m_invert ? 1.0f : 0.0f) > 0.5f);
 
     if (!m_shm_bridge.init()) {
@@ -87,10 +92,8 @@ void Motors::run() {
         // 4. Actuate motor & servo with continuous time-scaled slew-rate limiter
         if (emergency_stop) {
             m_actuator.emergency_stop();
-            m_shm_bridge.update_telemetry_failsafe();
         } else {
             m_actuator.update_actuation(target_speed, target_steering, dt, false);
-            m_shm_bridge.update_telemetry_speed(target_speed);
         }
 
         // 5. Zero-copy publish to pub/sub SHM
@@ -142,7 +145,7 @@ bool Motors::apply_config_key(const std::string& key, float value) {
         return true;
     }
     if (key == "HZ") {
-        m_hz = std::clamp(static_cast<int>(value), 10, 100000);
+        m_hz = std::clamp(static_cast<int>(value), 10, 10000);
         m_ipc_handler.set_float("HZ", static_cast<float>(m_hz));
         return true;
     }

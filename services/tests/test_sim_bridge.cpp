@@ -9,7 +9,9 @@
 #include <unistd.h>
 
 #include "utils/simple_json.hpp"
-#include "ipc/shared_memory.hpp"
+#include "fsm/fsm_command.hpp"
+#include "sensors/sensors_telemetry.hpp"
+#include "shared-services/memory/server.hpp"
 
 void test_json_parsing() {
     std::cout << "[TEST] SimpleJson - Parsing et Sérialisation Godot..." << std::endl;
@@ -74,11 +76,13 @@ void test_tcp_sim_roundtrip() {
     const int test_port = 9876;
 
     // 1. Initialisation SHM
-    SharedMemoryManager shm;
-    RobotTelemetry* telem = shm.open_shm(true);
-    telem->target_speed = 40.0f;     // 40%
-    telem->target_steering = 15.0f;  // 15°
-    telem->emergency_stop = false;
+    shared::services::memory::MemoryShareComponentServer fsm_pub("FsmCommand");
+    shared::services::memory::MemoryShareComponentServer sensor_pub("Sensors");
+    shared::fsm::FsmCommandPayload fsm_cmd{};
+    fsm_cmd.target_speed = 40.0f;     // 40%
+    fsm_cmd.target_steering = 15.0f;  // 15°
+    fsm_cmd.emergency_stop = 0;
+    fsm_pub.publish(fsm_cmd);
 
     // 2. Serveur TCP Socket
     int server_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -136,13 +140,14 @@ void test_tcp_sim_roundtrip() {
     assert(std::abs(in.distance - 33.5f) < 0.1f);
 
     // Mise à jour de la SHM
-    telem->filtered_dist = in.distance;
-    assert(std::abs(telem->filtered_dist - 33.5f) < 0.1f);
+    shared::sensors::SensorsTelemetry sensors_telem{};
+    sensors_telem.ultrasonicSensor.calculatedDistance = in.distance;
+    sensor_pub.publish(sensors_telem);
 
     // Envoi de la réponse vers le client Godot (avec vitesse normalisée à 0.32 m/s)
     GodotCommandOut cmd;
-    cmd.velocity = (telem->target_speed / 50.0f) * 0.32f;
-    cmd.direction = telem->target_steering / 45.0f;
+    cmd.velocity = (fsm_cmd.target_speed / 50.0f) * 0.32f;
+    cmd.direction = fsm_cmd.target_steering / 45.0f;
     std::string out_str = SimpleJson::serialize_command(cmd);
     send(client_fd, out_str.c_str(), out_str.size(), 0);
 

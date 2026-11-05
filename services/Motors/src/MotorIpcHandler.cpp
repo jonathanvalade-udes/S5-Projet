@@ -6,7 +6,8 @@ namespace services {
 MotorIpcHandler::MotorIpcHandler(const std::string& config_file, const std::string& socket_path)
     : m_config_file(config_file), m_socket_path(socket_path), m_config(config_file) {}
 
-bool MotorIpcHandler::init(std::function<bool(const std::string&, float)> on_command) {
+bool MotorIpcHandler::init(std::function<bool(const std::string&, float)> on_command,
+                          std::function<bool(uint32_t)> on_estop) {
     if (!m_config.load(m_config_file)) {
         std::cout << "[MotorIpcHandler] No existing " << m_config_file << " found, using defaults." << std::endl;
     }
@@ -15,6 +16,10 @@ bool MotorIpcHandler::init(std::function<bool(const std::string&, float)> on_com
         std::cerr << "[MotorIpcHandler] Warning: Failed to init IPC socket at " << m_socket_path << std::endl;
     } else {
         std::cout << "[MotorIpcHandler] IPC Server listening on " << m_socket_path << std::endl;
+    }
+
+    if (on_estop) {
+        m_ipc_server.set_emergency_stop_callback(std::move(on_estop));
     }
 
     return true;

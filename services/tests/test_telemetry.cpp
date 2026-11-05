@@ -1,5 +1,9 @@
 #include <iostream>
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <cassert>
+#include <csignal>
 #include <cmath>
 #include <thread>
 #include <chrono>
@@ -15,7 +19,8 @@
 #include <dirent.h>
 #include <sys/stat.h>
 
-#include "ipc/shared_memory.hpp"
+#include "fsm/fsm_command.hpp"
+#include "shared-services/memory/server.hpp"
 #include "../TelemetryService/inc/TelemetryService.hpp"
 #include "header/header.hpp"
 #include "crc/crc_global.hpp"
@@ -34,25 +39,25 @@ void test_telemetry_metrics_and_watchdog() {
     std::error_code ec;
     std::filesystem::remove_all("/dev/shm/car", ec);
 
-    SharedMemoryManager shm_mgr;
-    RobotTelemetry* telem = shm_mgr.open_shm(true);
-    assert(telem != nullptr);
+    shared::services::memory::MemoryShareComponentServer sensor_pub("Sensors");
+    shared::services::memory::MemoryShareComponentServer fsm_pub("FsmCommand");
 
-    // Initialisation SHM
-    pthread_mutex_lock(&(telem->mtx));
-    telem->filtered_dist = 42.5f;
-    telem->target_speed = 50.0f;     // 50% = 0.32 m/s
-    telem->target_steering = -12.0f; // Braquage -12°
-    telem->steering_offset = 3.5f;   // Trim offset +3.5°
-    telem->state = 3;               // LineFollowingForward
-    telem->emergency_stop = false;
-    telem->heartbeat = 100;
-    telem->line_sensors[0] = 0;
-    telem->line_sensors[1] = 1;
-    telem->line_sensors[2] = 1;
-    telem->line_sensors[3] = 0;
-    telem->line_sensors[4] = 0;
-    pthread_mutex_unlock(&(telem->mtx));
+    shared::sensors::SensorsTelemetry sensors_telem{};
+    sensors_telem.ultrasonicSensor.calculatedDistance = 42.5f;
+    sensors_telem.ultrasonicSensor.rawDistanceCm = 42.5f;
+    sensors_telem.lineFollower.sensorsData[1].normalizedValue = 1.0f;
+    sensors_telem.lineFollower.sensorsData[2].normalizedValue = 1.0f;
+    sensors_telem.flags = shared::sensors::flags::DISCOVERABLE;
+    sensor_pub.publish(sensors_telem);
+
+    shared::fsm::FsmCommandPayload fsm_cmd{};
+    fsm_cmd.target_speed = 50.0f;     // 50% = 0.32 m/s
+    fsm_cmd.target_steering = -12.0f; // Braquage -12°
+    fsm_cmd.steering_offset = 3.5f;   // Trim offset +3.5°
+    fsm_cmd.state = shared::fsm::MachineStates::LineFollowingForward;
+    fsm_cmd.emergency_stop = 0;
+    fsm_cmd.heartbeat = 100;
+    fsm_pub.publish(fsm_cmd);
 
     // Instance de TelemetryService à 50 Hz, sans affichage UI console, tcp_port=0 (désactivé)
     services::TelemetryService telem_service(50, false, 0, 0);
@@ -87,9 +92,8 @@ void test_telemetry_metrics_and_watchdog() {
     std::cout << "  ✓ Watchdog : Stagnation heartbeat correctement détectée (> 500 ms)." << std::endl;
 
     // Réanimation du Watchdog
-    pthread_mutex_lock(&(telem->mtx));
-    telem->heartbeat = 200;
-    pthread_mutex_unlock(&(telem->mtx));
+    fsm_cmd.heartbeat = 200;
+    fsm_pub.publish(fsm_cmd);
 
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     assert(telem_service.get_metrics().watchdog_stalled == false);
@@ -102,14 +106,12 @@ void test_telemetry_metrics_and_watchdog() {
 void test_telemetry_acceleration_alert() {
     std::cout << "[TEST] TelemetryService - Détection d'accélération critique (> 0.735 m/s²)..." << std::endl;
 
-    SharedMemoryManager shm_mgr;
-    RobotTelemetry* telem = shm_mgr.open_shm(true);
-    assert(telem != nullptr);
+    shared::services::memory::MemoryShareComponentServer fsm_pub("FsmCommand");
 
-    pthread_mutex_lock(&(telem->mtx));
-    telem->target_speed = 0.0f;
-    telem->heartbeat = 1;
-    pthread_mutex_unlock(&(telem->mtx));
+    shared::fsm::FsmCommandPayload fsm_cmd{};
+    fsm_cmd.target_speed = 0.0f;
+    fsm_cmd.heartbeat = 1;
+    fsm_pub.publish(fsm_cmd);
 
     services::TelemetryService telem_service(50, false, 0, 0);
     assert(telem_service.init());
@@ -122,10 +124,9 @@ void test_telemetry_acceleration_alert() {
 
     // Injection d'une accélération brutale (changement instantané de 0% à 100% en un pas dt = 50ms)
     // dv = 0.64 m/s en 0.05s => a = 12.8 m/s² >> 0.735 m/s²
-    pthread_mutex_lock(&(telem->mtx));
-    telem->target_speed = 100.0f;
-    telem->heartbeat++;
-    pthread_mutex_unlock(&(telem->mtx));
+    fsm_cmd.target_speed = 100.0f;
+    fsm_cmd.heartbeat++;
+    fsm_pub.publish(fsm_cmd);
 
     std::this_thread::sleep_for(std::chrono::milliseconds(150));
 
@@ -189,18 +190,22 @@ void test_tcp_server_ping_pong_and_stream() {
     std::cout << "[TEST] TelemetryService - Serveur TCP, Handshake Ping-Pong et Stream de Télémétrie..." << std::endl;
 
     // Préparer des données de capteurs dans la SHM
-    SharedMemoryManager shm_mgr;
-    RobotTelemetry* telem = shm_mgr.open_shm(true);
-    assert(telem != nullptr);
+    shared::services::memory::MemoryShareComponentServer sensor_pub("Sensors");
+    shared::services::memory::MemoryShareComponentServer fsm_pub("FsmCommand");
 
-    pthread_mutex_lock(&(telem->mtx));
-    telem->filtered_dist = 55.0f;
-    telem->target_speed = 40.0f;
-    telem->target_steering = 15.0f;
-    telem->state = 3;
-    telem->heartbeat = 42;
-    telem->line_sensors[2] = 1;
-    pthread_mutex_unlock(&(telem->mtx));
+    shared::sensors::SensorsTelemetry sensors_telem{};
+    sensors_telem.ultrasonicSensor.calculatedDistance = 55.0f;
+    sensors_telem.ultrasonicSensor.rawDistanceCm = 55.0f;
+    sensors_telem.lineFollower.sensorsData[2].normalizedValue = 1.0f;
+    sensors_telem.flags = shared::sensors::flags::DISCOVERABLE;
+    sensor_pub.publish(sensors_telem);
+
+    shared::fsm::FsmCommandPayload fsm_cmd{};
+    fsm_cmd.target_speed = 40.0f;
+    fsm_cmd.target_steering = 15.0f;
+    fsm_cmd.state = shared::fsm::MachineStates::LineFollowingForward;
+    fsm_cmd.heartbeat = 42;
+    fsm_pub.publish(fsm_cmd);
 
     // Utiliser un port de test TCP unprivileged
     const int test_port = 9191;
@@ -245,7 +250,7 @@ void test_tcp_server_ping_pong_and_stream() {
         sizeof(ping_cmd)
     );
 
-    ssize_t sent = send(client_sock, ping_pkt.data(), ping_pkt.size(), 0);
+    ssize_t sent = send(client_sock, ping_pkt.data(), ping_pkt.size(), MSG_NOSIGNAL);
     assert(sent == static_cast<ssize_t>(ping_pkt.size()));
     std::cout << "  ✓ Message Ping envoyé au serveur (seq=999)." << std::endl;
 
@@ -326,9 +331,9 @@ void test_tcp_server_ping_pong_and_stream() {
 
     std::cout << "  ✓ Streaming de télémétrie en continu validé avec succès." << std::endl;
 
-    close(client_sock);
     telem_service.stop();
     if (th.joinable()) th.join();
+    close(client_sock);
 }
 
 void test_usb_fifo_direct_streaming() {
@@ -525,7 +530,7 @@ void test_tcp_command_packet_redirect_without_crc() {
     uint32_t ping_val = static_cast<uint32_t>(shared::commands::CommandID::Ping);
     ping_hdr.payloadLength = sizeof(ping_val);
     auto ping_pkt = shared::headers::serializePacket(ping_hdr, reinterpret_cast<const uint8_t*>(&ping_val), sizeof(ping_val));
-    assert(::send(tcp_client, ping_pkt.data(), ping_pkt.size(), 0) == static_cast<ssize_t>(ping_pkt.size()));
+    assert(::send(tcp_client, ping_pkt.data(), ping_pkt.size(), MSG_NOSIGNAL) == static_cast<ssize_t>(ping_pkt.size()));
 
     size_t pong_len = sizeof(shared::headers::PacketHeader) + sizeof(uint32_t) + sizeof(shared::crc::PacketCRC);
     std::vector<uint8_t> pong_rx(pong_len);
@@ -558,7 +563,7 @@ void test_tcp_command_packet_redirect_without_crc() {
     size_t expected_tcp_len = sizeof(shared::headers::PacketHeader) + sizeof(cmd_payload) + sizeof(shared::crc::PacketCRC);
     assert(tcp_cmd_packet.size() == expected_tcp_len);
 
-    assert(::send(tcp_client, tcp_cmd_packet.data(), tcp_cmd_packet.size(), 0) == static_cast<ssize_t>(tcp_cmd_packet.size()));
+    assert(::send(tcp_client, tcp_cmd_packet.data(), tcp_cmd_packet.size(), MSG_NOSIGNAL) == static_cast<ssize_t>(tcp_cmd_packet.size()));
     std::cout << "  ✓ Paquet de commande envoyé par client TCP (avec CRC, seq=777, ServiceID=FSM)." << std::endl;
 
     // 5. Vérifier que le socket POSIX reçoit le même paquet commande SANS LE CRC
@@ -597,16 +602,17 @@ void test_tcp_command_packet_redirect_without_crc() {
     std::cout << "  ✓ Redirection POSIX validée : Header identique, CRC exclu, ServiceID=FSM, CommandID=SetActive." << std::endl;
 
     // Nettoyage
+    telem_service.stop();
+    if (th.joinable()) th.join();
+
     ::close(tcp_client);
     ::close(posix_client_fd);
     ::close(posix_server_fd);
     ::unlink(mock_posix_path.c_str());
-
-    telem_service.stop();
-    if (th.joinable()) th.join();
 }
 
 int main() {
+    std::signal(SIGPIPE, SIG_IGN);
     std::cout << "===============================================" << std::endl;
     std::cout << "   PiCar C++17 - Tests Unitaires Télémétrie   " << std::endl;
     std::cout << "===============================================" << std::endl;

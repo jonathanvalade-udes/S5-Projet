@@ -3,9 +3,13 @@
 #include <memory>
 #include <string>
 #include <cstdint>
-#include "ipc/shared_memory.hpp"
 #include "filters/ultrasonic_pipeline.hpp"
 #include "utils/simple_json.hpp"
+#include "sensors/sensors_telemetry.hpp"
+#include "fsm/fsm_command.hpp"
+#include "motors/motors_component.hpp"
+#include "shared-services/memory/server.hpp"
+#include "shared-services/memory/subscriber.hpp"
 
 namespace services {
 
@@ -26,9 +30,13 @@ public:
     void forward_start_to_fifo();
 
 private:
-    std::unique_ptr<SharedMemoryManager> m_shm_mgr;
-    RobotTelemetry* m_telemetry{nullptr};
+    std::unique_ptr<shared::services::memory::MemoryShareComponentServer> m_sensor_pub;
+    std::unique_ptr<shared::services::memory::MemoryShareComponentServer> m_motor_pub;
+    std::unique_ptr<shared::services::memory::MemoryShareComponentSubscriber> m_fsm_cmd_sub;
+    std::unique_ptr<shared::services::memory::MemoryShareComponentSubscriber> m_sensor_sub;
+
     UltrasonicPipeline m_us_pipeline{5, 0.25f};
+    float m_last_speed{0.0f};
 };
 
 } // namespace services

@@ -11,8 +11,7 @@ static void signal_handler(int /*sig*/) {
 }
 
 int main(int argc, char* argv[]) {
-    int hz = 100000;
-    bool enable_ui = false;
+    int hz = 100;
     int tcp_port = 91;
     int udp_port = 9002;
     std::string posix_socket = "/tmp/peripherals.sock";
@@ -22,7 +21,7 @@ int main(int argc, char* argv[]) {
         if (arg == "--hz" && i + 1 < argc) {
             hz = std::stoi(argv[++i]);
         } else if (arg == "--no-ui") {
-            enable_ui = false;
+            // No-op: UI rendering has been removed
         } else if ((arg == "--port" || arg == "--tcp-port") && i + 1 < argc) {
             tcp_port = std::stoi(argv[++i]);
         } else if (arg == "--udp-port" && i + 1 < argc) {
@@ -35,7 +34,7 @@ int main(int argc, char* argv[]) {
     std::signal(SIGINT, signal_handler);
     std::signal(SIGTERM, signal_handler);
 
-    services::TelemetryService service(hz, enable_ui, tcp_port, udp_port, posix_socket);
+    services::TelemetryService service(hz, false, tcp_port, udp_port, posix_socket);
     g_service_instance = &service;
 
     if (!service.init()) {

@@ -43,28 +43,26 @@ static void signal_handler(int sig) {
 }
 
 int main(int argc, char* argv[]) {
-    int hz = 100000;
-    int trig = 12;
-    int echo = 16;
+    int hz = 100;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--hz" && i + 1 < argc) {
             hz = std::stoi(argv[++i]);
         } else if (arg == "--trig" && i + 1 < argc) {
-            trig = std::stoi(argv[++i]);
+            ++i; // Ignored: GPIO pins are fixed at compile time (Trig=12)
         } else if (arg == "--echo" && i + 1 < argc) {
-            echo = std::stoi(argv[++i]);
+            ++i; // Ignored: GPIO pins are fixed at compile time (Echo=16)
         }
     }
 
-    log_msg(1, "[Sensors] Starting up (Hz=%d, Trig=%d, Echo=%d)...\n", hz, trig, echo);
+    log_msg(1, "[Sensors] Starting up (Hz=%d, Trig=%d, Echo=%d)...\n", hz, services::Sensors::TRIG_PIN, services::Sensors::ECHO_PIN);
 
     // Register POSIX signal handlers
     std::signal(SIGINT, signal_handler);
     std::signal(SIGTERM, signal_handler);
 
-    services::Sensors service(hz, trig, echo);
+    services::Sensors service(hz);
     g_service_instance = &service;
 
     if (!service.init()) {

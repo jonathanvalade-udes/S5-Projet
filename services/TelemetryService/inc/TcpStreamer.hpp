@@ -1,7 +1,6 @@
 #pragma once
 
 #include <atomic>
-#include <string>
 #include <functional>
 #include <cstdint>
 #include <vector>
@@ -32,7 +31,6 @@ public:
     bool is_client_connected() const { return m_client_connected.load(); }
     bool is_client_handshaked() const { return m_client_handshaked.load(); }
     int get_port() const { return m_port; }
-    void set_port(int port) { m_port = port; }
 
 private:
     void accept_client();

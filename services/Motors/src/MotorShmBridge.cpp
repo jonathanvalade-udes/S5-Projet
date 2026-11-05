@@ -5,22 +5,10 @@
 namespace services {
 
 bool MotorShmBridge::init() {
-    m_shm_mgr = std::make_unique<SharedMemoryManager>();
-    try {
-        m_telemetry = m_shm_mgr->open_shm(true);
-    } catch (const std::exception& e) {
-        std::cerr << "[MotorShmBridge] Failed to open shared memory: " << e.what() << std::endl;
-        return false;
-    }
-    if (!m_telemetry) {
-        std::cerr << "[MotorShmBridge] Invalid shared memory pointer!" << std::endl;
-        return false;
-    }
-
     try {
         m_mem_server = std::make_unique<shared::services::memory::MemoryShareComponentServer>("Motors");
         m_servo_mem_server = std::make_unique<shared::services::memory::MemoryShareComponentServer>("Servo");
-        m_fsm_sub = std::make_unique<shared::services::memory::MemoryShareComponentSubscriber>("FSM");
+        m_fsm_cmd_sub = std::make_unique<shared::services::memory::MemoryShareComponentSubscriber>("FsmCommand");
     } catch (const std::exception& e) {
         std::cerr << "[MotorShmBridge] Warning: Shared memory setup issue: " << e.what() << std::endl;
     }
@@ -29,15 +17,18 @@ bool MotorShmBridge::init() {
 }
 
 bool MotorShmBridge::read_fsm_command(float& speed, float& steer, float& shm_offset, bool& emergency, uint64_t& heartbeat) {
-    if (!m_telemetry) return false;
+    if (!m_fsm_cmd_sub) return false;
 
-    pthread_mutex_lock(&(m_telemetry->mtx));
-    speed = m_telemetry->target_speed;
-    steer = m_telemetry->target_steering;
-    shm_offset = m_telemetry->steering_offset;
-    emergency = m_telemetry->emergency_stop;
-    heartbeat = m_telemetry->heartbeat;
-    pthread_mutex_unlock(&(m_telemetry->mtx));
+    shared::fsm::FsmCommandPayload cmd{};
+    if (!m_fsm_cmd_sub->read(cmd)) {
+        return false;
+    }
+
+    speed = cmd.target_speed;
+    steer = cmd.target_steering;
+    shm_offset = cmd.steering_offset;
+    emergency = (cmd.emergency_stop != 0);
+    heartbeat = cmd.heartbeat;
 
     return true;
 }
@@ -50,23 +41,6 @@ bool MotorShmBridge::check_watchdog(uint64_t current_heartbeat, int max_misses) 
         m_last_heartbeat = current_heartbeat;
     }
     return (m_watchdog_starvation_cycles > max_misses);
-}
-
-void MotorShmBridge::update_telemetry_speed(float speed) {
-    if (m_telemetry) {
-        pthread_mutex_lock(&(m_telemetry->mtx));
-        m_telemetry->speed = speed;
-        pthread_mutex_unlock(&(m_telemetry->mtx));
-    }
-}
-
-void MotorShmBridge::update_telemetry_failsafe() {
-    if (m_telemetry) {
-        pthread_mutex_lock(&(m_telemetry->mtx));
-        m_telemetry->speed = 0.0f;
-        m_telemetry->state = 99; // FAILSAFE
-        pthread_mutex_unlock(&(m_telemetry->mtx));
-    }
 }
 
 void MotorShmBridge::publish_telemetry(float target_speed, float target_steering) {

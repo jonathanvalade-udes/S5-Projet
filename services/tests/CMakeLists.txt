@@ -6,6 +6,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 enable_testing()
 
+# Ensure assertions remain active in test suites even in Release mode
+string(REGEX REPLACE "-DNDEBUG" "" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
+
 option(STATIC "Build with static linking (-static)" OFF)
 option(STATIC_BUILD "Build with static linking (-static)" OFF)
 
@@ -43,7 +46,7 @@ target_include_directories(test_sim_bridge PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/.. 
     ${CMAKE_CURRENT_SOURCE_DIR}/../libs/shared-headers
 )
-target_link_libraries(test_sim_bridge PRIVATE Threads::Threads)
+target_link_libraries(test_sim_bridge PRIVATE Threads::Threads shared_headers)
 add_test(NAME test_sim_bridge COMMAND test_sim_bridge)
 
 add_executable(test_i2c test_i2c.cpp)
@@ -78,7 +81,7 @@ target_include_directories(test_live_motor PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/.. 
     ${CMAKE_CURRENT_SOURCE_DIR}/../libs/shared-headers
 )
-target_link_libraries(test_live_motor PRIVATE Threads::Threads)
+target_link_libraries(test_live_motor PRIVATE Threads::Threads shared_headers)
 
 add_executable(test_service_manager 
     test_service_manager.cpp

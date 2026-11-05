@@ -31,17 +31,17 @@ void SensorAcquisition::reset_pipeline(float initial_dist) {
     m_last_filtered_dist = initial_dist;
 }
 
-void SensorAcquisition::read_line(float darkness[5], uint8_t binarized[5], bool& has_line) {
-    for (int i = 0; i < 5; ++i) {
-        darkness[i] = 0.0f;
-    }
-    if (m_driver) {
-        m_driver->read_line_darkness(darkness);
+void SensorAcquisition::read_line(float darkness[5], uint8_t binarized[5], bool& has_line, uint64_t loop_tick, int hz) {
+    // Rate-isolate physical I2C read at ~100 Hz to prevent I2C bus congestion and timeouts
+    const uint64_t line_interval = (hz > 100) ? static_cast<uint64_t>(hz / 100) : 1;
+    if (loop_tick % line_interval == 0 && m_driver) {
+        m_driver->read_line_darkness(m_cached_darkness);
     }
 
     has_line = false;
     for (int i = 0; i < 5; ++i) {
-        binarized[i] = (darkness[i] > 0.5f) ? 1 : 0;
+        darkness[i] = m_cached_darkness[i];
+        binarized[i] = (m_cached_darkness[i] > 0.5f) ? 1 : 0;
         if (binarized[i] != 0) has_line = true;
     }
 }
@@ -70,12 +70,6 @@ float SensorAcquisition::acquire_distance(uint64_t loop_tick, int hz, float dt, 
     }
 
     return m_last_filtered_dist;
-}
-
-void SensorAcquisition::update_pins(int trig, int echo) {
-    m_trig_pin = trig;
-    m_echo_pin = echo;
-    init();
 }
 
 void SensorAcquisition::update_filter_params(float alpha, size_t window) {

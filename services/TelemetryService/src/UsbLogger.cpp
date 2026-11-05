@@ -118,7 +118,6 @@ void UsbLogger::push_sample(const TelemetrySample& sample) {
 
 void UsbLogger::worker_loop() {
     const std::string csv_header = "timestamp_us,uptime_s,fsm_state,speed_ms,accel_ms2,steer_deg,steer_offset_deg,dist_us_cm,line_0,line_1,line_2,line_3,line_4,odometry_m,emergency_stop,accel_violations\n";
-    std::string current_mount = "";
 
     char line_buf[256];
     std::string write_chunk;
@@ -143,7 +142,7 @@ void UsbLogger::worker_loop() {
         }
 
         if (!m_stream.is_open()) {
-            current_mount = detect_mount_point();
+            std::string current_mount = detect_mount_point();
             if (!current_mount.empty()) {
                 auto now = std::chrono::system_clock::now();
                 std::time_t now_c = std::chrono::system_clock::to_time_t(now);
@@ -156,8 +155,8 @@ void UsbLogger::worker_loop() {
                 char time_str[32];
                 std::strftime(time_str, sizeof(time_str), "%Y%m%d_%H%M%S", &now_tm);
 
-                m_active_file_path = current_mount + "/telemetry_run_" + std::string(time_str) + ".csv";
-                m_stream.open(m_active_file_path, std::ios::out | std::ios::app);
+                const std::string file_path = current_mount + "/telemetry_run_" + std::string(time_str) + ".csv";
+                m_stream.open(file_path, std::ios::out | std::ios::app);
                 if (m_stream.is_open()) {
                     m_stream << csv_header;
                     m_stream.flush();

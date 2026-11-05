@@ -10,6 +10,7 @@
 #include <poll.h>
 #include <cstring>
 #include <cerrno>
+#include <iostream>
 #include <vector>
 
 #if !defined(MSG_NOSIGNAL)

@@ -2,8 +2,9 @@
 
 #include <memory>
 #include <cstdint>
-#include "ipc/shared_memory.hpp"
 #include "fsm/machine_component.hpp"
+#include "fsm/fsm_command.hpp"
+#include "sensors/sensors_telemetry.hpp"
 #include "shared-services/memory/subscriber.hpp"
 #include "shared-services/memory/server.hpp"
 
@@ -21,25 +22,18 @@ public:
     bool check_watchdog(int max_cycles);
 
     void publish_control_commands(float speed_pct, float steering_deg, bool emergency,
-                                 shared::fsm::MachineStates state);
+                                 shared::fsm::MachineStates state, float steering_offset = 0.0f);
     void publish_fsm_telemetry(shared::fsm::MachineStates state);
-
-    void sync_config_to_shm(float max_accel, float cruise_spd, float min_curve_spd,
-                            float safety_factor, float brake_gain, float kp, float kd);
-    bool check_config_from_shm(float& max_accel, float& cruise_spd, float& min_curve_spd,
-                               float& safety_factor, float& brake_gain, float& kp, float& kd);
 
     void emergency_stop_shm();
 
 private:
-    std::unique_ptr<SharedMemoryManager> m_shm_mgr;
-    RobotTelemetry* m_telemetry{nullptr};
-
     std::unique_ptr<shared::services::memory::MemoryShareComponentSubscriber> m_sensor_sub;
+    std::unique_ptr<shared::services::memory::MemoryShareComponentServer> m_cmd_pub;
     std::unique_ptr<shared::services::memory::MemoryShareComponentServer> m_fsm_pub;
 
-    uint32_t m_current_cfg_version{0};
-    uint64_t m_last_heartbeat{0};
+    uint32_t m_fsm_heartbeat{0};
+    uint32_t m_last_sensor_timestamp{0};
     int m_heartbeat_starvation_cycles{0};
 };
 

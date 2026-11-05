@@ -13,7 +13,7 @@ namespace services {
 
 class FSM {
 public:
-    explicit FSM(int hz = 100000);
+    explicit FSM(int hz = 100);
     ~FSM();
 
     bool init();
@@ -28,7 +28,7 @@ private:
     void transition_to(shared::fsm::MachineStates new_state);
 
     std::atomic<bool> m_running{false};
-    int m_hz{100000};
+    int m_hz{100};
     shared::fsm::MachineStates m_current_state{shared::fsm::MachineStates::Init};
 
     // Kinematic & control parameters

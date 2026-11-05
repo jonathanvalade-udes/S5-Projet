@@ -43,7 +43,7 @@ static void signal_handler(int sig) {
 }
 
 int main(int argc, char* argv[]) {
-    int hz = 100000;
+    int hz = 100;
     bool invert = false;
     float steering_offset = 0.0f;
     bool offset_specified = false;

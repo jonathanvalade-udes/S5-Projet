@@ -6,15 +6,13 @@
 
 namespace services {
 
-Sensors::Sensors(int hz, int trig, int echo) 
+Sensors::Sensors(int hz, int /*trig*/, int /*echo*/) 
     : m_running(false),
-      m_hz(hz > 0 ? hz : 100000),
-      m_trig_pin(trig),
-      m_echo_pin(echo),
+      m_hz(hz > 0 ? hz : 100),
       m_filter_alpha(0.25f),
       m_median_window(5),
       m_last_line_error(0.0f),
-      m_acquisition(trig, echo, 0.25f, 5),
+      m_acquisition(TRIG_PIN, ECHO_PIN, 0.25f, 5),
       m_ipc_handler("sensors.conf", "/tmp/sensors.sock") {}
 
 Sensors::~Sensors() {
@@ -22,7 +20,7 @@ Sensors::~Sensors() {
 }
 
 bool Sensors::init() {
-    std::cout << "[Sensors] Initializing service at " << m_hz << " Hz (Trig=" << m_trig_pin << ", Echo=" << m_echo_pin << ")..." << std::endl;
+    std::cout << "[Sensors] Initializing service at " << m_hz << " Hz (Trig=" << TRIG_PIN << ", Echo=" << ECHO_PIN << ")..." << std::endl;
 
     if (!m_ipc_handler.init([this](const std::string& key, float val) {
         return apply_config_key(key, val);
@@ -31,13 +29,10 @@ bool Sensors::init() {
         return false;
     }
 
-    m_hz = std::clamp(static_cast<int>(m_ipc_handler.get_float("HZ", static_cast<float>(m_hz))), 10, 100000);
-    m_trig_pin = static_cast<int>(m_ipc_handler.get_float("TRIG_PIN", static_cast<float>(m_trig_pin)));
-    m_echo_pin = static_cast<int>(m_ipc_handler.get_float("ECHO_PIN", static_cast<float>(m_echo_pin)));
+    m_hz = std::clamp(static_cast<int>(m_ipc_handler.get_float("HZ", static_cast<float>(m_hz))), 10, 10000);
     m_filter_alpha = m_ipc_handler.get_float("FILTER_ALPHA", m_filter_alpha);
     m_median_window = static_cast<size_t>(m_ipc_handler.get_float("MEDIAN_WINDOW", static_cast<float>(m_median_window)));
 
-    m_acquisition.update_pins(m_trig_pin, m_echo_pin);
     m_acquisition.update_filter_params(m_filter_alpha, m_median_window);
 
     if (!m_shm_bridge.init()) {
@@ -63,11 +58,11 @@ void Sensors::run() {
         // 1. Process non-blocking IPC commands from /tmp/sensors.sock
         m_ipc_handler.process_pending_commands();
 
-        // 2. Read line sensors (analog darkness continuous [0,1])
+        // 2. Read line sensors (analog darkness continuous [0,1], rate-isolated)
         float line_darkness[5] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
         uint8_t line_sensors[5] = {0, 0, 0, 0, 0};
         bool has_line = false;
-        m_acquisition.read_line(line_darkness, line_sensors, has_line);
+        m_acquisition.read_line(line_darkness, line_sensors, has_line, loop_count, m_hz);
 
         // 3. Acquire distance with synchronous rate-isolation
         float current_speed = m_shm_bridge.read_current_speed();
@@ -77,10 +72,7 @@ void Sensors::run() {
         m_last_line_error = LineEstimator::compute_line_error_analog(line_darkness, m_last_line_error);
         float line_error = m_last_line_error;
 
-        // 5. Update legacy POSIX SHM
-        m_shm_bridge.update_legacy_telemetry(filtered_dist, line_error, line_sensors, line_darkness);
-
-        // 6. Publish to pub/sub SHM
+        // 5. Publish to pub/sub SHM
         m_shm_bridge.publish_telemetry(filtered_dist, line_darkness, has_line, m_acquisition.get_consecutive_us_errors());
 
         // 7. 1 Hz periodic log
@@ -115,7 +107,7 @@ void Sensors::stop() {
 
 bool Sensors::apply_config_key(const std::string& key, float value) {
     if (key == "HZ") {
-        m_hz = std::clamp(static_cast<int>(value), 10, 100000);
+        m_hz = std::clamp(static_cast<int>(value), 10, 10000);
         m_ipc_handler.set_float("HZ", static_cast<float>(m_hz));
         return true;
     }

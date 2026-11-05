@@ -4,7 +4,7 @@
 #include <mutex>
 #include <chrono>
 #include "car/full_packet.hpp"
-#include "ipc/shared_memory.hpp"
+#include "fsm/fsm_command.hpp"
 #include "shared-services/memory/subscriber.hpp"
 #include "UsbLogger.hpp" // For TelemetrySample
 
@@ -28,13 +28,13 @@ struct TelemetryMetrics {
 };
 
 /**
- * @brief Reads shared memory regions of other services (Sensors, Motors, Servo, FSM).
+ * @brief Reads shared memory regions of other services (Sensors, Motors, Servo, FSM, FsmCommand).
  * Strictly read-only: never publishes to or creates shared memory.
- * Computes speed, acceleration, odometry, and watchdog health metrics.
+ * Computes speed, acceleration, odometry, and watchdog health metrics lock-free.
  */
 class ShmCollector {
 public:
-    explicit ShmCollector(int hz = 50);
+    explicit ShmCollector(int hz = 100);
     ~ShmCollector();
 
     bool init();
@@ -47,23 +47,21 @@ public:
 private:
     int m_hz{50};
 
-    // Shared Memory components (READ-ONLY from other services)
-    std::unique_ptr<SharedMemoryManager> m_shm_mgr;
-    RobotTelemetry* m_telemetry{nullptr};
-
+    // Shared Memory components (READ-ONLY from other services via SeqLock)
     std::unique_ptr<shared::services::memory::MemoryShareComponentSubscriber> m_sensor_sub;
     std::unique_ptr<shared::services::memory::MemoryShareComponentSubscriber> m_fsm_sub;
     std::unique_ptr<shared::services::memory::MemoryShareComponentSubscriber> m_motor_sub;
     std::unique_ptr<shared::services::memory::MemoryShareComponentSubscriber> m_servo_sub;
+    std::unique_ptr<shared::services::memory::MemoryShareComponentSubscriber> m_fsm_cmd_sub;
 
     mutable std::mutex m_mutex;
     shared::car::CarTelemetry m_car_telemetry{};
-    TelemetryMetrics m_metrics;
+    TelemetryMetrics m_metrics{};
 
     float m_last_speed_ms{0.0f};
     uint64_t m_last_heartbeat{0};
     int m_heartbeat_stalled_cycles{0};
-    std::chrono::steady_clock::time_point m_start_time;
+    std::chrono::steady_clock::time_point m_start_time{};
 };
 
 } // namespace services

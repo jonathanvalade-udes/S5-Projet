@@ -10,7 +10,7 @@ namespace services {
 
 class Motors {
 public:
-    explicit Motors(int hz = 100000, bool invert = false, 
+    explicit Motors(int hz = 100, bool invert = false, 
                     float steering_offset = picar::i2c::calibration::DEFAULT_STEERING_OFFSET_DEG, 
                     bool offset_specified = false);
     ~Motors();
@@ -25,7 +25,7 @@ public:
 
 private:
     std::atomic<bool> m_running{false};
-    int m_hz{100000};
+    int m_hz{100};
     bool m_invert{false};
     float m_steering_offset{0.0f};
     bool m_offset_specified{false};
