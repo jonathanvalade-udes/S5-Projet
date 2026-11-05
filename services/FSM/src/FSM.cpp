@@ -79,6 +79,8 @@ bool FSM::init() {
     m_line_kp               = m_ipc_handler.get_float("LINE_KP", m_line_kp);
     m_line_kd               = m_ipc_handler.get_float("LINE_KD", m_line_kd);
     m_obstacle_stop_dist_cm = m_ipc_handler.get_float("OBSTACLE_STOP_DIST_CM", m_obstacle_stop_dist_cm);
+    m_reverse_speed         = m_ipc_handler.get_float("REVERSE_SPEED", m_reverse_speed);
+    m_auto_start_delay      = m_ipc_handler.get_float("AUTO_START_DELAY", m_auto_start_delay);
     m_avoid_side            = m_ipc_handler.get_float("AVOID_SIDE", m_avoid_side);
     apply_avoid_side_env(m_avoid_side);
     std::cout << "[FSM] Contournement des obstacles par la " << (m_avoid_side < 0.0f ? "GAUCHE" : "DROITE") << std::endl;
@@ -124,7 +126,6 @@ void FSM::run() {
             m_current_state != shared::fsm::MachineStates::Init &&
             m_current_state != shared::fsm::MachineStates::Unarmed &&
             m_current_state != shared::fsm::MachineStates::Armed &&
-            m_current_state != shared::fsm::MachineStates::Stopped
             m_current_state != shared::fsm::MachineStates::Stopped &&
             m_current_state != shared::fsm::MachineStates::Abort &&
             m_current_state != shared::fsm::MachineStates::Failure
@@ -144,13 +145,14 @@ void FSM::run() {
         if (shm_emergency && m_current_state != shared::fsm::MachineStates::Failure) {
             transition_to(shared::fsm::MachineStates::Failure);
         }
+
+        // 5. Navigation & State Machine Step
+        bool start_triggered = m_event_pipe.check_start_trigger() ||
             (m_auto_start_delay > 0.0f && loop_count >= static_cast<uint64_t>(m_auto_start_delay * m_hz));
-        // 5. Navigation & State Machine Step (Départ exclusivement sur événement bouton)
-        bool start_triggered = m_event_pipe.check_start_trigger();
 
         FsmNavOutput nav_out = m_navigator.step(m_current_state, dt, current_dist_cm, line_darkness,
+                                                start_triggered, m_avoid_side, m_obstacle_stop_dist_cm,
                                                 m_reverse_speed, m_curve_safety_factor);
-                                                m_curve_safety_factor);
 
         if (nav_out.state_changed) {
             transition_to(nav_out.next_state);
@@ -159,7 +161,6 @@ void FSM::run() {
         // 6. Smooth velocity profiling & power computation
         float bounded_velocity = m_navigator.compute_bounded_velocity(nav_out.desired_velocity, dt);
         float motor_power_pct = m_navigator.compute_motor_power(bounded_velocity, m_straight_cruise_speed);
-        if (nav_out.req_emergency || m_current_state == shared::fsm::MachineStates::Stopped || m_current_state == shared::fsm::MachineStates::Failure) {
         if (nav_out.req_emergency ||
             m_current_state == shared::fsm::MachineStates::Stopped ||
             m_current_state == shared::fsm::MachineStates::Failure ||

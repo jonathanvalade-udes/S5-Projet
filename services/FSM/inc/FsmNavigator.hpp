@@ -29,7 +29,6 @@ public:
                       float current_dist_cm, const float line_darkness[5],
                       bool start_triggered, float avoid_side, float obstacle_stop_dist_cm,
                       float reverse_speed, float curve_safety_factor);
-                      float curve_safety_factor);
 
     void reset_controllers();
     float get_current_speed() const;

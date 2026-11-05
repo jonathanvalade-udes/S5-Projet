@@ -39,6 +39,8 @@ private:
     float m_line_kp{picar::constants::DEFAULT_LINE_KP};
     float m_line_kd{picar::constants::DEFAULT_LINE_KD};
     float m_obstacle_stop_dist_cm{picar::constants::DEFAULT_OBSTACLE_STOP_DIST_CM};
+    float m_reverse_speed{picar::constants::DEFAULT_REVERSE_SPEED};
+    float m_auto_start_delay{0.0f};
     float m_avoid_side{1.0f};
 
     FsmNavigator m_navigator;

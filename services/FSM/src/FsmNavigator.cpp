@@ -62,7 +62,6 @@ FsmNavOutput FsmNavigator::step(shared::fsm::MachineStates current_state, float 
                                float current_dist_cm, const float line_darkness[5],
                                bool start_triggered, float avoid_side, float obstacle_stop_dist_cm,
                                float reverse_speed, float curve_safety_factor) {
-                               float curve_safety_factor) {
     FsmNavOutput out{};
     float curr_v = get_current_speed();
     float cruise_spd = m_cruise_speed;
@@ -108,18 +107,11 @@ FsmNavOutput FsmNavigator::step(shared::fsm::MachineStates current_state, float 
                 set_transition(shared::fsm::MachineStates::Stopped);
                 break;
             }
-            if (line_out.is_line_lost) {
-                set_transition(shared::fsm::MachineStates::Reverse);
-                break;
-            }
             if (current_dist_cm <= obstacle_stop_dist_cm) {
                 set_transition(shared::fsm::MachineStates::CollisionRisk);
                 break;
             }
 
-            float adapt_v = m_motion_profiler
-                ? m_motion_profiler->calculate_curve_speed_ackermann(out.desired_steering, cruise_spd, min_curve_spd, curve_safety_factor)
-                : cruise_spd;
             if (line_out.is_line_lost) {
                 // En perte de ligne dans un tournant, maintenir le braquage et la vitesse minimale
                 // jusqu'à réacquisition du ruban (aucun passage en Failure ni marche arrière)
@@ -129,7 +121,6 @@ FsmNavOutput FsmNavigator::step(shared::fsm::MachineStates current_state, float 
                 out.desired_steering = line_out.steer_degrees;
                 m_last_steer_degrees = line_out.steer_degrees;
 
-            out.desired_velocity = limit_approach_speed(adapt_v, current_dist_cm, obstacle_stop_dist_cm);
                 float adapt_v = m_motion_profiler
                     ? m_motion_profiler->calculate_curve_speed_ackermann(out.desired_steering, cruise_spd, min_curve_spd, curve_safety_factor)
                     : cruise_spd;
@@ -151,7 +142,6 @@ FsmNavOutput FsmNavigator::step(shared::fsm::MachineStates current_state, float 
             break;
 
         case shared::fsm::MachineStates::Stopped:
-        case shared::fsm::MachineStates::Stopped: {
             m_state_timer += dt;
             if (m_course_finished) {
                 if (m_state_timer >= 0.5f) {
@@ -160,10 +150,8 @@ FsmNavOutput FsmNavigator::step(shared::fsm::MachineStates current_state, float 
                 }
                 break;
             }
-            // Seuil d'obstacle harmonisé : obstacle_stop_dist_cm + 5 cm
-            const float obstacle_check_dist = obstacle_stop_dist_cm + 5.0f;
             if (m_state_timer >= 0.2f) {
-                if (current_dist_cm <= 25.0f) {
+                const float obstacle_check_dist = obstacle_stop_dist_cm + 5.0f;
                 if (current_dist_cm <= obstacle_check_dist) {
                     set_transition(avoid_side < 0.0f ? shared::fsm::MachineStates::LeftDeviation : shared::fsm::MachineStates::RightDeviation);
                     float trim = m_line_controller ? m_line_controller->steering_trim() * 45.0f : 0.0f;
@@ -174,7 +162,6 @@ FsmNavOutput FsmNavigator::step(shared::fsm::MachineStates current_state, float 
                 }
             }
             break;
-        }
 
         case shared::fsm::MachineStates::RightDeviation:
         case shared::fsm::MachineStates::LeftDeviation: {
@@ -183,61 +170,16 @@ FsmNavOutput FsmNavigator::step(shared::fsm::MachineStates current_state, float 
             // des m/s réels (sur le robot, 50 % de puissance = ~0,32 m/s, que la croisière configurée soit 0,35 ou 0,45).
             const float odo_scale = picar::constants::PHYSICAL_SPEED_AT_HALF_THROTTLE / std::max(m_cruise_speed, 0.05f);
             auto res = m_obstacle_avoidance.update(side, dt, line_darkness, curr_v * odo_scale, min_curve_spd, out.desired_steering, out.desired_velocity);
-            
-            // Dès que la ligne est retrouvée, reprise immédiate du suivi de ligne nominal
             if (res == ObstacleAvoidance::DeviationResult::LineFound) {
-                set_transition(shared::fsm::MachineStates::LineDetected);
-            } else if (res == ObstacleAvoidance::DeviationResult::SearchLine) {
-                set_transition(shared::fsm::MachineStates::LineSearching);
-            }
-            break;
-        }
-
-        case shared::fsm::MachineStates::LineSearching: {
-            m_state_timer += dt;
-            out.desired_steering = -24.0f;
-            out.desired_velocity = 0.15f;
-            float max_d = std::max({line_darkness[0], line_darkness[1], line_darkness[2], line_darkness[3], line_darkness[4]});
-            if (max_d >= 0.55f && m_state_timer >= 0.25f) {
-                set_transition(shared::fsm::MachineStates::LineDetected);
-            } else if (m_state_timer >= 4.0f) {
-                set_transition(shared::fsm::MachineStates::LineSearchingTimedOut);
-                out.req_emergency = true;
-            }
-            break;
-        }
-
-        case shared::fsm::MachineStates::LineDetected:
-            m_state_timer += dt;
-            out.desired_velocity = min_curve_spd;
-            if (m_state_timer >= 0.2f) set_transition(shared::fsm::MachineStates::LineFollowingForward);
-            break;
-
-        case shared::fsm::MachineStates::Reverse: {
-            m_state_timer += dt;
-            // Exigence S5 : marche arriere guidee autonome (< 200 mm), braquage inverse pour revenir sur le ruban
-            out.desired_velocity = -reverse_speed;
-            if (m_line_controller) {
-                out.desired_steering = -m_line_controller->update_analog(line_darkness, dt).steer_degrees;
-            }
-            m_state_distance += std::abs(curr_v) * dt;
-            const bool central_found = (line_darkness[1] >= 0.55f || line_darkness[2] >= 0.55f || line_darkness[3] >= 0.55f);
-            if (central_found && m_state_distance >= 0.03f) {
-                if (m_line_controller) m_line_controller->reset();
                 set_transition(shared::fsm::MachineStates::LineFollowingForward);
-            } else if (m_state_distance >= 0.18f || m_state_timer >= 2.0f) {
-                out.desired_velocity = 0.0f;
             } else if (res == ObstacleAvoidance::DeviationResult::SearchLine) {
-                // Timeout global de la manœuvre sans trouver la ligne -> Failure
                 set_transition(shared::fsm::MachineStates::Failure);
                 out.req_emergency = true;
             }
             break;
         }
 
-        case shared::fsm::MachineStates::CollisionOccured:
         case shared::fsm::MachineStates::Abort:
-        case shared::fsm::MachineStates::LineSearchingTimedOut:
         case shared::fsm::MachineStates::Failure:
         default:
             out.desired_velocity = 0.0f;
