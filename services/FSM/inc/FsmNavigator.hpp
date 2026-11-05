@@ -35,6 +35,12 @@ public:
     float compute_bounded_velocity(float desired_v, float dt);
     float compute_motor_power(float bounded_v, float cruise_speed);
 
+    /// Distance (cm) sous laquelle la voiture commence a ralentir avant l'obstacle.
+    static constexpr float OBSTACLE_SLOWDOWN_THRESHOLD_CM = 45.0f;
+
+    /// Plafonne la vitesse pour pouvoir s'arreter a obstacle_stop_dist_cm sans depasser a_max (v = sqrt(2*a*d)).
+    float limit_approach_speed(float desired_v, float current_dist_cm, float obstacle_stop_dist_cm) const;
+
 private:
     std::unique_ptr<LineFollowerController> m_line_controller;
     std::unique_ptr<MotionProfiler> m_motion_profiler;

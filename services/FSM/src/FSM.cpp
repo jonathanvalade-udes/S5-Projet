@@ -3,8 +3,23 @@
 #include <chrono>
 #include <thread>
 #include <algorithm>
+#include <cstdlib>
+#include <string>
 
 namespace services {
+
+namespace {
+// Variable d'environnement AVOID_SIDE (gauche|droite|left|right) : prioritaire sur AVOID_SIDE du fichier de config
+// (utilisee par run_sim.sh --direction). -1 = gauche, +1 = droite.
+void apply_avoid_side_env(float& avoid_side) {
+    const char* side_env = std::getenv("AVOID_SIDE");
+    if (!side_env) return;
+    const std::string side(side_env);
+    if (side == "gauche" || side == "left" || side == "g" || side == "l") avoid_side = -1.0f;
+    else if (side == "droite" || side == "right" || side == "d" || side == "r") avoid_side = 1.0f;
+    else std::cerr << "[FSM] AVOID_SIDE='" << side << "' inconnu (gauche|droite) -> valeur du fichier de config conservee" << std::endl;
+}
+} // namespace
 
 FSM::FSM(int hz)
     : m_running(false),
@@ -47,6 +62,8 @@ bool FSM::init() {
     m_reverse_speed         = m_ipc_handler.get_float("REVERSE_SPEED", m_reverse_speed);
     m_auto_start_delay      = m_ipc_handler.get_float("AUTO_START_DELAY", m_auto_start_delay);
     m_avoid_side            = m_ipc_handler.get_float("AVOID_SIDE", m_avoid_side);
+    apply_avoid_side_env(m_avoid_side);
+    std::cout << "[FSM] Contournement des obstacles par la " << (m_avoid_side < 0.0f ? "GAUCHE" : "DROITE") << std::endl;
     m_predictive_brake_gain = m_ipc_handler.get_float("PREDICTIVE_BRAKE_GAIN", m_predictive_brake_gain);
     m_hz = std::clamp(static_cast<int>(m_ipc_handler.get_float("HZ", static_cast<float>(m_hz))), 10, 100000);
 
