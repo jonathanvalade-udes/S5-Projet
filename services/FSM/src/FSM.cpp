@@ -50,7 +50,9 @@ bool FSM::init() {
         [this](bool active) {
             std::cout << "[FSM] SetActive command received: " << (active ? "ACTIVE" : "INACTIVE") << std::endl;
             if (active) {
-                if (m_current_state == shared::fsm::MachineStates::Stopped || m_current_state == shared::fsm::MachineStates::Init) {
+                if (m_current_state == shared::fsm::MachineStates::Stopped ||
+                    m_current_state == shared::fsm::MachineStates::Init ||
+                    m_current_state == shared::fsm::MachineStates::Failure) {
                     transition_to(shared::fsm::MachineStates::Armed);
                 }
             } else {
@@ -119,13 +121,22 @@ void FSM::run() {
         m_shm_bridge.read_sensors(current_dist_cm, line_sensors, line_darkness, shm_emergency, sensors_alive);
 
         // 4. Watchdog: lost sensors heartbeat
-        if (m_current_state != shared::fsm::MachineStates::Init && m_current_state != shared::fsm::MachineStates::Stopped) {
+        const bool is_active_nav_state = (
+            m_current_state != shared::fsm::MachineStates::Init &&
+            m_current_state != shared::fsm::MachineStates::Unarmed &&
+            m_current_state != shared::fsm::MachineStates::Armed &&
+            m_current_state != shared::fsm::MachineStates::Stopped
+        );
+
+        if (is_active_nav_state) {
             if (m_shm_bridge.check_watchdog(max_watchdog_cycles)) {
                 if (m_current_state != shared::fsm::MachineStates::Failure) {
                     std::cerr << "[FSM] Watchdog: Sensor heartbeat timeout (250ms) -> Failure" << std::endl;
                     transition_to(shared::fsm::MachineStates::Failure);
                 }
             }
+        } else {
+            m_shm_bridge.reset_watchdog();
         }
 
         if (shm_emergency && m_current_state != shared::fsm::MachineStates::Failure) {

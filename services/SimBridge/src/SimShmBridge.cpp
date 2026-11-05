@@ -110,10 +110,10 @@ void SimShmBridge::apply_config_update(const std::string& key, float val) {
 }
 
 void SimShmBridge::forward_start_to_fifo() {
-    int fifo = ::open("/tmp/picar_start", O_WRONLY | O_NONBLOCK);
+    int fifo = ::open("/tmp/peripherals.sock", O_WRONLY | O_NONBLOCK);
     if (fifo >= 0) {
-        const char msg = '1';
-        ::write(fifo, &msg, 1);
+        const char* msg = "trigger_start\n";
+        ::write(fifo, msg, std::strlen(msg));
         ::close(fifo);
     }
     shared::services::ipc::ServiceIPCSocketClient::send_set_active(

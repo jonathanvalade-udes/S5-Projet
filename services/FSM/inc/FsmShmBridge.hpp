@@ -20,6 +20,7 @@ public:
     bool read_sensors(float& dist, uint8_t line_sensors[5], float line_darkness[5],
                       bool& emergency, bool& sensors_alive);
     bool check_watchdog(int max_cycles);
+    void reset_watchdog();
 
     void publish_control_commands(float speed_pct, float steering_deg, bool emergency,
                                  shared::fsm::MachineStates state, float steering_offset = 0.0f);

@@ -47,6 +47,10 @@ bool FsmShmBridge::check_watchdog(int max_cycles) {
     return (m_heartbeat_starvation_cycles > max_cycles);
 }
 
+void FsmShmBridge::reset_watchdog() {
+    m_heartbeat_starvation_cycles = 0;
+}
+
 void FsmShmBridge::publish_control_commands(float speed_pct, float steering_deg, bool emergency,
                                            shared::fsm::MachineStates state, float steering_offset) {
     if (m_cmd_pub && m_cmd_pub->isValid()) {
