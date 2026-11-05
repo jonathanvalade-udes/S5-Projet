@@ -160,6 +160,27 @@ function initDOMCache() {
     };
 
     DOM.cmdLogs = document.getElementById('cmd-logs');
+
+    // Éléments de retour télémétrique en direct pour les configurations
+    DOM.live = {
+        fsmCruise: document.getElementById('live-fsm-cruise'),
+        fsmMinCurve: document.getElementById('live-fsm-mincurve'),
+        fsmSafety: document.getElementById('live-fsm-safety'),
+        fsmAccel: document.getElementById('live-fsm-accel'),
+        fsmKp: document.getElementById('live-fsm-kp'),
+        fsmKd: document.getElementById('live-fsm-kd'),
+        fsmDist: document.getElementById('live-fsm-dist'),
+        fsmReverse: document.getElementById('live-fsm-reverse'),
+        fsmSide: document.getElementById('live-fsm-side'),
+        fsmAutostart: document.getElementById('live-fsm-autostart'),
+        fsmHz: document.getElementById('live-fsm-hz'),
+        motOffset: document.getElementById('live-mot-offset'),
+        motInvert: document.getElementById('live-mot-invert'),
+        motHz: document.getElementById('live-mot-hz'),
+        snsAlpha: document.getElementById('live-sns-alpha'),
+        snsWindow: document.getElementById('live-sns-window'),
+        snsHz: document.getElementById('live-sns-hz')
+    };
 }
 
 // ------------------------------------------------------------------------------
@@ -556,6 +577,45 @@ function applyTelemetry(telem) {
             }
         }
     }
+
+    // 8. Mise à jour des valeurs actuelles réelles dans les contrôles de configuration
+    if (DOM.live) {
+        if (telem.motors && telem.motors.left) {
+            const throttlePct = Math.round(valNum(telem.motors.left.applied_throttle, 0) * 100);
+            const approxSpeedMs = ((throttlePct / 50.0) * 0.32).toFixed(2);
+            updateText(DOM.live.fsmCruise, 'live_fsm_cruise', `Actuel: ~${approxSpeedMs} m/s (${throttlePct}%)`);
+            updateText(DOM.live.fsmMinCurve, 'live_fsm_mincurve', `Consigne: ${Math.round(valNum(telem.motors.left.target_throttle, 0) * 100)}%`);
+        }
+        if (telem.fsm) {
+            updateText(DOM.live.fsmSafety, 'live_fsm_safety', `État FSM: ${telem.fsm.state_name || 'Inconnu'}`);
+            updateText(DOM.live.fsmSide, 'live_fsm_side', (telem.fsm.flags & (1 << 10)) ? `Évitement Auto Activé` : `Actuel: Nominal`);
+        }
+        if (telem.sensors && telem.sensors.ultrasonic) {
+            const curDist = valNum(telem.sensors.ultrasonic.calc_dist_cm, 0).toFixed(1);
+            const rawDist = valNum(telem.sensors.ultrasonic.raw_dist_cm, 0).toFixed(1);
+            updateText(DOM.live.fsmDist, 'live_fsm_dist', `Sonar actuel: ${curDist} cm (brut: ${rawDist} cm)`);
+            updateText(DOM.live.snsAlpha, 'live_sns_alpha', `Calculé: ${curDist} cm`);
+        }
+        if (telem.sensors && telem.sensors.line_follower) {
+            const lf = telem.sensors.line_follower;
+            const anyDetected = (lf.flags & (1 << 3)) !== 0;
+            updateText(DOM.live.fsmKp, 'live_fsm_kp', anyDetected ? `Suivi actif (Ligne OK)` : `Recherche / Ligne perdue`);
+            if (Array.isArray(lf.sensors) && lf.sensors.length > 2) {
+                const centerCorr = valNum(lf.sensors[2].corrector, 0).toFixed(2);
+                updateText(DOM.live.fsmKd, 'live_fsm_kd', `Corr. Centre: ${centerCorr}`);
+            }
+        }
+        if (telem.motors && telem.motors.steering) {
+            const st = telem.motors.steering;
+            const curAngle = valNum(st.current_angle, 0).toFixed(1);
+            const ccr = st.current_ccr !== undefined ? st.current_ccr : '--';
+            const coeff = valNum(st.coefficient, 1.0).toFixed(2);
+            updateText(DOM.live.motOffset, 'live_mot_offset', `Angle: ${curAngle}° | CCR: ${ccr} | Trim: ${coeff}`);
+        }
+        if (telem.motors) {
+            updateText(DOM.live.motInvert, 'live_mot_invert', `État Moteur: ${telem.motors.state_name || 'Inconnu'}`);
+        }
+    }
 }
 
 // ------------------------------------------------------------------------------
@@ -609,6 +669,92 @@ async function sendCommand(cmdStr) {
         }
     } catch (err) {
         logConsole(`[ERR] Échec de transmission : ${err.message}`, 'error');
+    }
+}
+
+async function applyConfig(service, key, inputId) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    const val = parseFloat(input.value);
+    if (isNaN(val)) {
+        logConsole(`[ERR] Valeur invalide saisie pour ${service}.${key}`, 'error');
+        return;
+    }
+
+    logConsole(`[TX] Envoi Config : ${service}.${key} = ${val} (Validation CRC32)`, 'sent');
+
+    try {
+        const resp = await fetch('/api/command', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ service, key, value: val })
+        });
+
+        if (resp.ok) {
+            const resJson = await resp.json();
+            logConsole(`[RX] Ack serveur : ${resJson.command || 'OK'}`, 'received');
+        } else {
+            logConsole(`[ERR] HTTP ${resp.status} lors de l'envoi de ${key}`, 'error');
+        }
+    } catch (err) {
+        logConsole(`[ERR] Erreur de communication : ${err.message}`, 'error');
+    }
+}
+
+function applyCustomConfig() {
+    const srvSelect = document.getElementById('cfg-custom-srv');
+    const keyInput = document.getElementById('cfg-custom-key');
+    const valInput = document.getElementById('cfg-custom-val');
+
+    if (!srvSelect || !keyInput || !valInput) return;
+    const srv = srvSelect.value;
+    const key = keyInput.value.trim();
+    const val = parseFloat(valInput.value);
+
+    if (!key || isNaN(val)) {
+        logConsole('[ERR] Veuillez renseigner une clé valide et une valeur numérique float', 'error');
+        return;
+    }
+
+    applyConfig(srv, key, 'cfg-custom-val');
+}
+
+async function sendServiceActive(service, active) {
+    const action = active ? 'start' : 'stop';
+    logConsole(`[TX] Commande ${action.toUpperCase()} transmise au service ${service} (CRC32)`, 'sent');
+    try {
+        const resp = await fetch('/api/command', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ service, action })
+        });
+        if (resp.ok) {
+            const resJson = await resp.json();
+            logConsole(`[RX] Ack: ${resJson.status}`, 'received');
+        } else {
+            logConsole(`[ERR] HTTP ${resp.status}`, 'error');
+        }
+    } catch (err) {
+        logConsole(`[ERR] Échec: ${err.message}`, 'error');
+    }
+}
+
+async function sendEmergencyStop(service = 'MOTORS') {
+    logConsole(`[TX] ARRÊT D'URGENCE GLOBAL émis vers ${service} (CRC32)`, 'sent');
+    try {
+        const resp = await fetch('/api/command', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ service, action: 'emergency' })
+        });
+        if (resp.ok) {
+            const resJson = await resp.json();
+            logConsole(`[RX] Arrêt d'urgence appliqué avec succès: ${resJson.status}`, 'received');
+        } else {
+            logConsole(`[ERR] HTTP ${resp.status}`, 'error');
+        }
+    } catch (err) {
+        logConsole(`[ERR] Échec: ${err.message}`, 'error');
     }
 }
 

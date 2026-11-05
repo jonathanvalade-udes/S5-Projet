@@ -240,19 +240,58 @@ void WebServer::handle_http_request(int client_fd, const std::string& request) {
             }
         }
 
-        // Nettoyage éventuel (suppression retours à la ligne ou quotes)
+        // Nettoyage éventuel (suppression retours à la ligne)
         body.erase(std::remove(body.begin(), body.end(), '\r'), body.end());
         body.erase(std::remove(body.begin(), body.end(), '\n'), body.end());
 
-        // Support d'un format JSON {"command":"..."} ou texte brut
+        // Support d'un format JSON {"service":"FSM","key":"LINE_KP","value":0.58}
+        // ou {"service":"FSM","action":"start"} ou {"command":"..."} ou texte brut
         std::string command_to_execute = body;
-        size_t cmd_idx = body.find("\"command\":");
-        if (cmd_idx != std::string::npos) {
-            size_t first_quote = body.find('"', cmd_idx + 10);
-            size_t second_quote = body.find('"', first_quote + 1);
-            if (first_quote != std::string::npos && second_quote != std::string::npos) {
-                command_to_execute = body.substr(first_quote + 1, second_quote - first_quote - 1);
+
+        auto extract_json_field = [](const std::string& json, const std::string& field) -> std::string {
+            std::string token = "\"" + field + "\"";
+            size_t pos = json.find(token);
+            if (pos == std::string::npos) return "";
+            size_t colon = json.find(':', pos + token.size());
+            if (colon == std::string::npos) return "";
+            size_t start = json.find_first_not_of(" \t\r\n", colon + 1);
+            if (start == std::string::npos) return "";
+
+            if (json[start] == '"') {
+                size_t end = json.find('"', start + 1);
+                if (end != std::string::npos) {
+                    return json.substr(start + 1, end - start - 1);
+                }
+            } else {
+                size_t end = json.find_first_of(",}\r\n ", start);
+                if (end != std::string::npos) {
+                    return json.substr(start, end - start);
+                } else {
+                    return json.substr(start);
+                }
             }
+            return "";
+        };
+
+        std::string json_srv = extract_json_field(body, "service");
+        std::string json_key = extract_json_field(body, "key");
+        std::string json_val = extract_json_field(body, "value");
+        std::string json_act = extract_json_field(body, "action");
+        std::string json_cmd = extract_json_field(body, "command");
+
+        if (!json_key.empty() && !json_val.empty()) {
+            std::string srv_prefix = json_srv.empty() ? "FSM" : json_srv;
+            command_to_execute = srv_prefix + "." + json_key + "=" + json_val;
+        } else if (!json_act.empty()) {
+            if (json_act == "start" || json_act == "arm") {
+                command_to_execute = "trigger_start";
+            } else if (json_act == "stop" || json_act == "emergency") {
+                command_to_execute = "emergency_stop";
+            } else {
+                command_to_execute = json_act;
+            }
+        } else if (!json_cmd.empty()) {
+            command_to_execute = json_cmd;
         }
 
         if (m_command_cb && !command_to_execute.empty()) {

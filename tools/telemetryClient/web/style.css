@@ -698,6 +698,153 @@ body {
     }
 }
 
+.section-desc {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin-bottom: 1rem;
+}
+
+.service-config-block {
+    background-color: #0d1527;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 1rem;
+    margin-bottom: 1.25rem;
+}
+
+.service-config-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.85rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border-color);
+    flex-wrap: wrap;
+}
+
+.service-badge {
+    padding: 0.25rem 0.6rem;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+}
+
+.fsm-badge {
+    background-color: rgba(168, 85, 247, 0.2);
+    color: #c084fc;
+    border: 1px solid rgba(168, 85, 247, 0.4);
+}
+
+.motors-badge {
+    background-color: rgba(56, 189, 248, 0.2);
+    color: #38bdf8;
+    border: 1px solid rgba(56, 189, 248, 0.4);
+}
+
+.sensors-badge {
+    background-color: rgba(34, 197, 94, 0.2);
+    color: #4ade80;
+    border: 1px solid rgba(34, 197, 94, 0.4);
+}
+
+.telem-badge {
+    background-color: rgba(251, 146, 60, 0.2);
+    color: #fb923c;
+    border: 1px solid rgba(251, 146, 60, 0.4);
+}
+
+.service-desc {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    flex: 1;
+}
+
+.service-actions {
+    display: flex;
+    gap: 0.4rem;
+}
+
+.btn-fsm-arm {
+    background-color: #166534;
+    border-color: #22c55e;
+    color: #fff;
+}
+.btn-fsm-arm:hover {
+    background-color: #22c55e;
+    color: #0b1120;
+}
+
+.btn-fsm-pause {
+    background-color: #854d0e;
+    border-color: #eab308;
+    color: #fff;
+}
+.btn-fsm-pause:hover {
+    background-color: #eab308;
+    color: #0b1120;
+}
+
+.live-tag {
+    font-size: 0.72rem;
+    color: var(--accent-green);
+    font-family: ui-monospace, Menlo, monospace;
+    font-weight: 600;
+    margin-top: 0.15rem;
+}
+
+.custom-cmd-grid {
+    display: grid;
+    grid-template-columns: 180px 1fr 140px auto;
+    gap: 0.75rem;
+    align-items: flex-end;
+}
+
+.custom-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.custom-field label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-weight: 600;
+}
+
+.custom-select,
+.custom-field input {
+    background-color: #0b1120;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 0.5rem 0.75rem;
+    color: var(--text-main);
+    font-size: 0.85rem;
+}
+
+.btn-apply-custom {
+    background-color: #f97316;
+    color: #fff;
+    border: none;
+    padding: 0.55rem 1rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background-color 0.15s ease;
+}
+
+.btn-apply-custom:hover {
+    background-color: #ea580c;
+}
+
+@media (max-width: 900px) {
+    .custom-cmd-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
 .config-table {
     display: flex;
     flex-direction: column;

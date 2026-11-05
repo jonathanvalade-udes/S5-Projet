@@ -108,7 +108,7 @@ void mock_telemetry_server(std::atomic<bool>& server_running, std::atomic<bool>&
     auto telem_pkt = shared::headers::serializePacket(telem_hdr, reinterpret_cast<const uint8_t*>(&telem), sizeof(telem));
     assert(send(cfd, telem_pkt.data(), telem_pkt.size(), 0) == static_cast<ssize_t>(telem_pkt.size()));
 
-    // 4. Attente de la commande du client
+    // 4. Attente de la commande du client (SetActive trigger_start)
     char cmd_buf[512];
     ssize_t cmd_n = recv(cfd, cmd_buf, sizeof(cmd_buf), 0);
     assert(cmd_n > 0);
@@ -117,8 +117,25 @@ void mock_telemetry_server(std::atomic<bool>& server_running, std::atomic<bool>&
     std::vector<uint8_t> cmd_payload;
     uint32_t cmd_crc = 0;
     assert(shared::headers::deserializePacket(reinterpret_cast<const uint8_t*>(cmd_buf), cmd_n, cmd_hdr, cmd_payload, cmd_crc));
-    std::string received_str(reinterpret_cast<const char*>(cmd_payload.data()));
-    assert(received_str.find("trigger_start") != std::string::npos);
+    assert(cmd_hdr.type == shared::headers::HeadersType::Command);
+    assert(cmd_payload.size() >= sizeof(shared::commands::CommandsHeader));
+
+    const auto* ch = reinterpret_cast<const shared::commands::CommandsHeader*>(cmd_payload.data());
+    assert(ch->serviceID == shared::commands::ServiceID::FSM);
+    assert(ch->commandID == shared::commands::CommandID::SetActive);
+
+    // 5. Attente de la commande SetConfigKey
+    cmd_n = recv(cfd, cmd_buf, sizeof(cmd_buf), 0);
+    assert(cmd_n > 0);
+    assert(shared::headers::deserializePacket(reinterpret_cast<const uint8_t*>(cmd_buf), cmd_n, cmd_hdr, cmd_payload, cmd_crc));
+    assert(cmd_payload.size() == sizeof(shared::commands::CommandsHeader) + sizeof(shared::commands::config::SetConfigPayload));
+    ch = reinterpret_cast<const shared::commands::CommandsHeader*>(cmd_payload.data());
+    assert(ch->serviceID == shared::commands::ServiceID::FSM);
+    assert(ch->commandID == shared::commands::CommandID::SetConfigKey);
+
+    const auto* cfg = reinterpret_cast<const shared::commands::config::SetConfigPayload*>(cmd_payload.data() + sizeof(shared::commands::CommandsHeader));
+    assert(std::string(cfg->key) == "CURVE_SAFETY_FACTOR");
+    assert(std::abs(cfg->value - 0.85f) < 0.001f);
 
     close(cfd);
     close(sfd);
@@ -202,9 +219,10 @@ int main() {
         std::cout << "  ✓ CsvLogger création d'en-tête, écriture de trames et flush validés." << std::endl;
     }
 
-    // Test envoi de commande
+    // Test envoi de commandes conformes shared-headers avec CRC32
     assert(proto.send_command(client, "trigger_start", 200));
-    std::cout << "  ✓ Transmission de commande avec padding multiple de 4 et CRC validée." << std::endl;
+    assert(proto.send_set_config(client, shared::commands::ServiceID::FSM, "CURVE_SAFETY_FACTOR", 0.85f, 201));
+    std::cout << "  ✓ Transmission de commandes binaires SetActive et SetConfigKey (CommandsHeader 72 o + CRC32) validée." << std::endl;
 
     if (srv_thread.joinable()) {
         srv_thread.join();

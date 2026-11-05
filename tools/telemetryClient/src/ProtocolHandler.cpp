@@ -152,10 +152,158 @@ bool ProtocolHandler::read_telemetry_packet(TcpClient& client, shared::car::CarT
     return true;
 }
 
+shared::commands::ServiceID ProtocolHandler::string_to_service_id(const std::string& srv_str) {
+    std::string s = srv_str;
+    for (auto& c : s) c = static_cast<char>(::toupper(c));
+    if (s == "MOTORS" || s == "MOTOR" || s == "M") return shared::commands::ServiceID::MOTORS;
+    if (s == "SENSORS" || s == "SENSOR" || s == "S") return shared::commands::ServiceID::SENSORS;
+    if (s == "TELEMETRY" || s == "TELEM" || s == "T") return shared::commands::ServiceID::TELEMETRY;
+    return shared::commands::ServiceID::FSM;
+}
+
+bool ProtocolHandler::send_set_config(TcpClient& client, shared::commands::ServiceID srv,
+                                      const std::string& key, float value, uint16_t seq_num) {
+    if (!client.is_connected() || key.empty()) return false;
+
+    shared::commands::CommandsHeader cmd_hdr{};
+    cmd_hdr.serviceID = srv;
+    cmd_hdr.commandID = shared::commands::CommandID::SetConfigKey;
+    cmd_hdr.payloadLen = sizeof(shared::commands::config::SetConfigPayload);
+
+    constexpr size_t TOTAL_PAYLOAD_LEN = sizeof(cmd_hdr) + sizeof(shared::commands::config::SetConfigPayload);
+    std::vector<uint8_t> payload_buf(TOTAL_PAYLOAD_LEN, 0);
+    std::memcpy(payload_buf.data(), &cmd_hdr, sizeof(cmd_hdr));
+
+    char key_buf[shared::commands::config::MAX_KEY_LEN] = {0};
+    std::strncpy(key_buf, key.c_str(), shared::commands::config::MAX_KEY_LEN - 1);
+    std::memcpy(payload_buf.data() + sizeof(cmd_hdr), key_buf, shared::commands::config::MAX_KEY_LEN);
+    std::memcpy(payload_buf.data() + sizeof(cmd_hdr) + shared::commands::config::MAX_KEY_LEN, &value, sizeof(float));
+
+    shared::headers::PacketHeader pkt_hdr{};
+    pkt_hdr.type = shared::headers::HeadersType::Command;
+    pkt_hdr.headerFlag = shared::headers::flags::CRC_ENABLED | shared::headers::flags::REPLY_REQUESTED;
+    pkt_hdr.seqNumber = seq_num;
+    pkt_hdr.payloadLength = static_cast<uint32_t>(TOTAL_PAYLOAD_LEN);
+
+    auto packet = shared::headers::serializePacket(pkt_hdr, payload_buf.data(), payload_buf.size());
+    bool ok = client.send_bytes(packet.data(), packet.size());
+    if (ok) {
+        std::cout << "[ProtocolHandler] Config transmise (CRC32 validé): Srv=" << static_cast<int>(srv)
+                  << " " << key << "=" << value << " (seq=" << seq_num << ")" << std::endl;
+    }
+    return ok;
+}
+
+bool ProtocolHandler::send_set_active(TcpClient& client, shared::commands::ServiceID srv, bool active, uint16_t seq_num) {
+    if (!client.is_connected()) return false;
+
+    shared::commands::CommandsHeader cmd_hdr{};
+    cmd_hdr.serviceID = srv;
+    cmd_hdr.commandID = shared::commands::CommandID::SetActive;
+    cmd_hdr.payloadLen = sizeof(shared::commands::SetActivePayload);
+
+    constexpr size_t TOTAL_PAYLOAD_LEN = sizeof(cmd_hdr) + sizeof(shared::commands::SetActivePayload);
+    std::vector<uint8_t> payload_buf(TOTAL_PAYLOAD_LEN, 0);
+    std::memcpy(payload_buf.data(), &cmd_hdr, sizeof(cmd_hdr));
+
+    shared::commands::SetActivePayload act_payload{};
+    act_payload.active = active ? 1 : 0;
+    std::memcpy(payload_buf.data() + sizeof(cmd_hdr), &act_payload, sizeof(act_payload));
+
+    shared::headers::PacketHeader pkt_hdr{};
+    pkt_hdr.type = shared::headers::HeadersType::Command;
+    pkt_hdr.headerFlag = shared::headers::flags::CRC_ENABLED | shared::headers::flags::REPLY_REQUESTED;
+    pkt_hdr.seqNumber = seq_num;
+    pkt_hdr.payloadLength = static_cast<uint32_t>(TOTAL_PAYLOAD_LEN);
+
+    auto packet = shared::headers::serializePacket(pkt_hdr, payload_buf.data(), payload_buf.size());
+    bool ok = client.send_bytes(packet.data(), packet.size());
+    if (ok) {
+        std::cout << "[ProtocolHandler] SetActive transmis (CRC32 validé): Srv=" << static_cast<int>(srv)
+                  << " Active=" << (active ? "1" : "0") << " (seq=" << seq_num << ")" << std::endl;
+    }
+    return ok;
+}
+
+bool ProtocolHandler::send_emergency_stop(TcpClient& client, shared::commands::ServiceID srv, uint32_t reason_code, uint16_t seq_num) {
+    if (!client.is_connected()) return false;
+
+    shared::commands::CommandsHeader cmd_hdr{};
+    cmd_hdr.serviceID = srv;
+    cmd_hdr.commandID = shared::commands::CommandID::EmergencyStop;
+    cmd_hdr.payloadLen = sizeof(shared::commands::EmergencyStopPayload);
+
+    constexpr size_t TOTAL_PAYLOAD_LEN = sizeof(cmd_hdr) + sizeof(shared::commands::EmergencyStopPayload);
+    std::vector<uint8_t> payload_buf(TOTAL_PAYLOAD_LEN, 0);
+    std::memcpy(payload_buf.data(), &cmd_hdr, sizeof(cmd_hdr));
+
+    shared::commands::EmergencyStopPayload estop_payload{};
+    estop_payload.reason_code = reason_code;
+    std::memcpy(payload_buf.data() + sizeof(cmd_hdr), &estop_payload, sizeof(estop_payload));
+
+    shared::headers::PacketHeader pkt_hdr{};
+    pkt_hdr.type = shared::headers::HeadersType::Command;
+    pkt_hdr.headerFlag = shared::headers::flags::CRC_ENABLED | shared::headers::flags::REPLY_REQUESTED;
+    pkt_hdr.seqNumber = seq_num;
+    pkt_hdr.payloadLength = static_cast<uint32_t>(TOTAL_PAYLOAD_LEN);
+
+    auto packet = shared::headers::serializePacket(pkt_hdr, payload_buf.data(), payload_buf.size());
+    bool ok = client.send_bytes(packet.data(), packet.size());
+    if (ok) {
+        std::cout << "[ProtocolHandler] EmergencyStop transmis (CRC32 validé): Srv=" << static_cast<int>(srv)
+                  << " Reason=" << reason_code << " (seq=" << seq_num << ")" << std::endl;
+    }
+    return ok;
+}
+
 bool ProtocolHandler::send_command(TcpClient& client, const std::string& cmd_str, uint16_t seq_num) {
     if (!client.is_connected() || cmd_str.empty()) return false;
 
-    // Le protocole impose que payloadLength soit un multiple de 4
+    // 1. Détection des actions globales standard
+    if (cmd_str == "trigger_start" || cmd_str == "start") {
+        return send_set_active(client, shared::commands::ServiceID::FSM, true, seq_num);
+    }
+    if (cmd_str == "emergency_stop" || cmd_str == "stop") {
+        return send_emergency_stop(client, shared::commands::ServiceID::MOTORS, 1, seq_num);
+    }
+
+    // 2. Détection de commandes de configuration cle=valeur (ex: "CURVE_SAFETY_FACTOR=0.75" ou "MOTORS.STEERING_OFFSET=1.5")
+    size_t eq_pos = cmd_str.find('=');
+    if (eq_pos != std::string::npos) {
+        std::string full_key = cmd_str.substr(0, eq_pos);
+        std::string val_str = cmd_str.substr(eq_pos + 1);
+
+        full_key.erase(std::remove_if(full_key.begin(), full_key.end(), ::isspace), full_key.end());
+        val_str.erase(std::remove_if(val_str.begin(), val_str.end(), ::isspace), val_str.end());
+
+        shared::commands::ServiceID target_srv = shared::commands::ServiceID::FSM;
+        std::string param_key = full_key;
+
+        size_t dot_pos = full_key.find('.');
+        if (dot_pos != std::string::npos) {
+            std::string srv_part = full_key.substr(0, dot_pos);
+            param_key = full_key.substr(dot_pos + 1);
+            target_srv = string_to_service_id(srv_part);
+        } else {
+            // Heuristique de service selon la clé
+            if (param_key == "STEERING_OFFSET" || param_key == "OFFSET" || param_key == "INVERT") {
+                target_srv = shared::commands::ServiceID::MOTORS;
+            } else if (param_key == "FILTER_ALPHA" || param_key == "MEDIAN_WINDOW") {
+                target_srv = shared::commands::ServiceID::SENSORS;
+            } else if (param_key == "UDP_PORT") {
+                target_srv = shared::commands::ServiceID::TELEMETRY;
+            }
+        }
+
+        try {
+            float fval = std::stof(val_str);
+            return send_set_config(client, target_srv, param_key, fval, seq_num);
+        } catch (...) {
+            std::cerr << "[ProtocolHandler] Échec de conversion de valeur pour: " << cmd_str << std::endl;
+        }
+    }
+
+    // 3. Fallback texte avec CRC_ENABLED pour d'autres commandes libres
     size_t raw_len = cmd_str.size();
     size_t padded_len = ((raw_len + 3) / 4) * 4;
 
@@ -171,7 +319,7 @@ bool ProtocolHandler::send_command(TcpClient& client, const std::string& cmd_str
     auto pkt = shared::headers::serializePacket(hdr, payload.data(), payload.size());
     bool ok = client.send_bytes(pkt.data(), pkt.size());
     if (ok) {
-        std::cout << "[ProtocolHandler] Commande transmise : \"" << cmd_str << "\" (seq=" << seq_num << ")" << std::endl;
+        std::cout << "[ProtocolHandler] Commande brute transmise (CRC32 validé): \"" << cmd_str << "\" (seq=" << seq_num << ")" << std::endl;
     }
     return ok;
 }

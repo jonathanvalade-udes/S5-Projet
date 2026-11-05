@@ -232,6 +232,31 @@ bool FSM::apply_config_key(const std::string& key, float value) {
         update_controllers();
         return true;
     }
+    if (key == "CURVE_SAFETY_FACTOR") {
+        m_curve_safety_factor = std::clamp(value, 0.1f, 2.0f);
+        m_ipc_handler.set_float("CURVE_SAFETY_FACTOR", m_curve_safety_factor);
+        return true;
+    }
+    if (key == "OBSTACLE_STOP_DIST_CM") {
+        m_obstacle_stop_dist_cm = std::max(value, 5.0f);
+        m_ipc_handler.set_float("OBSTACLE_STOP_DIST_CM", m_obstacle_stop_dist_cm);
+        return true;
+    }
+    if (key == "REVERSE_SPEED") {
+        m_reverse_speed = std::clamp(value, 0.01f, 1.0f);
+        m_ipc_handler.set_float("REVERSE_SPEED", m_reverse_speed);
+        return true;
+    }
+    if (key == "AVOID_SIDE") {
+        m_avoid_side = (value < 0.0f) ? -1.0f : 1.0f;
+        m_ipc_handler.set_float("AVOID_SIDE", m_avoid_side);
+        return true;
+    }
+    if (key == "AUTO_START_DELAY") {
+        m_auto_start_delay = std::max(value, 0.0f);
+        m_ipc_handler.set_float("AUTO_START_DELAY", m_auto_start_delay);
+        return true;
+    }
     if (key == "HZ") {
         m_hz = std::clamp(static_cast<int>(value), 10, 10000);
         m_ipc_handler.set_float("HZ", static_cast<float>(m_hz));
