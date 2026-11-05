@@ -2,6 +2,7 @@
 #include "control/picar_config.hpp"
 #include <fcntl.h>
 #include <unistd.h>
+#include <algorithm>
 #include <cstring>
 #include <iostream>
 
@@ -42,9 +43,13 @@ void SimShmBridge::inject_sim_telemetry(const GodotTelemetryIn& telem) {
 
     pthread_mutex_lock(&(m_telemetry->mtx));
     m_telemetry->filtered_dist = filtered_dist;
+    // Godot est en miroir de la convention du robot (HAL : braquage + = droite, capteur D = droite) : un braquage
+    // positif y tourne vers la gauche. SimBridge inverse donc l'ordre des capteurs ici et le signe du braquage
+    // (SimBridge.cpp), pour que "gauche" et "droite" aient le meme sens en simulation et sur le robot.
     for (int i = 0; i < 5; ++i) {
-        m_telemetry->line_sensors[i] = telem.line_sensors[i];
-        m_telemetry->line_darkness[i] = telem.line_darkness[i];
+        const int j = 4 - i;
+        m_telemetry->line_sensors[i] = telem.line_sensors[j];
+        m_telemetry->line_darkness[i] = std::clamp(telem.line_darkness[j], 0.0f, 1.0f);
     }
     m_telemetry->heartbeat++;
     pthread_mutex_unlock(&(m_telemetry->mtx));
