@@ -16,7 +16,7 @@ bool MotorShmBridge::init() {
     return true;
 }
 
-bool MotorShmBridge::read_fsm_command(float& speed, float& steer, float& shm_offset, bool& emergency, uint64_t& heartbeat) {
+bool MotorShmBridge::read_fsm_command(float& speed, float& steer, bool& emergency, uint64_t& heartbeat) {
     if (!m_fsm_cmd_sub) return false;
 
     shared::fsm::FsmCommandPayload cmd{};
@@ -26,7 +26,6 @@ bool MotorShmBridge::read_fsm_command(float& speed, float& steer, float& shm_off
 
     speed = cmd.target_speed;
     steer = cmd.target_steering;
-    shm_offset = cmd.steering_offset;
     emergency = (cmd.emergency_stop != 0);
     heartbeat = cmd.heartbeat;
 
