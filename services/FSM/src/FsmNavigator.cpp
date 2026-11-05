@@ -51,6 +51,12 @@ float FsmNavigator::compute_motor_power(float bounded_v, float cruise_speed) {
     return std::clamp(pct, -100.0f, 100.0f);
 }
 
+float FsmNavigator::limit_approach_speed(float desired_v, float current_dist_cm, float obstacle_stop_dist_cm) const {
+    if (!m_motion_profiler || current_dist_cm >= OBSTACLE_SLOWDOWN_THRESHOLD_CM) return desired_v;
+    const float distance_to_stop_m = (current_dist_cm - obstacle_stop_dist_cm) / 100.0f;
+    return std::min(desired_v, m_motion_profiler->calculate_max_safe_approach_speed(distance_to_stop_m));
+}
+
 FsmNavOutput FsmNavigator::step(shared::fsm::MachineStates current_state, float dt,
                                float current_dist_cm, const float line_darkness[5],
                                bool start_triggered, float avoid_side, float obstacle_stop_dist_cm,
@@ -116,7 +122,7 @@ FsmNavOutput FsmNavigator::step(shared::fsm::MachineStates current_state, float 
             if (m_motion_profiler && predictive_brake_gain > 0.0f) {
                 adapt_v = m_motion_profiler->apply_predictive_brake(line_out.d_error_dt, adapt_v, predictive_brake_gain);
             }
-            out.desired_velocity = adapt_v;
+            out.desired_velocity = limit_approach_speed(adapt_v, current_dist_cm, obstacle_stop_dist_cm);
             break;
         }
 
@@ -184,13 +190,18 @@ FsmNavOutput FsmNavigator::step(shared::fsm::MachineStates current_state, float 
 
         case shared::fsm::MachineStates::Reverse: {
             m_state_timer += dt;
+            // Exigence S5 : marche arriere guidee autonome (< 200 mm), braquage inverse pour revenir sur le ruban
             out.desired_velocity = -reverse_speed;
+            if (m_line_controller) {
+                out.desired_steering = -m_line_controller->update_analog(line_darkness, dt).steer_degrees;
+            }
             m_state_distance += std::abs(curr_v) * dt;
-            bool found = (line_darkness[0] > 0.4f || line_darkness[1] > 0.4f || line_darkness[2] > 0.4f ||
-                          line_darkness[3] > 0.4f || line_darkness[4] > 0.4f);
-            if (found && m_state_timer >= 0.2f) {
+            const bool central_found = (line_darkness[1] >= 0.55f || line_darkness[2] >= 0.55f || line_darkness[3] >= 0.55f);
+            if (central_found && m_state_distance >= 0.03f) {
+                if (m_line_controller) m_line_controller->reset();
                 set_transition(shared::fsm::MachineStates::LineFollowingForward);
-            } else if (m_state_distance >= 0.15f || m_state_timer >= 3.0f) {
+            } else if (m_state_distance >= 0.18f || m_state_timer >= 2.0f) {
+                out.desired_velocity = 0.0f;
                 set_transition(shared::fsm::MachineStates::Failure);
             }
             break;

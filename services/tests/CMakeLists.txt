@@ -103,3 +103,16 @@ target_include_directories(test_peripherals PRIVATE
 target_link_libraries(test_peripherals PRIVATE Threads::Threads)
 add_test(NAME test_peripherals COMMAND test_peripherals)
 
+
+# Navigation FSM : ralentissement a l'approche d'un obstacle
+add_executable(test_fsm_navigator
+    test_fsm_navigator.cpp
+    ../FSM/src/FsmNavigator.cpp
+    ../FSM/src/ObstacleAvoidance.cpp
+)
+target_include_directories(test_fsm_navigator PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../FSM/inc
+    ${CMAKE_CURRENT_SOURCE_DIR}/../libs/shared-headers
+)
+target_link_libraries(test_fsm_navigator PRIVATE Threads::Threads)
+add_test(NAME test_fsm_navigator COMMAND test_fsm_navigator)
