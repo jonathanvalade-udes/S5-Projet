@@ -2,6 +2,8 @@
 #include "control/picar_config.hpp"
 #include <fcntl.h>
 #include <unistd.h>
+#include <sys/stat.h>
+#include <cerrno>
 #include <cstring>
 #include <iostream>
 
@@ -23,6 +25,12 @@ bool SimShmBridge::init() {
         return false;
     }
     reset_pipeline(100.0f);
+
+    struct stat st;
+    if (stat("/tmp/peripherals.sock", &st) != 0) {
+        mkfifo("/tmp/peripherals.sock", 0666);
+    }
+
     return true;
 }
 
@@ -106,12 +114,19 @@ void SimShmBridge::apply_config_update(const std::string& key, float val) {
 }
 
 void SimShmBridge::forward_start_to_fifo() {
+    struct stat st;
+    if (stat("/tmp/peripherals.sock", &st) != 0) {
+        mkfifo("/tmp/peripherals.sock", 0666);
+    }
     int fifo_fd = open("/tmp/peripherals.sock", O_WRONLY | O_NONBLOCK);
     if (fifo_fd >= 0) {
         const char* cmd = "trigger_start\n";
         ssize_t w = write(fifo_fd, cmd, strlen(cmd));
         (void)w;
         close(fifo_fd);
+        std::cout << "[SimBridge] Forwarded trigger_start to /tmp/peripherals.sock" << std::endl;
+    } else {
+        std::cerr << "[SimBridge] Warning: open(/tmp/peripherals.sock) failed: " << strerror(errno) << std::endl;
     }
 }
 

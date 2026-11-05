@@ -37,7 +37,8 @@ void SimBridge::run() {
 
     while (m_running.load(std::memory_order_relaxed)) {
         if (!m_tcp_server.poll_client()) {
-            std::this_thread::sleep_for(std::chrono::microseconds(10));
+            m_shm_bridge.set_emergency_stop(true, 0.0f);
+            std::this_thread::sleep_for(std::chrono::microseconds(50));
             continue;
         }
 
@@ -86,7 +87,7 @@ void SimBridge::run() {
 
             GodotCommandOut cmd_out{};
             cmd_out.velocity = (target_spd / 50.0f) * cruise_cfg;
-            cmd_out.direction = -std::clamp(target_steer / 45.0f, -1.0f, 1.0f);
+            cmd_out.direction = std::clamp(target_steer / 45.0f, -1.0f, 1.0f);
             cmd_out.brake = emergency;
 
             if (!m_sim_mode) {

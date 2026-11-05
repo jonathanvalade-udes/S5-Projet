@@ -6,12 +6,13 @@
 #include "SensorAcquisition.hpp"
 #include "SensorIpcHandler.hpp"
 #include "SensorShmBridge.hpp"
+#include "control/picar_constants.hpp"
 
 namespace services {
 
 class Sensors {
 public:
-    explicit Sensors(int hz = 100000, int trig = 12, int echo = 16);
+    explicit Sensors(int hz = picar::constants::DEFAULT_HZ, int trig = 12, int echo = 16);
     ~Sensors();
 
     bool init();
@@ -29,7 +30,7 @@ public:
 
 private:
     std::atomic<bool> m_running{false};
-    int m_hz{100000};
+    int m_hz{picar::constants::DEFAULT_HZ};
     int m_trig_pin{12};
     int m_echo_pin{16};
     float m_filter_alpha{0.25f};

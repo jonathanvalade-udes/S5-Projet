@@ -8,7 +8,7 @@ namespace services {
 
 Motors::Motors(int hz, bool invert, float steering_offset, bool offset_specified)
     : m_running(false),
-      m_hz(hz > 0 ? hz : 100000),
+      m_hz(hz > 0 ? hz : picar::constants::DEFAULT_HZ),
       m_invert(invert),
       m_steering_offset(steering_offset),
       m_offset_specified(offset_specified),
@@ -33,7 +33,7 @@ bool Motors::init() {
         m_steering_offset = m_ipc_handler.get_float("STEERING_OFFSET", m_steering_offset);
         m_actuator.set_steering_offset(m_steering_offset);
     }
-    m_hz = std::clamp(static_cast<int>(m_ipc_handler.get_float("HZ", static_cast<float>(m_hz))), 10, 100000);
+    m_hz = std::clamp(static_cast<int>(m_ipc_handler.get_float("HZ", static_cast<float>(m_hz))), 10, 2000);
     m_invert = (m_ipc_handler.get_float("INVERT", m_invert ? 1.0f : 0.0f) > 0.5f);
 
     if (!m_shm_bridge.init()) {
@@ -142,7 +142,7 @@ bool Motors::apply_config_key(const std::string& key, float value) {
         return true;
     }
     if (key == "HZ") {
-        m_hz = std::clamp(static_cast<int>(value), 10, 100000);
+        m_hz = std::clamp(static_cast<int>(value), 10, 2000);
         m_ipc_handler.set_float("HZ", static_cast<float>(m_hz));
         return true;
     }

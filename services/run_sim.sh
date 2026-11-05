@@ -47,6 +47,11 @@ fi
 rm -f /dev/shm/picar_shm
 rm -rf /dev/shm/car
 
+# Creer le tube nomme d'evenements pour la simulation (relais Godot -> FSM sans PeripheralsService)
+rm -f /tmp/peripherals.sock
+mkfifo /tmp/peripherals.sock
+chmod 0666 /tmp/peripherals.sock
+
 PIDS=()
 cleanup() {
     trap - INT TERM EXIT
@@ -55,6 +60,7 @@ cleanup() {
     wait 2>/dev/null
     rm -f /dev/shm/picar_shm
     rm -rf /dev/shm/car
+    rm -f /tmp/peripherals.sock
 }
 trap cleanup INT TERM EXIT
 

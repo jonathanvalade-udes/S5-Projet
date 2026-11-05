@@ -8,7 +8,7 @@ namespace services {
 
 FSM::FSM(int hz)
     : m_running(false),
-      m_hz(hz > 0 ? hz : 100000),
+      m_hz(hz > 0 ? hz : picar::constants::DEFAULT_HZ),
       m_event_pipe("/tmp/peripherals.sock"),
       m_ipc_handler("fsm.conf", "/tmp/fsm.sock") {}
 
@@ -48,7 +48,7 @@ bool FSM::init() {
     m_auto_start_delay      = m_ipc_handler.get_float("AUTO_START_DELAY", m_auto_start_delay);
     m_avoid_side            = m_ipc_handler.get_float("AVOID_SIDE", m_avoid_side);
     m_predictive_brake_gain = m_ipc_handler.get_float("PREDICTIVE_BRAKE_GAIN", m_predictive_brake_gain);
-    m_hz = std::clamp(static_cast<int>(m_ipc_handler.get_float("HZ", static_cast<float>(m_hz))), 10, 100000);
+    m_hz = std::clamp(static_cast<int>(m_ipc_handler.get_float("HZ", static_cast<float>(m_hz))), 10, 2000);
 
     m_navigator.init(m_line_kp, m_line_kd, m_straight_cruise_speed, m_min_curve_speed, m_max_acceleration);
 
@@ -111,6 +111,12 @@ void FSM::run() {
         // 5. Navigation & State Machine Step
         bool start_triggered = m_event_pipe.check_start_trigger() ||
             (m_auto_start_delay > 0.0f && loop_count >= static_cast<uint64_t>(m_auto_start_delay * m_hz));
+
+        if (start_triggered && (m_current_state == shared::fsm::MachineStates::Failure ||
+                                m_current_state == shared::fsm::MachineStates::Stopped)) {
+            m_navigator.reset_controllers();
+            transition_to(shared::fsm::MachineStates::Armed);
+        }
 
         FsmNavOutput nav_out = m_navigator.step(m_current_state, dt, current_dist_cm, line_darkness,
                                                 start_triggered, m_avoid_side, m_obstacle_stop_dist_cm,
@@ -192,7 +198,7 @@ bool FSM::apply_config_key(const std::string& key, float value) {
         return true;
     }
     if (key == "HZ") {
-        m_hz = std::clamp(static_cast<int>(value), 10, 100000);
+        m_hz = std::clamp(static_cast<int>(value), 10, 2000);
         m_ipc_handler.set_float("HZ", static_cast<float>(m_hz));
         return true;
     }

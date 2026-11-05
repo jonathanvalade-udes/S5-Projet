@@ -13,7 +13,7 @@ namespace services {
 
 class FSM {
 public:
-    explicit FSM(int hz = 100000);
+    explicit FSM(int hz = picar::constants::DEFAULT_HZ);
     ~FSM();
 
     bool init();
@@ -28,7 +28,7 @@ private:
     void transition_to(shared::fsm::MachineStates new_state);
 
     std::atomic<bool> m_running{false};
-    int m_hz{100000};
+    int m_hz{picar::constants::DEFAULT_HZ};
     shared::fsm::MachineStates m_current_state{shared::fsm::MachineStates::Init};
 
     // Kinematic & control parameters
@@ -40,8 +40,8 @@ private:
     float m_line_kd{picar::constants::DEFAULT_LINE_KD};
     float m_obstacle_stop_dist_cm{picar::constants::DEFAULT_OBSTACLE_STOP_DIST_CM};
     float m_reverse_speed{picar::constants::DEFAULT_REVERSE_SPEED};
-    float m_auto_start_delay{0.0f};
-    float m_avoid_side{1.0f};
+    float m_auto_start_delay{picar::constants::DEFAULT_AUTO_START_DELAY};
+    float m_avoid_side{picar::constants::DEFAULT_AVOID_SIDE};
     float m_predictive_brake_gain{picar::constants::DEFAULT_PREDICTIVE_BRAKE_GAIN};
 
     FsmNavigator m_navigator;

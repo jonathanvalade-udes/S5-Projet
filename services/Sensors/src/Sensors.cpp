@@ -8,7 +8,7 @@ namespace services {
 
 Sensors::Sensors(int hz, int trig, int echo) 
     : m_running(false),
-      m_hz(hz > 0 ? hz : 100000),
+      m_hz(hz > 0 ? hz : picar::constants::DEFAULT_HZ),
       m_trig_pin(trig),
       m_echo_pin(echo),
       m_filter_alpha(0.25f),
@@ -31,7 +31,7 @@ bool Sensors::init() {
         return false;
     }
 
-    m_hz = std::clamp(static_cast<int>(m_ipc_handler.get_float("HZ", static_cast<float>(m_hz))), 10, 100000);
+    m_hz = std::clamp(static_cast<int>(m_ipc_handler.get_float("HZ", static_cast<float>(m_hz))), 10, 2000);
     m_trig_pin = static_cast<int>(m_ipc_handler.get_float("TRIG_PIN", static_cast<float>(m_trig_pin)));
     m_echo_pin = static_cast<int>(m_ipc_handler.get_float("ECHO_PIN", static_cast<float>(m_echo_pin)));
     m_filter_alpha = m_ipc_handler.get_float("FILTER_ALPHA", m_filter_alpha);
@@ -115,7 +115,7 @@ void Sensors::stop() {
 
 bool Sensors::apply_config_key(const std::string& key, float value) {
     if (key == "HZ") {
-        m_hz = std::clamp(static_cast<int>(value), 10, 100000);
+        m_hz = std::clamp(static_cast<int>(value), 10, 2000);
         m_ipc_handler.set_float("HZ", static_cast<float>(m_hz));
         return true;
     }
