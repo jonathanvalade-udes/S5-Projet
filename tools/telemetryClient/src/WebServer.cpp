@@ -103,6 +103,10 @@ void WebServer::server_loop() {
             continue;
         }
 
+        // Désactiver l'algorithme de Nagle pour un transfert immédiat à latence zéro
+        int nodelay = 1;
+        setsockopt(client_fd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay));
+
         // Rendre non-bloquant ou timeout
         struct timeval tv;
         tv.tv_sec = 2;
@@ -152,16 +156,29 @@ void WebServer::handle_http_request(int client_fd, const std::string& request) {
             }
             send_response(client_fd, 200, "application/json", st);
             close(client_fd);
+        } else if (path == "/api/telemetry") {
+            std::string telem;
+            {
+                std::lock_guard<std::mutex> lock(m_last_state_mutex);
+                telem = m_last_telemetry_json;
+            }
+            send_response(client_fd, 200, "application/json", telem);
+            close(client_fd);
         } else if (path == "/api/stream") {
-            // Configuration du flux Server-Sent Events (SSE)
+            // Configuration du flux Server-Sent Events (SSE) direct sans mise en tampon
             std::string sse_hdr = 
                 "HTTP/1.1 200 OK\r\n"
-                "Content-Type: text/event-stream\r\n"
-                "Cache-Control: no-cache\r\n"
+                "Content-Type: text/event-stream; charset=utf-8\r\n"
+                "Cache-Control: no-cache, no-transform\r\n"
                 "Connection: keep-alive\r\n"
+                "X-Accel-Buffering: no\r\n"
                 "Access-Control-Allow-Origin: *\r\n\r\n";
 
-            send(client_fd, sse_hdr.data(), sse_hdr.size(), 0);
+            int send_flags = 0;
+#if defined(MSG_NOSIGNAL)
+            send_flags |= MSG_NOSIGNAL;
+#endif
+            send(client_fd, sse_hdr.data(), sse_hdr.size(), send_flags);
 
             // Envoi immédiat du dernier état
             std::string init_data;
@@ -170,7 +187,16 @@ void WebServer::handle_http_request(int client_fd, const std::string& request) {
                 init_data = "event: status\ndata: " + m_last_status_json + "\n\n"
                           + "event: telemetry\ndata: " + m_last_telemetry_json + "\n\n";
             }
-            send(client_fd, init_data.data(), init_data.size(), 0);
+            send(client_fd, init_data.data(), init_data.size(), send_flags);
+
+            // Rendre le socket SSE strictement NON-BLOQUANT et TCP_NODELAY
+            int nd = 1;
+            setsockopt(client_fd, IPPROTO_TCP, TCP_NODELAY, &nd, sizeof(nd));
+
+            int flags = fcntl(client_fd, F_GETFL, 0);
+            if (flags >= 0) {
+                fcntl(client_fd, F_SETFL, flags | O_NONBLOCK);
+            }
 
             // Conserver le socket ouvert dans la liste SSE
             {
@@ -188,6 +214,27 @@ void WebServer::handle_http_request(int client_fd, const std::string& request) {
         std::string body;
         if (body_pos != std::string::npos) {
             body = request.substr(body_pos + 4);
+        }
+
+        // Vérification de Content-Length pour s'assurer que le corps est complet
+        size_t cl_pos = request.find("Content-Length:");
+        if (cl_pos == std::string::npos) {
+            cl_pos = request.find("content-length:");
+        }
+        if (cl_pos != std::string::npos) {
+            size_t cl_end = request.find("\r\n", cl_pos);
+            if (cl_end != std::string::npos) {
+                std::string cl_str = request.substr(cl_pos + 15, cl_end - (cl_pos + 15));
+                try {
+                    size_t expected_len = std::stoul(cl_str);
+                    while (body.size() < expected_len) {
+                        char extra[512];
+                        ssize_t ex = recv(client_fd, extra, sizeof(extra), 0);
+                        if (ex <= 0) break;
+                        body.append(extra, ex);
+                    }
+                } catch (...) {}
+            }
         }
 
         // Nettoyage éventuel (suppression retours à la ligne ou quotes)
@@ -244,7 +291,51 @@ void WebServer::send_response(int client_fd, int status_code, const std::string&
     ss << body;
 
     std::string resp = ss.str();
-    send(client_fd, resp.data(), resp.size(), 0);
+    int flags = 0;
+#if defined(MSG_NOSIGNAL)
+    flags |= MSG_NOSIGNAL;
+#endif
+    send(client_fd, resp.data(), resp.size(), flags);
+}
+
+enum class SseStatus {
+    Delivered,
+    Congested, // Buffer plein mais 0 octet envoyé : client conservé, trame sautée sans bloquer le RT
+    Disconnected
+};
+
+static SseStatus send_sse_message(int cfd, const std::string& message) {
+    size_t total = 0;
+    const char* ptr = message.data();
+    size_t len = message.size();
+
+    while (total < len) {
+        int flags = 0;
+#if defined(MSG_NOSIGNAL)
+        flags |= MSG_NOSIGNAL;
+#endif
+#if defined(MSG_DONTWAIT)
+        flags |= MSG_DONTWAIT;
+#endif
+        ssize_t sent = send(cfd, ptr + total, len - total, flags);
+        if (sent > 0) {
+            total += static_cast<size_t>(sent);
+        } else if (sent < 0) {
+            if (errno == EINTR) continue;
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                // Buffer plein : si aucun octet n'est encore parti, abandonner proprement la trame pour ce client
+                if (total == 0) {
+                    return SseStatus::Congested;
+                }
+                // Si une partie a déjà été écrite, le message SSE est corrompu : on déconnecte le client
+                return SseStatus::Disconnected;
+            }
+            return SseStatus::Disconnected;
+        } else {
+            return SseStatus::Disconnected;
+        }
+    }
+    return SseStatus::Delivered;
 }
 
 void WebServer::broadcast_telemetry(const std::string& json_data) {
@@ -259,12 +350,8 @@ void WebServer::broadcast_telemetry(const std::string& json_data) {
     std::vector<int> active_clients;
 
     for (int cfd : m_sse_clients) {
-        int flags = 0;
-#if defined(MSG_NOSIGNAL)
-        flags |= MSG_NOSIGNAL;
-#endif
-        ssize_t sent = send(cfd, message.data(), message.size(), flags);
-        if (sent > 0) {
+        SseStatus status = send_sse_message(cfd, message);
+        if (status == SseStatus::Delivered || status == SseStatus::Congested) {
             active_clients.push_back(cfd);
         } else {
             close(cfd);
@@ -294,12 +381,8 @@ void WebServer::broadcast_status(bool robot_connected, const std::string& robot_
     std::vector<int> active_clients;
 
     for (int cfd : m_sse_clients) {
-        int flags = 0;
-#if defined(MSG_NOSIGNAL)
-        flags |= MSG_NOSIGNAL;
-#endif
-        ssize_t sent = send(cfd, message.data(), message.size(), flags);
-        if (sent > 0) {
+        SseStatus status = send_sse_message(cfd, message);
+        if (status == SseStatus::Delivered || status == SseStatus::Congested) {
             active_clients.push_back(cfd);
         } else {
             close(cfd);

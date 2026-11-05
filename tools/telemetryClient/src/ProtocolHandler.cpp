@@ -6,9 +6,14 @@
 #include <chrono>
 #include <cstring>
 
+#include <cmath>
+
 namespace telemetry {
 
-ProtocolHandler::ProtocolHandler() = default;
+ProtocolHandler::ProtocolHandler() {
+    m_rx_buffer.resize(4096, 0);
+}
+
 ProtocolHandler::~ProtocolHandler() = default;
 
 bool ProtocolHandler::perform_handshake(TcpClient& client, uint16_t seq_num) {
@@ -82,14 +87,41 @@ bool ProtocolHandler::read_telemetry_packet(TcpClient& client, shared::car::CarT
     shared::headers::PacketHeader hdr{};
     std::memcpy(&hdr, hdr_raw, HEADER_SIZE);
 
+    // Validation stricte de l'en-tête pour éviter toute corruption ou fuite mémoire
+    uint8_t type_val = static_cast<uint8_t>(hdr.type);
+    if (type_val < 0x01 || type_val > 0x03) {
+        std::cerr << "[ProtocolHandler] En-tête corrompu : type invalide (0x" 
+                  << std::hex << static_cast<int>(type_val) << std::dec << "). Déconnexion pour resynchronisation." << std::endl;
+        client.disconnect();
+        return false;
+    }
+
+    if (hdr.payloadLength > 4096 || (hdr.payloadLength % 4 != 0)) {
+        std::cerr << "[ProtocolHandler] En-tête corrompu : payloadLength invalide (" 
+                  << hdr.payloadLength << "). Déconnexion pour resynchronisation." << std::endl;
+        client.disconnect();
+        return false;
+    }
+
     bool has_crc = (hdr.headerFlag & shared::headers::flags::CRC_ENABLED) != 0;
     size_t remaining_len = hdr.payloadLength + (has_crc ? sizeof(shared::crc::PacketCRC) : 0);
+    size_t total_pkt_len = HEADER_SIZE + remaining_len;
 
-    // 2. Lire le payload restant et le CRC
-    std::vector<uint8_t> full_pkt(HEADER_SIZE + remaining_len);
-    std::memcpy(full_pkt.data(), hdr_raw, HEADER_SIZE);
+    if (total_pkt_len > 4096) {
+        std::cerr << "[ProtocolHandler] Taille de paquet excessive (" << total_pkt_len << " octets). Déconnexion." << std::endl;
+        client.disconnect();
+        return false;
+    }
 
-    if (!client.receive_exact(full_pkt.data() + HEADER_SIZE, remaining_len, timeout_ms)) {
+    // 2. Utilisation du buffer réutilisable préalloué
+    if (m_rx_buffer.size() < total_pkt_len) {
+        m_rx_buffer.resize(4096, 0);
+    }
+    std::memcpy(m_rx_buffer.data(), hdr_raw, HEADER_SIZE);
+
+    if (!client.receive_exact(m_rx_buffer.data() + HEADER_SIZE, remaining_len, timeout_ms)) {
+        std::cerr << "[ProtocolHandler] Échec de réception du payload (" << remaining_len << " octets). Déconnexion pour resynchronisation." << std::endl;
+        client.disconnect();
         return false;
     }
 
@@ -98,19 +130,21 @@ bool ProtocolHandler::read_telemetry_packet(TcpClient& client, shared::car::CarT
     std::vector<uint8_t> payload;
     uint32_t packet_crc = 0;
 
-    if (!shared::headers::deserializePacket(full_pkt.data(), full_pkt.size(), decoded_hdr, payload, packet_crc)) {
-        std::cerr << "[ProtocolHandler] Erreur de désérialisation ou rejet CRC du paquet de télémétrie." << std::endl;
+    if (!shared::headers::deserializePacket(m_rx_buffer.data(), total_pkt_len, decoded_hdr, payload, packet_crc)) {
+        std::cerr << "[ProtocolHandler] Erreur de désérialisation ou rejet CRC du paquet. Déconnexion pour resynchronisation." << std::endl;
+        client.disconnect();
         return false;
     }
 
     if (decoded_hdr.type != shared::headers::HeadersType::Telemetry) {
-        // Paquet non télémétrique (ex: réponse de commande ou log)
+        // Paquet non télémétrique (ex: Pong keep-alive reçu et absorbé)
         return false;
     }
 
     if (payload.size() < sizeof(shared::car::CarTelemetry)) {
         std::cerr << "[ProtocolHandler] Taille de payload de télémétrie insuffisante (" << payload.size() 
-                  << " vs attendu " << sizeof(shared::car::CarTelemetry) << ")" << std::endl;
+                  << " vs attendu " << sizeof(shared::car::CarTelemetry) << "). Déconnexion." << std::endl;
+        client.disconnect();
         return false;
     }
 
@@ -178,6 +212,13 @@ std::string ProtocolHandler::fsm_state_to_string(shared::fsm::MachineStates stat
     }
 }
 
+static inline float safe_float(float val, float fallback = 0.0f) {
+    if (std::isnan(val) || std::isinf(val)) {
+        return fallback;
+    }
+    return val;
+}
+
 std::string ProtocolHandler::telemetry_to_json(const shared::car::CarTelemetry& telem, uint16_t seq_num) {
     auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
@@ -198,8 +239,8 @@ std::string ProtocolHandler::telemetry_to_json(const shared::car::CarTelemetry& 
     // Sensors
     ss << "\"sensors\":{";
     ss << "\"ultrasonic\":{";
-    ss << "\"raw_dist_cm\":" << telem.sensors.ultrasonicSensor.rawDistanceCm << ",";
-    ss << "\"calc_dist_cm\":" << telem.sensors.ultrasonicSensor.calculatedDistance << ",";
+    ss << "\"raw_dist_cm\":" << safe_float(telem.sensors.ultrasonicSensor.rawDistanceCm) << ",";
+    ss << "\"calc_dist_cm\":" << safe_float(telem.sensors.ultrasonicSensor.calculatedDistance) << ",";
     ss << "\"flags\":" << telem.sensors.ultrasonicSensor.flags;
     ss << "},";
     ss << "\"line_follower\":{";
@@ -209,8 +250,8 @@ std::string ProtocolHandler::telemetry_to_json(const shared::car::CarTelemetry& 
         const auto& s = telem.sensors.lineFollower.sensorsData[i];
         ss << "{";
         ss << "\"raw\":" << s.rawADCValue << ",";
-        ss << "\"normalized\":" << s.normalizedValue << ",";
-        ss << "\"corrector\":" << s.correctorValue;
+        ss << "\"normalized\":" << safe_float(s.normalizedValue) << ",";
+        ss << "\"corrector\":" << safe_float(s.correctorValue);
         ss << "}" << (i < 4 ? "," : "");
     }
     ss << "]";
@@ -220,18 +261,18 @@ std::string ProtocolHandler::telemetry_to_json(const shared::car::CarTelemetry& 
     // Motors & Steering
     ss << "\"motors\":{";
     ss << "\"left\":{";
-    ss << "\"target_throttle\":" << telem.motors.leftMotor.normalizedMotorThrottleTargetted << ",";
-    ss << "\"applied_throttle\":" << telem.motors.leftMotor.normalizedMotorThrottleApplied << ",";
+    ss << "\"target_throttle\":" << safe_float(telem.motors.leftMotor.normalizedMotorThrottleTargetted) << ",";
+    ss << "\"applied_throttle\":" << safe_float(telem.motors.leftMotor.normalizedMotorThrottleApplied) << ",";
     ss << "\"encoder\":" << telem.motors.leftMotor.motorEncoder;
     ss << "},";
     ss << "\"right\":{";
-    ss << "\"target_throttle\":" << telem.motors.rightMotor.normalizedMotorThrottleTargetted << ",";
-    ss << "\"applied_throttle\":" << telem.motors.rightMotor.normalizedMotorThrottleApplied << ",";
+    ss << "\"target_throttle\":" << safe_float(telem.motors.rightMotor.normalizedMotorThrottleTargetted) << ",";
+    ss << "\"applied_throttle\":" << safe_float(telem.motors.rightMotor.normalizedMotorThrottleApplied) << ",";
     ss << "\"encoder\":" << telem.motors.rightMotor.motorEncoder;
     ss << "},";
     ss << "\"steering\":{";
-    ss << "\"target_angle\":" << telem.motors.steeringServo.normalizedTargettedAngle << ",";
-    ss << "\"current_angle\":" << telem.motors.steeringServo.normalizedCurrentAngle;
+    ss << "\"target_angle\":" << safe_float(telem.motors.steeringServo.normalizedTargettedAngle) << ",";
+    ss << "\"current_angle\":" << safe_float(telem.motors.steeringServo.normalizedCurrentAngle);
     ss << "}";
     ss << "},";
 

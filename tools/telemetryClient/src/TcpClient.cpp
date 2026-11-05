@@ -11,6 +11,8 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <poll.h>
+#include <chrono>
+#include <algorithm>
 
 namespace telemetry {
 
@@ -135,15 +137,44 @@ bool TcpClient::receive_exact(uint8_t* buffer, size_t length, int timeout_ms) {
         return false;
     }
 
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
     size_t total_received = 0;
+
     while (total_received < length) {
+        int remaining_ms = 0;
+        if (timeout_ms > 0) {
+            auto now = std::chrono::steady_clock::now();
+            if (now >= deadline) {
+                if (total_received > 0) {
+                    std::cerr << "[TcpClient] Timeout après lecture partielle (" 
+                              << total_received << "/" << length << " octets). Déconnexion pour resynchronisation." << std::endl;
+                    disconnect();
+                }
+                return false;
+            }
+            remaining_ms = static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count());
+            if (remaining_ms <= 0) remaining_ms = 1;
+        }
+
         struct pollfd pfd{};
         pfd.fd = m_socket_fd;
         pfd.events = POLLIN;
 
-        int poll_res = poll(&pfd, 1, timeout_ms);
-        if (poll_res <= 0) {
-            return false; // Timeout ou interruption
+        int poll_res = poll(&pfd, 1, (timeout_ms > 0 ? remaining_ms : -1));
+        if (poll_res < 0) {
+            if (errno == EINTR) continue;
+            std::cerr << "[TcpClient] Erreur poll (" << strerror(errno) << ")." << std::endl;
+            disconnect();
+            return false;
+        }
+
+        if (poll_res == 0) {
+            if (total_received > 0) {
+                std::cerr << "[TcpClient] Timeout après lecture partielle (" 
+                          << total_received << "/" << length << " octets). Déconnexion pour resynchronisation." << std::endl;
+                disconnect();
+            }
+            return false;
         }
 
         if (pfd.revents & (POLLERR | POLLHUP | POLLNVAL)) {
@@ -153,7 +184,13 @@ bool TcpClient::receive_exact(uint8_t* buffer, size_t length, int timeout_ms) {
         }
 
         ssize_t rec = recv(m_socket_fd, buffer + total_received, length - total_received, 0);
-        if (rec <= 0) {
+        if (rec < 0) {
+            if (errno == EINTR) continue;
+            std::cerr << "[TcpClient] Erreur de lecture sur le socket (" << strerror(errno) << ")." << std::endl;
+            disconnect();
+            return false;
+        }
+        if (rec == 0) {
             std::cerr << "[TcpClient] Connexion interrompue par le serveur." << std::endl;
             disconnect();
             return false;

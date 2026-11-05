@@ -85,14 +85,18 @@ void TelemetryClient::process_pending_commands() {
 }
 
 void TelemetryClient::tcp_worker_loop() {
-    auto last_ping_time = std::chrono::steady_clock::now();
+    auto last_activity_time = std::chrono::steady_clock::now();
+    auto last_broadcast_time = std::chrono::steady_clock::now();
+    constexpr auto MIN_BROADCAST_INTERVAL = std::chrono::milliseconds(16); // ~60 Hz
 
     while (m_running.load()) {
         // 1. Tenter la connexion si non connecté
         if (!m_tcp.is_connected()) {
-            m_robot_connected.store(false);
-            if (m_config.enable_web) {
-                m_web.broadcast_status(false, m_config.robot_ip, m_config.robot_port);
+            if (m_robot_connected.load()) {
+                m_robot_connected.store(false);
+                if (m_config.enable_web) {
+                    m_web.broadcast_status(false, m_config.robot_ip, m_config.robot_port);
+                }
             }
 
             std::cout << "[TelemetryClient] Tentative de connexion vers " 
@@ -118,30 +122,43 @@ void TelemetryClient::tcp_worker_loop() {
             if (m_config.enable_web) {
                 m_web.broadcast_status(true, m_config.robot_ip, m_config.robot_port);
             }
-            last_ping_time = std::chrono::steady_clock::now();
+            last_activity_time = std::chrono::steady_clock::now();
+            last_broadcast_time = last_activity_time;
         }
 
         // 3. Envoyer les commandes en attente
         process_pending_commands();
 
-        // 4. Recevoir le prochain paquet de télémétrie
+        // 4. Recevoir le prochain paquet de télémétrie (bloquant max 200ms)
         shared::car::CarTelemetry telem{};
         uint16_t seq = 0;
         bool ok = m_proto.read_telemetry_packet(m_tcp, telem, seq, 200);
 
+        auto now = std::chrono::steady_clock::now();
+
         if (ok) {
-            // Conversion en JSON et diffusion Web
+            last_activity_time = now;
+            // Diffusion Web SSE régulée à ~60 Hz avec la dernière trame fraîche
             if (m_config.enable_web) {
-                std::string json_str = ProtocolHandler::telemetry_to_json(telem, seq);
-                m_web.broadcast_telemetry(json_str);
+                if (now - last_broadcast_time >= MIN_BROADCAST_INTERVAL) {
+                    std::string json_str = ProtocolHandler::telemetry_to_json(telem, seq);
+                    m_web.broadcast_telemetry(json_str);
+                    last_broadcast_time = now;
+                }
             }
+        } else if (!m_tcp.is_connected()) {
+            // Déconnexion détectée pendant la lecture
+            m_robot_connected.store(false);
+            if (m_config.enable_web) {
+                m_web.broadcast_status(false, m_config.robot_ip, m_config.robot_port);
+            }
+            continue;
         }
 
-        // 5. Keep-alive périodique si aucun flux ou régulier (toutes les 3s)
-        auto now = std::chrono::steady_clock::now();
-        if (std::chrono::duration_cast<std::chrono::seconds>(now - last_ping_time).count() >= 3) {
+        // 5. Keep-alive intelligent : n'envoyer un Ping que si AUCUN paquet n'a été reçu depuis 3 secondes
+        if (m_tcp.is_connected() && std::chrono::duration_cast<std::chrono::seconds>(now - last_activity_time).count() >= 3) {
             m_proto.send_ping(m_tcp, m_cmd_seq++);
-            last_ping_time = now;
+            last_activity_time = now;
         }
     }
 }

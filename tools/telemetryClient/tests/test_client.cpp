@@ -8,6 +8,7 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <poll.h>
+#include <limits>
 
 #include "TcpClient.hpp"
 #include "ProtocolHandler.hpp"
@@ -68,8 +69,8 @@ void mock_telemetry_server(std::atomic<bool>& server_running, std::atomic<bool>&
     pong_hdr.payloadLength = sizeof(pong_id);
 
     auto pong_pkt = shared::headers::serializePacket(pong_hdr, reinterpret_cast<const uint8_t*>(&pong_id), sizeof(pong_id));
-    assert(send(cfd, pong_pkt.data(), pong_pkt.size(), 0) == static_cast<ssize_t>(pong_pkt.size()));
     handshake_done.store(true);
+    assert(send(cfd, pong_pkt.data(), pong_pkt.size(), 0) == static_cast<ssize_t>(pong_pkt.size()));
 
     // 3. Envoi d'une trame de télémétrie
     shared::car::CarTelemetry telem{};
@@ -141,12 +142,51 @@ int main() {
     assert(json_str.find("\"calc_dist_cm\":37.50") != std::string::npos);
     std::cout << "  ✓ Génération du flux JSON pour le dashboard Web validée." << std::endl;
 
+    // Test conversion JSON avec valeurs NaN et Inf (sécurité RFC 8259)
+    shared::car::CarTelemetry nan_telem = received_telem;
+    nan_telem.sensors.ultrasonicSensor.calculatedDistance = std::numeric_limits<float>::quiet_NaN();
+    nan_telem.sensors.ultrasonicSensor.rawDistanceCm = std::numeric_limits<float>::infinity();
+    std::string nan_json = telemetry::ProtocolHandler::telemetry_to_json(nan_telem, 43);
+    assert(nan_json.find("nan") == std::string::npos && nan_json.find("NaN") == std::string::npos);
+    assert(nan_json.find("inf") == std::string::npos && nan_json.find("Infinity") == std::string::npos);
+    assert(nan_json.find("\"calc_dist_cm\":0.00") != std::string::npos);
+    std::cout << "  ✓ Protection contre les valeurs NaN / Inf dans le flux JSON validée." << std::endl;
+
     // Test envoi de commande
     assert(proto.send_command(client, "trigger_start", 200));
     std::cout << "  ✓ Transmission de commande avec padding multiple de 4 et CRC validée." << std::endl;
 
     if (srv_thread.joinable()) {
         srv_thread.join();
+    }
+
+    // Test WebServer diffusion non-bloquante avec SSE et route /api/telemetry
+    {
+        telemetry::WebServer web(8999, "web");
+        assert(web.start());
+        web.broadcast_telemetry("{\"test\":1}");
+        web.broadcast_status(true, "127.0.0.1", 91);
+
+        // Connexion client HTTP pour tester /api/telemetry
+        int s = socket(AF_INET, SOCK_STREAM, 0);
+        struct sockaddr_in srv{};
+        srv.sin_family = AF_INET;
+        srv.sin_addr.s_addr = inet_addr("127.0.0.1");
+        srv.sin_port = htons(8999);
+        assert(connect(s, (struct sockaddr*)&srv, sizeof(srv)) == 0);
+        std::string req = "GET /api/telemetry HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
+        send(s, req.data(), req.size(), 0);
+        char buf[512];
+        ssize_t n = recv(s, buf, sizeof(buf) - 1, 0);
+        assert(n > 0);
+        buf[n] = '\0';
+        std::string resp(buf);
+        assert(resp.find("200 OK") != std::string::npos);
+        assert(resp.find("{\"test\":1}") != std::string::npos);
+        close(s);
+
+        web.stop();
+        std::cout << "  ✓ WebServer diffusion SSE non-bloquante et endpoint /api/telemetry validés." << std::endl;
     }
 
     std::cout << "\n✅ Tous les tests unitaires et d'intégration du TelemetryClient sont VALIDÉS !" << std::endl;
