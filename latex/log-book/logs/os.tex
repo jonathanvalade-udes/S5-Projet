@@ -1,0 +1,18 @@
+\subsection{Présentation}
+Afin d'accélérer la vitesse d'acquision et apprendre d'avantage sur l'utilisation de Linux en système embarqué,
+La proposition suivante utiliserait un système minimal \textit{Buildroot} pour pouvoir compiler et déployer une distribution Linux.
+
+\subsection{PID 1}
+Contrairement à \textit{Raspberry PI OS}, le système d'exploitation aurait un programme d'entré minimal sous forme de service.
+Celui-ci serait responsable d'attacher les bibliothèques et les pilotes nécessaires pour les sous services approuvé au point 1.
+De plus, Ce service doit démarrer les services et s'assurer de redémarrer ceux ayant terminés.
+En aucun cas, le \textbf{ServiceManager} doit sortir de la boucle. Autrement, le kernel Linux lancera une erreur et obligera un redémarrage du système.
+
+\subsection{Paquets ajoutés}
+\begin{description}
+    \item[wpa\_supplicant] Permettera d'utiliser le module WIFI et intéragir avec le pilote
+    \item[libgpiod2] Communiquera avec le pilote responsable des \textit{GPIO}
+    \item[i2c-dev] Intéragira avec les contrôlleurs I$^2$C pour les moteurs et le capteur de ligne.
+    \item[sh] Exécution des scripts \textit{shell} dans le terminal  
+    \item[dropbear] Établiera une communication SSH avec l'utilisation du port Ethernet statique ou du WIFI 
+\end{description}
