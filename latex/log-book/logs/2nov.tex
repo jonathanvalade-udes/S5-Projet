@@ -1,0 +1,10 @@
+\subsection{Avancements}
+Au cours de la journée, l'architecture embarquée a majoritairement été commencé pour retrouver les services principaux.
+L'utilisation d'un seul \textit{Shared memory region} pour représenter le robot pour tout les services à été choisi pour des questions de simplicités.
+Le système Ethernet permettait d'entrer sur le robot de manière fiable et efficace.
+En utilisant un utilitaire \textit{SCP} pour envoyer les services à des fins de déverminage, l'exécution de \textit{scripts} permettant d'automatiser le deployement de l'environement de test permettait de rapidement avoir un prototype testable.
+Il a été possible d'évaluer des constantes pour calibrer le capteur de ligne afin que le robot puisse normaliser et moyenner, par le biais d'algorithmes, une ligne.
+
+\subsection{Modification}
+Afin de démarrer le robot et le WIFI sans à avoir à utiliser le cable ethernet, la proposition décrit l'utilisation de deux boutons et l'intégration d'un service \textbf{PeripheralsService} pour détecter l'intéraction avec les boutons et exécuter l'action suivant lesdites intéractions.
+De plus, un système sonore permetterais de confirmer que le robot est démarré ou bien de connaître l'état des systèmes (WIFI ouvert/fermé, démarrage de la séquence, etc.)

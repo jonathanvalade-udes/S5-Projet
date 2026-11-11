@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.28 (TeX Live 2025/Debian) (preloaded format=pdflatex 2026.8.13)  11 NOV 2026 11:05
+This is pdfTeX, Version 3.141592653-2.6-1.40.28 (TeX Live 2025/Debian) (preloaded format=pdflatex 2026.8.13)  11 NOV 2026 11:21
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -1512,17 +1512,17 @@ Overfull \hbox (7.37906pt too wide) in paragraph at lines 20--21
  []
 
 )
-<signatures/marc.png, id=66, 632.3625pt x 173.64874pt>
+<signatures/marc.png, id=86, 632.3625pt x 173.64874pt>
 File: signatures/marc.png Graphic file (type png)
 <use signatures/marc.png>
 Package pdftex.def Info: signatures/marc.png  used on input line 78.
 (pdftex.def)             Requested size: 155.41745pt x 42.67912pt.
-<signatures/je.png, id=68, 632.3625pt x 173.64874pt>
+<signatures/je.png, id=88, 632.3625pt x 173.64874pt>
 File: signatures/je.png Graphic file (type png)
 <use signatures/je.png>
 Package pdftex.def Info: signatures/je.png  used on input line 78.
 (pdftex.def)             Requested size: 155.41745pt x 42.67912pt.
-<signatures/tiroux.png, id=69, 632.3625pt x 173.64874pt>
+<signatures/tiroux.png, id=89, 632.3625pt x 173.64874pt>
 File: signatures/tiroux.png Graphic file (type png)
 <use signatures/tiroux.png>
 Package pdftex.def Info: signatures/tiroux.png  used on input line 78.
@@ -1545,7 +1545,20 @@ File: signatures/tiroux.png Graphic file (type png)
 <use signatures/tiroux.png>
 Package pdftex.def Info: signatures/tiroux.png  used on input line 80.
 (pdftex.def)             Requested size: 155.41745pt x 42.67912pt.
- [3] [4] (./main.aux (./figures.aux) (./entry.aux)
+ [3] [4] (./logs/2nov.tex)
+File: signatures/marc.png Graphic file (type png)
+<use signatures/marc.png>
+Package pdftex.def Info: signatures/marc.png  used on input line 82.
+(pdftex.def)             Requested size: 155.41745pt x 42.67912pt.
+File: signatures/je.png Graphic file (type png)
+<use signatures/je.png>
+Package pdftex.def Info: signatures/je.png  used on input line 82.
+(pdftex.def)             Requested size: 155.41745pt x 42.67912pt.
+File: signatures/tiroux.png Graphic file (type png)
+<use signatures/tiroux.png>
+Package pdftex.def Info: signatures/tiroux.png  used on input line 82.
+(pdftex.def)             Requested size: 155.41745pt x 42.67912pt.
+ [5] (./main.aux (./figures.aux) (./entry.aux)
 Package cleveref Info: loaded `french' language definitions on input line 15.
 )
  ***********
@@ -1558,24 +1571,24 @@ LaTeX Font Warning: Size substitutions with differences
 (Font)              up to 1.28pt have occurred.
 
 Package rerunfilecheck Info: File `main.out' has not changed.
-(rerunfilecheck)             Checksum: 3E0BEA48F07038648FAA96FD5EA8B6D2;1182.
+(rerunfilecheck)             Checksum: F767F79A2287D53FAB58FD4B2295A363;1706.
 Package logreq Info: Writing requests to 'main.run.xml'.
 \openout1 = `main.run.xml'.
 
  ) 
 Here is how much of TeX's memory you used:
- 34909 strings out of 467533
- 664248 string characters out of 5422138
- 1513057 words of memory out of 5000000
- 63337 multiletter control sequences out of 15000+600000
+ 34926 strings out of 467533
+ 664503 string characters out of 5422138
+ 1513060 words of memory out of 5000000
+ 63346 multiletter control sequences out of 15000+600000
  639974 words of font info for 72 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
  90i,7n,98p,1242b,2099s stack positions out of 10000i,1000n,20000p,200000b,200000s
 </usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmr8.pfb></usr/share/texmf/fonts/type1/public/cm-super/sfbx1095.pfb></usr/share/texmf/fonts/type1/public/cm-super/sfbx1440.pfb></usr/share/texmf/fonts/type1/public/cm-super/sfbx1728.pfb></usr/share/texmf/fonts/type1/public/cm-super/sfrm1095.pfb></usr/share/texmf/fonts/type1/public/cm-super/sfrm1200.pfb></usr/share/texmf/fonts/type1/public/cm-super/sfrm1728.pfb></usr/share/texmf/fonts/type1/public/cm-super/sfti1095.pfb>
-Output written on main.pdf (7 pages, 192443 bytes).
+Output written on main.pdf (8 pages, 196683 bytes).
 PDF statistics:
- 136 PDF objects out of 1000 (max. 8388607)
- 103 compressed objects within 2 object streams
- 16 named destinations out of 1000 (max. 500000)
- 88 words of extra memory for PDF output out of 10000 (max. 10000000)
+ 161 PDF objects out of 1000 (max. 8388607)
+ 127 compressed objects within 2 object streams
+ 21 named destinations out of 1000 (max. 500000)
+ 120 words of extra memory for PDF output out of 10000 (max. 10000000)
 
