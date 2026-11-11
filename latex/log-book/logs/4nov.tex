@@ -1,0 +1,11 @@
+\subsection{Capteurs de distance (Jonathan Valade)}
+Le service responsable des capteurs possède maintenant la capacité de détecter des objets en utilisant le capteur ultrason.
+Celui-ci utilise les broches \textit{GPIO} pour envoyer une ondes et attendre la réception.
+
+\subsection{Shared memory Region (Marc-Antoine Gauthier)}
+Au lieu d'utiliser une seule région partagée entre les services, le système utilise maintenant une région par service pour le transfert sans délai d'information.
+Cela allège les changements de contextes et isole correctement les fichiers mémoires des services.
+
+\subsection{Fichiers de configuration}
+Afin de ne pas à avoir à recompiler les services lors d'un changement de paramètre, le système prend en charge l'utilisation de fichiers pour configurer le service.
+Modifiable par le service de \textit{Télémétrie} via des \textbf{POSIX sockets}, cette amélioration simplifiera les modifications externes par le biais d'un utilitaire externe.
