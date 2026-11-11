@@ -1,0 +1,37 @@
+\ProvidesPackage{toolbox}
+%~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~%
+%                      Required Packages for the Module                      %
+%~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~%
+\RequirePackage{xcolor}   % Addition of colors and color boxes
+
+
+%~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~%
+%                       Useful Functions for Team Work                       %
+%~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~%
+% The following should NEVER apprear in a final document.
+%
+% Their goal is to provide a better team work experience by adding
+% colorful/highlighted keywords into the pdfdocument.
+
+
+%% Usage (These function require a user input)
+% \todo{Something to be done...}
+% \note{A note to communicate to your team}
+% \fixme{An error you wish to higlight for later fix}
+
+\newcommand{\todo}[1]{\colorbox{red}{\textbf{TODO}:}#1\newline}
+\newcommand{\note}[1]{\colorbox{orange}{\textbf{NOTE}:}#1}
+\newcommand{\fixme}[1]{\colorbox{purple}{\textbf{FIXME}:}#1}
+
+%% Usage (These function DON'T require a user input)
+% \addref   --> Displays "addref" highlighted in magenta
+% \addcite  --> Displays "addcite" highlighted in magenta
+% \addimg   --> Displays "addimg" highlighted in cyan
+\newcommand{\addref}{\colorbox{magenta}{Add ref}}
+\newcommand{\addcite}{\colorbox{magenta}{Add Citation}}
+\newcommand{\addimg}{\colorbox{cyan}{Add Image!}}
+
+%~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~%
+%                              Custom Functions                              %
+%~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~%
+\newcommand{\dg}{\textdegree}

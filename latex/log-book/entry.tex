@@ -1,0 +1,64 @@
+\newcommand{\ui}{Adopté à l'unanimité}
+\newcommand{\maj}{Adopté à la majorité}
+\newcommand{\bat}{Battue}
+
+
+\newcommand{\signmarc}{
+    \vspace{2em}
+    \hfill % Pushes the minipage to the right side of the document
+    \begin{minipage}{6cm}
+        \centering
+        \includegraphics[height=1.5cm]{signatures/marc} \\
+        \vspace{-0.4cm}
+        \rule{\linewidth}{0.4pt} \\
+        \makebox[\linewidth][l]{Marc-Antoine Gauthier}
+    \end{minipage}
+}
+
+\newcommand{\signje}{
+    \vspace{2em}
+    \hfill % Pushes the minipage to the right side of the document
+    \begin{minipage}{6cm}
+        \centering
+        \includegraphics[height=1.5cm]{signatures/je} \\
+        \vspace{-0.4cm}
+        \rule{\linewidth}{0.4pt} \\
+        \makebox[\linewidth][l]{Jérémie Perron}
+    \end{minipage}
+}
+
+\newcommand{\signtiroux}{
+    \vspace{2em}
+    \hfill % Pushes the minipage to the right side of the document
+    \begin{minipage}{6cm}
+        \centering
+        \includegraphics[height=1.5cm]{signatures/tiroux} \\
+        \vspace{-0.4cm}
+        \rule{\linewidth}{0.4pt} \\
+        \makebox[\linewidth][l]{Tristan Faucher}
+    \end{minipage}
+}
+
+\newcommand{\entry}[6]{
+    \section{#1}
+    \vspace{-0.5em} 
+    \noindent\rule{\textwidth}{0.4pt}
+    
+    \vspace{0.75em}
+    \noindent
+    \begin{tabular}{@{}ll@{}}
+        \textbf{Date de décision :} & #2 \\
+        \textbf{Proposé par :}      & #3 \\
+        \textbf{Statut :}           & #4 \\
+        \textbf{Absences :}         & #5 \\
+    \end{tabular}
+    
+    \vspace{1.5em} 
+    \input{#6}
+
+    \subsection{Signatures}
+        \signmarc
+        \signje
+        \signtiroux
+    \newpage
+}

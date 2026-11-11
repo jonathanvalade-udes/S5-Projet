@@ -1,0 +1,80 @@
+\documentclass[a4paper, 11pt]{article}
+
+\usepackage{document}
+\usepackage{titlepage}
+\usepackage{mathrsfs}
+\usepackage{numprint}
+
+% Optional packages and tools (Uncomment to your needs)
+\usepackage{toolbox}
+\usepackage{listings}
+
+
+
+% Image insertion template:
+%
+% \begin{figure}[h!]
+%     \centering
+%     \includegraphics[width=0.45\textwidth]{/path/to/image.jpg}
+%     \caption{Caption Text}
+%     \label{fig: A Relateble Name}
+% \end{figure}
+
+
+% To add a bibliography, first make sure that your file
+% is named "bibliography.bib" and then uncomment the
+% following line.
+%
+% \addbibresource{references.bib}
+
+
+% Comment to compile links and references...
+%\nofiles
+
+%~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~%
+%                           Title Page Parameters                            %
+%~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~%
+\institution{Université de Sherbrooke}
+\faculty{Faculté de génie}
+\department{Département de génie électrique et génie informatique}
+\title{LOG BOOK}
+\class{Projet S5}
+\classnb{}
+\author{
+  \addtolength{\tabcolsep}{-0.4em}
+  \begin{tabular}{rcl} % Ajouter des auteurs au besoin
+    Équipe 1
+  \end{tabular}
+}
+\teacher{
+  Domingo Palao Munoz
+}
+\location{Sherbrooke}
+\date{23 septembre 2026}
+
+%~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~%
+%                               Begin Document                               %
+%~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~%
+
+%% WARNING!!!
+% This template requires you to compile using xelatex or lualatex!
+
+
+
+\begin{document}
+\include{figures}
+\include{entry}
+\maketitle
+\pagenumbering{roman}
+\newpage
+\tableofcontents
+\newpage
+\listoftables
+\listoffigures
+\newpage
+\pagenumbering{arabic}
+
+% BEGIN OF SECTIONS
+\entry{Architecture du système embarqué}{15 octobre 2026}{Marc-Antoine}{\ui}{Aucune}{logs/architecture1}
+
+\end{document}

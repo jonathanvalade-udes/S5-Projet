@@ -1,0 +1,22 @@
+\subsection{Présentation}
+
+Afin de répondre au besoin du projet, une architecture proposant l'utilisation de plusieurs services représentant une composante unitaire du robot serait souhaitable.
+De ce fait, l'architecture serait basée sur 4 services principaux.
+
+\begin{description}
+    \item[FSM] Permet de prendre des décisions sur l'exécution autonome du robot en fonction des données entrantes.
+    \item[Sensors] Permet l'acquisition des données sensoriels du robots
+    \item[Motors] Envoie les commandes aux moteurs propulseurs ainsi qu'au servo moteur pour la direction
+    \item[Telemetry] Récupère les informations du robot et envoient une copie à un client externe via \textit{TCP}. Permet aussi la réception des commandes.   
+\end{description}
+
+Au besoin, l'utilisation d'une architecture de ce type permetterait d'ajouter sans enjeux réels d'autres services pour les besoins du projet.
+
+\subsection{Communication}
+En ce qui concerne l'envoie de données entre les services, l'architecture prévoie utiliser deux types de communication IPC
+
+\begin{description}
+    \item[POSIX Socket] Envoie des commandes entre les services.
+    \item[Shared Memory Region] Partage des données télémétriques et commandes ayant une contrainte de temps (\textit{Real Time Processing})  
+\end{description}
+
