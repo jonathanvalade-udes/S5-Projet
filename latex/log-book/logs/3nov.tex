@@ -1,0 +1,13 @@
+\subsection{Avancements}
+Le développement d'aujourd'hui a majoritairement de finaliser les services de base et de commencer la télémétrie.
+Des outils à utilisation secondaire au projet ont aussi été réalisé avec l'assistance d'intelligence artificielle pour alégé le temps de développement.
+Le service responsable des décisions devrait fonctionner au plus tard demain lorsque les simulations GoDot seront terminé.
+
+\subsection{Simulation GoDot (Raphaël Bonhomme)}
+La simulation présentait quelques imperfection vis-à-vis l'accélération dans les courbes.
+De plus, le robot simulé allait beaucoup trop droit comparativement à celui utilisé dans le projet.
+Une solution simple a été d'implémenter des imperfections dans la simulation afin que le modèle subisse des forces extérieurs pour nuire au mouvement.
+
+\subsection{Modification}
+Pour optimiser le déploiement des constantes entre la simulation et GoDot, la proposition suivante recommande d'utiliser un service tier qui connectera GoDot et les services embarqués.
+L'objectif est de placer les services dans un container \textit{Docker} afin de connecter localement GoDot aux services.
