@@ -1,170 +1,119 @@
 class_name NetworkClient
 extends Node
 
-## Client Réseau Hybride (TCP Direct & WebSocket) pour FastDrink sous Godot 4.
-## - Port 9000 : TCP Direct natif ultra-rapide vers le pont C++ (picar_sim_bridge).
-## - Port 8765 : WebSocket hérité pour tests Python.
+## Lien TCP entre Godot et SimBridge (le pont C++), sur le port 9000.
+##
+## Protocole : des lignes de JSON terminées par "\n", dans les deux sens, à 50 Hz.
+##   Godot -> SimBridge : l'état des capteurs (data_to_send).
+##   SimBridge -> Godot : les commandes du FSM (data_received). Seules "velocity" et "direction" sont lues.
+## Godot envoie aussi deux commandes texte : "trigger_start" (départ) et "emergency_stop" (arrêt d'urgence).
 
 signal connected_to_server
 signal disconnected_from_server
 signal connection_error(message: String)
 
-var tcp_socket: StreamPeerTCP = StreamPeerTCP.new()
-var ws_socket: WebSocketPeer = WebSocketPeer.new()
+const SEND_INTERVAL: float = 0.02  # une trame toutes les 20 ms (50 Hz)
 
-var is_tcp_mode: bool = true
+## true quand la connexion TCP est établie
 var is_connected: bool = false
-var send_timer: float = 0.0
-const SEND_INTERVAL: float = 0.02  # 50 Hz (20 ms)
 
-var rx_buffer: String = ""
-
+## Mis à jour par les capteurs (voir picar_raycast.gd, line_follower_raycast.gd, ball_monitor.gd) puis envoyé tel quel.
+## Les cinq clés sont lues par SimBridge (utils/simple_json.hpp).
 var data_to_send: Dictionary = {
-	"velocity": 0.0,
-	"line_follower": [0, 0, 0, 0, 0],
-	"line_analog": [0.0, 0.0, 0.0, 0.0, 0.0],  # noirceur continue par capteur [0,1] (voir line_follower_raycast.gd)
-	"ball_dropped": false,
-	"distance": 100.0
+	"velocity": 0.0,                           # vitesse commandée, renvoyée telle quelle (m/s)
+	"distance": 100.0,                         # ultrason (cm)
+	"line_follower": [0, 0, 0, 0, 0],          # capteurs de ligne : 0 ou 1 (le FSM lit plutôt line_analog)
+	"line_analog": [0.0, 0.0, 0.0, 0.0, 0.0],  # noirceur de chaque capteur, de 0 (blanc) à 1 (noir)
+	"ball_dropped": false,                     # la bille est tombée
 }
 
+## Dernières commandes reçues du FSM
 var data_received: Dictionary = {
-	"velocity": 0.0,
-	"direction": 0.0,
-	"distance": 100.0,
-	"line_follower": [0, 0, 0, 0, 0]
+	"velocity": 0.0,   # vitesse voulue (m/s)
+	"direction": 0.0,  # braquage voulu, de -1 à +1 (fraction du braquage maximal de 48°)
 }
 
+var _socket: StreamPeerTCP = StreamPeerTCP.new()
+var _rx_buffer: String = ""   # texte reçu, en attente d'un "\n"
+var _send_timer: float = 0.0
+
+## Ouvre la connexion (asynchrone) : connected_to_server est émis une fois établie.
 func connect_to_server(ip: String, port: int = 9000) -> void:
-	rx_buffer = ""
+	_rx_buffer = ""
 	is_connected = false
-	
-	if port == 8765:
-		is_tcp_mode = false
-		ws_socket = WebSocketPeer.new()
-		var url = "ws://" + ip + ":" + str(port)
-		var err = ws_socket.connect_to_url(url)
-		if err != OK:
-			emit_signal("connection_error", "Impossible d'initier WebSocket vers " + url)
-			return
-		print("[NetworkClient] Connexion WebSocket vers: ", url)
-	else:
-		is_tcp_mode = true
-		tcp_socket = StreamPeerTCP.new()
-		var err = tcp_socket.connect_to_host(ip, port)
-		if err != OK:
-			emit_signal("connection_error", "Impossible d'initier TCP vers " + ip + ":" + str(port))
-			return
-		print("[NetworkClient] Connexion TCP directe vers: ", ip, ":", port)
+	_socket = StreamPeerTCP.new()
+	if _socket.connect_to_host(ip, port) != OK:
+		emit_signal("connection_error", "Impossible d'initier TCP vers " + ip + ":" + str(port))
+		return
+	print("[NetworkClient] Connexion TCP vers ", ip, ":", port)
 
 func disconnect_from_server() -> void:
-	if is_tcp_mode:
-		if tcp_socket:
-			tcp_socket.disconnect_from_host()
-	else:
-		if is_connected or ws_socket.get_ready_state() == WebSocketPeer.STATE_CONNECTING:
-			ws_socket.close(1000, "Déconnexion manuelle")
-	
+	_socket.disconnect_from_host()
 	is_connected = false
 	emit_signal("disconnected_from_server")
 	print("[NetworkClient] Déconnecté du serveur.")
 
-## Envoie l'ordre de top départ au FSM via le pont C++ (/tmp/peripherals.sock)
+## Ordre de départ : SimBridge le transmet au FSM
 func send_trigger_start() -> void:
-	if is_tcp_mode and tcp_socket and is_connected:
-		var cmd = "trigger_start\n"
-		tcp_socket.put_data(cmd.to_utf8_buffer())
-		print("[NetworkClient TCP] Commande 'trigger_start' envoyée au pont C++.")
-	elif not is_tcp_mode and ws_socket and is_connected:
-		var payload = JSON.stringify({"command": "trigger_start"}).to_utf8_buffer()
-		ws_socket.send(payload)
-		print("[NetworkClient WS] Commande 'trigger_start' envoyée.")
+	_send_text_command("trigger_start")
 
-## Envoie un arrêt d'urgence au robot / simulateur
+## Arrêt d'urgence : SimBridge le transmet au FSM et aux moteurs
 func send_emergency_stop() -> void:
-	if is_tcp_mode and tcp_socket and is_connected:
-		var cmd = "emergency_stop\n"
-		tcp_socket.put_data(cmd.to_utf8_buffer())
-		print("[NetworkClient TCP] Commande 'emergency_stop' envoyée.")
-	elif not is_tcp_mode and ws_socket and is_connected:
-		var payload = JSON.stringify({"command": "emergency_stop"}).to_utf8_buffer()
-		ws_socket.send(payload)
-		print("[NetworkClient WS] Commande 'emergency_stop' envoyée.")
+	_send_text_command("emergency_stop")
+
+func _send_text_command(command: String) -> void:
+	if not is_connected:
+		return
+	_socket.put_data((command + "\n").to_utf8_buffer())
+	print("[NetworkClient] Commande '", command, "' envoyée.")
 
 func _process(delta: float) -> void:
-	if is_tcp_mode:
-		_process_tcp(delta)
-	else:
-		_process_websocket(delta)
-
-func _process_tcp(delta: float) -> void:
-	tcp_socket.poll()
-	var status = tcp_socket.get_status()
-	
+	_socket.poll()
+	var status := _socket.get_status()
 	if status == StreamPeerTCP.STATUS_CONNECTED:
 		if not is_connected:
-			is_connected = true
-			emit_signal("connected_to_server")
-			print("[NetworkClient TCP] Connecté avec succès au pont C++ !")
-			# Envoyer immédiatement une première trame dès la connexion
-			var init_line = JSON.stringify(data_to_send) + "\n"
-			tcp_socket.put_data(init_line.to_utf8_buffer())
-			send_timer = 0.0
-		
-		# Lecture du flux TCP brut et découpage ligne par ligne (\n)
-		var available = tcp_socket.get_available_bytes()
-		if available > 0:
-			var chunk = tcp_socket.get_utf8_string(available)
-			rx_buffer += chunk
-			
-			while rx_buffer.find("\n") != -1:
-				var nl_idx = rx_buffer.find("\n")
-				var line = rx_buffer.substr(0, nl_idx).strip_edges()
-				rx_buffer = rx_buffer.substr(nl_idx + 1)
-				
-				if not line.is_empty():
-					var parsed = JSON.parse_string(line)
-					if parsed is Dictionary:
-						for k in parsed.keys():
-							data_received[k] = parsed[k]
-		
-		# Envoi périodique à 50 Hz
-		send_timer += delta
-		if send_timer >= SEND_INTERVAL:
-			send_timer = 0.0
-			var line_to_send = JSON.stringify(data_to_send) + "\n"
-			tcp_socket.put_data(line_to_send.to_utf8_buffer())
-			
+			_on_connected()
+		_read_commands()
+		_send_state_periodically(delta)
 	elif status == StreamPeerTCP.STATUS_ERROR or status == StreamPeerTCP.STATUS_NONE:
 		if is_connected:
 			is_connected = false
 			emit_signal("disconnected_from_server")
-			print("[NetworkClient TCP] Connexion TCP fermée.")
+			print("[NetworkClient] Connexion TCP fermée.")
 
-func _process_websocket(delta: float) -> void:
-	ws_socket.poll()
-	var state = ws_socket.get_ready_state()
-	
-	if state == WebSocketPeer.STATE_OPEN:
-		if not is_connected:
-			is_connected = true
-			emit_signal("connected_to_server")
-			print("[NetworkClient WS] Connecté avec succès au serveur WebSocket !")
-		
-		while ws_socket.get_available_packet_count() > 0:
-			var raw_packet = ws_socket.get_packet().get_string_from_utf8()
-			var parsed = JSON.parse_string(raw_packet)
-			if parsed is Dictionary:
-				for k in parsed.keys():
-					data_received[k] = parsed[k]
-		
-		send_timer += delta
-		if send_timer >= SEND_INTERVAL:
-			send_timer = 0.0
-			var payload = JSON.stringify(data_to_send).to_utf8_buffer()
-			ws_socket.send(payload)
-			
-	elif state == WebSocketPeer.STATE_CLOSED or state == WebSocketPeer.STATE_CLOSING:
-		if is_connected:
-			is_connected = false
-			emit_signal("disconnected_from_server")
-			print("[NetworkClient WS] Connexion WebSocket fermée.")
+func _on_connected() -> void:
+	is_connected = true
+	emit_signal("connected_to_server")
+	print("[NetworkClient] Connecté à SimBridge.")
+	_send_state()  # première trame tout de suite, sans attendre 20 ms
+	_send_timer = 0.0
+
+## Lit ce qui est arrivé et traite chaque ligne complète
+func _read_commands() -> void:
+	var available := _socket.get_available_bytes()
+	if available <= 0:
+		return
+	_rx_buffer += _socket.get_utf8_string(available)
+	var newline := _rx_buffer.find("\n")
+	while newline != -1:
+		_merge_json_line(_rx_buffer.substr(0, newline).strip_edges())
+		_rx_buffer = _rx_buffer.substr(newline + 1)
+		newline = _rx_buffer.find("\n")
+
+## Copie les clés d'une ligne JSON dans data_received (les lignes vides ou invalides sont ignorées)
+func _merge_json_line(line: String) -> void:
+	if line.is_empty():
+		return
+	var parsed = JSON.parse_string(line)
+	if parsed is Dictionary:
+		for key in parsed.keys():
+			data_received[key] = parsed[key]
+
+func _send_state_periodically(delta: float) -> void:
+	_send_timer += delta
+	if _send_timer >= SEND_INTERVAL:
+		_send_timer = 0.0
+		_send_state()
+
+func _send_state() -> void:
+	_socket.put_data((JSON.stringify(data_to_send) + "\n").to_utf8_buffer())

@@ -2,10 +2,14 @@ class_name Realism
 extends RefCounted
 
 # Imperfections du vrai PiCar, pour que la simulation ne soit pas "trop parfaite".
+#
+# Classe statique (rien à instancier) : tout se lit avec Realism.enabled, Realism.p[...] et les fonctions ci-dessous.
+# Utilisée par picar_raycast.gd (direction, moteur, latence, chocs, ultrason) et line_follower_raycast.gd (capteurs de ligne).
+#
 # - Désactivé par défaut : la voiture est parfaite. Touche R en jeu : active / désactive toutes les imperfections.
 # - Variables d'environnement (utile pour les tests) : REALISM=1 pour démarrer avec les imperfections, REALISM_SEED=<entier>,
 #   et REALISM_<NOM_EN_MAJUSCULES>=<valeur> pour changer un réglage (ex. REALISM_STEER_BIAS_DEG=6).
-# Le tirage aléatoire est initialisé avec une graine fixe : deux lancements donnent le même parcours.
+# - Le hasard est tiré avec une graine fixe (12345 par défaut) : deux lancements donnent le même parcours.
 
 static var enabled: bool = false
 static var rng: RandomNumberGenerator = RandomNumberGenerator.new()

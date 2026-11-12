@@ -1,134 +1,131 @@
 extends RigidBody3D
 
-# Détection et dynamique physique de la bille (chargement FastDrink)
-# Coupelle conique : Rayon R = 20 mm (0.020 m), profondeur h = 1.50 mm (0.0015 m)
-# Pente conique : tan(theta) = h / R = 0.075 -> Accélération critique a_max = g * tan(theta) = 0.735 m/s²
-# Bille : diamètre 25 mm (rayon 12.5 mm), masse m = 0.065 kg
+## La bille posée dans la coupelle conique du PiCar (chargement FastDrink).
+##
+## Le but du projet : transporter la bille sans qu'elle sorte de la coupelle. Elle sort quand l'accélération de la
+## voiture dépasse a_max = g * tan(theta) = 9,81 * 0,075 = 0,735 m/s² (pente tan(theta) = profondeur / rayon).
+##
+## Le nœud est un RigidBody3D GELÉ : le moteur physique de Godot ne le déplace pas. Ce script calcule lui-même le
+## mouvement de la bille dans le repère de la voiture, qui n'est pas un repère inertiel. À chaque pas de physique :
+##   - la voiture accélère, donc la bille subit une force d'inertie opposée (en avant/arrière, et en virage) ;
+##   - la gravité la rappelle vers le centre de la coupelle (pente constante d'un cône) ;
+##   - un amortissement de roulement la ralentit ;
+##   - une bille qui roule sans glisser n'accélère qu'aux 5/7 de ce que donnerait la force seule.
+## Elle tombe dès qu'elle s'éloigne de plus de 20 mm du centre. main.gd lit is_dropped et max_accel_observed (mode Optuna).
 
-const CUP_RADIUS: float = 0.020        # 20 mm
-const CUP_DEPTH: float = 0.0015        # 1.5 mm
-const SLOPE_TAN: float = 0.075         # h / R
+const PiCar = preload("res://scripts/picar_raycast.gd")
+
+const CUP_RADIUS: float = 0.020        # rayon de la coupelle (m)
+const CUP_DEPTH: float = 0.0015        # profondeur de la coupelle (m)
+const SLOPE_TAN: float = CUP_DEPTH / CUP_RADIUS
+const BALL_RADIUS: float = 0.0125      # rayon de la bille (m) : sert à l'animation de roulement
 const G: float = 9.81
-const MASS: float = 0.065
-const DAMPING: float = 6.0             # Coefficient d'amortissement de roulement
+const DAMPING: float = 6.0             # amortissement de roulement (1/s). Hypothèse : rien n'a été mesuré sur la vraie bille.
+const ROLLING_FACTOR: float = 5.0 / 7.0
 
 var is_dropped: bool = false
-var ball_rel_pos: Vector2 = Vector2.ZERO   # Position locale (x, z) dans le plan de la coupelle
-var ball_rel_vel: Vector2 = Vector2.ZERO   # Vitesse locale (vx, vz)
+var max_accel_observed: float = 0.0    # accélération totale maximale vue par la bille (m/s²)
 
-var last_speed: float = 0.0
-var has_last_speed: bool = false
-
-var fall_vel_y: float = 0.0            # Vitesse verticale de chute hors de la voiture
-var max_accel_observed: float = 0.0    # Accélération totale max observée (m/s²)
-
-# Position de repos au fond de la cuvette = position placée dans l'éditeur (repère local du PiCar).
-# Ne PAS la coder en dur : elle doit suivre la plaquette telle que positionnée dans la scène.
-var rest_pos: Vector3 = Vector3.ZERO
+var ball_rel_pos: Vector2 = Vector2.ZERO   # position (x, z) par rapport au centre de la coupelle (m)
+var ball_rel_vel: Vector2 = Vector2.ZERO   # vitesse (x, z) dans le repère de la voiture (m/s)
 
 var network: NetworkClient = null
-var sphere_mesh: Node3D = null
 
-signal ball_dropped_event(drop_position: Vector3)
+var _car: PiCar = null
+var _sphere_mesh: Node3D = null            # l'affichage de la bille
+var _rest_pos: Vector3 = Vector3.ZERO      # position de la bille au centre de la coupelle (repère de la voiture)
+var _last_speed: float = 0.0
+var _has_last_speed: bool = false
+var _fall_speed: float = 0.0               # vitesse verticale de chute, une fois la bille sortie (m/s)
 
-func _ready():
-	freeze = true  # Déplacement physique calculé dans le référentiel non-inertiel du véhicule
+func _ready() -> void:
+	freeze = true
 	network = get_node_or_null("/root/Main/NetworkClient")
-	sphere_mesh = get_node_or_null("CSGSphere3D")
-	rest_pos = position  # position de l'éditeur : centre de la cuvette
+	_car = get_parent() as PiCar
+	if _car == null:
+		push_error("ball_monitor.gd : la bille doit être un enfant direct du PiCar.")
+		set_physics_process(false)
+	_sphere_mesh = get_node_or_null("CSGSphere3D")
+	# Le centre de la coupelle est la position placée dans l'éditeur : ne pas la coder en dur,
+	# elle doit suivre la plaquette telle qu'elle est dans la scène.
+	_rest_pos = position
 
-func _physics_process(delta: float):
-	if network == null:
-		network = get_node_or_null("/root/Main/NetworkClient")
-	
+func _physics_process(delta: float) -> void:
 	if is_dropped:
-		# La bille est tombée : chute libre physique hors du véhicule vers le sol
-		fall_vel_y -= G * delta
-		position.y += fall_vel_y * delta
-		position.x += ball_rel_vel.x * delta
-		position.z += ball_rel_vel.y * delta
-		_notify_network(true)
+		_fall(delta)
 		return
 
-	# Lire la cinématique du PiCar depuis la télémesure
-	var rx_speed: float = 0.0
-	var rx_steer: float = 0.0
+	# La bille subit le mouvement RÉEL de la voiture (avec les imperfections du mode réaliste)
+	var speed := 0.0
+	var yaw_rate := 0.0
 	if network and network.is_connected:
-		rx_speed = network.data_received.get("velocity", 0.0)
-		rx_steer = network.data_received.get("direction", 0.0)
-	var steer_rad: float = rx_steer * deg_to_rad(48.0)
-	# La bille subit le mouvement RÉEL de la voiture (avec les imperfections du simulateur)
-	var car = get_parent()
-	if network and network.is_connected and car != null and "actual_speed" in car:
-		rx_speed = car.actual_speed
-		steer_rad = car.actual_steer_rad
+		speed = _car.actual_speed
+		yaw_rate = _car.actual_yaw_rate
+	if not _has_last_speed:
+		_last_speed = speed
+		_has_last_speed = true
 
-	# 1. Calcul des accélérations du véhicule (référentiel non-inertiel)
-	if not has_last_speed:
-		last_speed = rx_speed
-		has_last_speed = true
+	var dt: float = max(1e-4, delta)
+	var a_long: float = (speed - _last_speed) / dt  # accélération en avant ; > 0 pousse la bille vers l'arrière (+X)
+	_last_speed = speed
+	var a_lat: float = speed * yaw_rate             # accélération centripète ; la bille est poussée vers l'extérieur du virage (+Z)
 
-	var dt = max(1e-4, delta)
-	var a_long = (rx_speed - last_speed) / dt
-	last_speed = rx_speed
+	var a_total := sqrt(a_long * a_long + a_lat * a_lat)
+	max_accel_observed = max(max_accel_observed, a_total)
 
-	# Accélération centripète : a_centri = v * omega, dirigée vers l'extérieur du virage
-	var angular_vel = (rx_speed / 0.14) * tan(steer_rad)
-	var a_lat = rx_speed * angular_vel
+	# La position testée est celle du pas précédent : la bille tombe au pas suivant son franchissement du rebord
+	var dist_center := ball_rel_pos.length()
+	_integrate(a_long, a_lat, dist_center, dt)
+	if dist_center > CUP_RADIUS:
+		_drop()
+		return
+	_place_in_cup(dist_center)
+	_roll(dt)
+	_notify_network(false)
 
-	var a_tot = sqrt(a_long * a_long + a_lat * a_lat)
-	if a_tot > max_accel_observed:
-		max_accel_observed = a_tot
-
-	# 2. Forces d'inertie fictives dans le repère local du véhicule :
-	# Avancer = axe -X local => a_long > 0 pousse vers +X (arrière du véhicule)
-	# Virage à droite (steer > 0) => force centrifuge pousse vers +Z (extérieur gauche)
-	var f_inertie_x = a_long
-	var f_inertie_z = a_lat
-
-	# 3. Force de rappel de gravité vers le centre de la cuvette conique
-	var dist_center = ball_rel_pos.length()
-	var f_grav_x = 0.0
-	var f_grav_z = 0.0
+## Fait avancer la vitesse et la position de la bille d'un pas
+func _integrate(a_long: float, a_lat: float, dist_center: float, dt: float) -> void:
+	# Rappel de la gravité vers le centre (rien si la bille est déjà au centre, à 0,1 mm près)
+	var pull_x := 0.0
+	var pull_z := 0.0
 	if dist_center > 0.0001:
-		var dir = ball_rel_pos / dist_center
-		f_grav_x = -G * SLOPE_TAN * dir.x
-		f_grav_z = -G * SLOPE_TAN * dir.y
-
-	# 4. Amortissement visqueux de roulement
-	var f_damp_x = -DAMPING * ball_rel_vel.x
-	var f_damp_z = -DAMPING * ball_rel_vel.y
-
-	# 5. Équation du mouvement (accélération effective de roulement a = 5/7 * F/m)
-	var factor = 5.0 / 7.0
-	var acc_x = factor * (f_inertie_x + f_grav_x + f_damp_x)
-	var acc_z = factor * (f_inertie_z + f_grav_z + f_damp_z)
-
-	ball_rel_vel.x += acc_x * dt
-	ball_rel_vel.y += acc_z * dt
+		var toward_edge := ball_rel_pos / dist_center  # direction unitaire, du centre vers la bille
+		pull_x = -G * SLOPE_TAN * toward_edge.x
+		pull_z = -G * SLOPE_TAN * toward_edge.y
+	ball_rel_vel.x += _rolling_acceleration(a_long, pull_x, ball_rel_vel.x) * dt
+	ball_rel_vel.y += _rolling_acceleration(a_lat, pull_z, ball_rel_vel.y) * dt
 	ball_rel_pos.x += ball_rel_vel.x * dt
 	ball_rel_pos.y += ball_rel_vel.y * dt
 
-	# 6. Vérifier la condition de renversement (franchissement du rebord de la cuvette)
-	if dist_center > CUP_RADIUS:
-		is_dropped = true
-		fall_vel_y = 0.0
-		emit_signal("ball_dropped_event", global_position)
-		print("[ALERTE FastDrink] La bille est tombée ! Déversement du breuvage à: ", global_position)
-		_notify_network(true)
-		return
+## Accélération de roulement sur un axe : inertie + rappel de gravité + amortissement, réduits aux 5/7
+func _rolling_acceleration(inertia: float, gravity_pull: float, velocity: float) -> float:
+	return ROLLING_FACTOR * (inertia + gravity_pull - DAMPING * velocity)
 
-	# 7. Mise à jour de la position 3D dans la cuvette
-	var height_y = (dist_center / CUP_RADIUS) * CUP_DEPTH
-	position = rest_pos + Vector3(ball_rel_pos.x, height_y, ball_rel_pos.y)
+## La bille monte sur la pente de la coupelle quand elle s'éloigne du centre
+func _place_in_cup(dist_center: float) -> void:
+	var height := (dist_center / CUP_RADIUS) * CUP_DEPTH
+	position = _rest_pos + Vector3(ball_rel_pos.x, height, ball_rel_pos.y)
 
-	# 8. Animation de roulement de la bille sur elle-même
-	if sphere_mesh:
-		sphere_mesh.rotate_z(-ball_rel_vel.x * dt / 0.0125)
-		sphere_mesh.rotate_x(ball_rel_vel.y * dt / 0.0125)
+## Fait tourner l'affichage de la bille dans le sens de son déplacement
+func _roll(dt: float) -> void:
+	if _sphere_mesh:
+		_sphere_mesh.rotate_z(-ball_rel_vel.x * dt / BALL_RADIUS)
+		_sphere_mesh.rotate_x(ball_rel_vel.y * dt / BALL_RADIUS)
 
-	_notify_network(false)
+func _drop() -> void:
+	is_dropped = true
+	_fall_speed = 0.0
+	print("[ALERTE FastDrink] La bille est tombée ! Déversement du breuvage à: ", global_position)
+	_notify_network(true)
 
-func _notify_network(dropped_state: bool):
+## Chute libre hors de la voiture, avec la vitesse horizontale qu'avait la bille
+func _fall(delta: float) -> void:
+	_fall_speed -= G * delta
+	position.y += _fall_speed * delta
+	position.x += ball_rel_vel.x * delta
+	position.z += ball_rel_vel.y * delta
+	_notify_network(true)
+
+func _notify_network(dropped: bool) -> void:
 	if network and network.is_connected:
-		network.data_to_send["ball_dropped"] = dropped_state
+		network.data_to_send["ball_dropped"] = dropped
