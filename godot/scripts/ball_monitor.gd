@@ -1,10 +1,5 @@
 extends RigidBody3D
 
-# Détection et dynamique physique de la bille (chargement FastDrink)
-# Coupelle conique : Rayon R = 20 mm (0.020 m), profondeur h = 1.50 mm (0.0015 m)
-# Pente conique : tan(theta) = h / R = 0.075 -> Accélération critique a_max = g * tan(theta) = 0.735 m/s²
-# Bille : diamètre 25 mm (rayon 12.5 mm), masse m = 0.065 kg
-
 const CUP_RADIUS: float = 0.020        # 20 mm
 const CUP_DEPTH: float = 0.0015        # 1.5 mm
 const SLOPE_TAN: float = 0.075         # h / R
