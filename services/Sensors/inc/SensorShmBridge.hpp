@@ -18,7 +18,8 @@ public:
     float read_current_speed();
     void publish_telemetry(float filtered_dist, const float line_darkness[5],
                            const uint32_t raw_adc[5],
-                           bool has_line, int consecutive_us_errors);
+                           bool has_line, int consecutive_us_errors,
+                           const shared::sensors::SensorsConfig& config = {});
 
 private:
     std::unique_ptr<shared::services::memory::MemoryShareComponentServer> m_mem_server;

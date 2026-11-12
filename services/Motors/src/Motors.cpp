@@ -91,7 +91,12 @@ void Motors::run() {
         }
 
         // 5. Zero-copy publish to pub/sub SHM
-        m_shm_bridge.publish_telemetry(target_speed, target_steering);
+        shared::motors::MotorsConfig cfg{
+            m_steering_offset,
+            static_cast<float>(m_hz),
+            m_invert ? 1.0f : 0.0f
+        };
+        m_shm_bridge.publish_telemetry(target_speed, target_steering, cfg);
 
         // 6. 1 Hz status output
         loop_count++;

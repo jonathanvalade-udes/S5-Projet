@@ -52,7 +52,8 @@ void FsmShmBridge::reset_watchdog() {
 }
 
 void FsmShmBridge::publish_control_commands(float speed_pct, float steering_deg, bool emergency,
-                                           shared::fsm::MachineStates state, float steering_offset) {
+                                            shared::fsm::MachineStates state, float steering_offset,
+                                            const shared::fsm::FSMConfig& config) {
     if (m_cmd_pub && m_cmd_pub->isValid()) {
         shared::fsm::FsmCommandPayload cmd{};
         cmd.target_speed = speed_pct;
@@ -67,16 +68,18 @@ void FsmShmBridge::publish_control_commands(float speed_pct, float steering_deg,
         m_cmd_pub->publish(cmd);
     }
 
-    publish_fsm_telemetry(state);
+    publish_fsm_telemetry(state, config);
 }
 
-void FsmShmBridge::publish_fsm_telemetry(shared::fsm::MachineStates state) {
+void FsmShmBridge::publish_fsm_telemetry(shared::fsm::MachineStates state,
+                                         const shared::fsm::FSMConfig& config) {
     if (m_fsm_pub && m_fsm_pub->isValid()) {
         shared::fsm::FSMTelemetry telem{};
         telem.currentState = state;
         telem.requestedState = state;
         telem.flags = shared::fsm::flags::DISCOVERABLE;
         telem.errorCode = 0;
+        telem.config = config;
         m_fsm_pub->publish(telem);
     }
 }

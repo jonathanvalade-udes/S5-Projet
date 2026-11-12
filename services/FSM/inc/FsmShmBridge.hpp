@@ -23,8 +23,10 @@ public:
     void reset_watchdog();
 
     void publish_control_commands(float speed_pct, float steering_deg, bool emergency,
-                                 shared::fsm::MachineStates state, float steering_offset = 0.0f);
-    void publish_fsm_telemetry(shared::fsm::MachineStates state);
+                                 shared::fsm::MachineStates state, float steering_offset = 0.0f,
+                                 const shared::fsm::FSMConfig& config = {});
+    void publish_fsm_telemetry(shared::fsm::MachineStates state,
+                              const shared::fsm::FSMConfig& config = {});
 
     void emergency_stop_shm();
 

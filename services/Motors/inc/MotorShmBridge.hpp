@@ -18,7 +18,7 @@ public:
     bool init();
     bool read_fsm_command(float& speed, float& steer, bool& emergency, uint64_t& heartbeat);
     bool check_watchdog(uint64_t current_heartbeat, int max_misses);
-    void publish_telemetry(float target_speed, float target_steering);
+    void publish_telemetry(float target_speed, float target_steering, const shared::motors::MotorsConfig& config = {});
 
     int get_watchdog_misses() const { return m_watchdog_starvation_cycles; }
 

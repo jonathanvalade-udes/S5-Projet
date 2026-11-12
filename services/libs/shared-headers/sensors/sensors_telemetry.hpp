@@ -4,6 +4,7 @@
 
 #include "line_follower.hpp"
 #include "ultrasonic.hpp"
+#include "sensorsConfig.hpp"
 
 namespace shared::sensors{
 
@@ -23,5 +24,6 @@ namespace shared::sensors{
         ultrasonic::UltrasonicTelemetry ultrasonicSensor;
         uint16_t flags;
         uint16_t errorCode;
+        SensorsConfig config;
     };
 }

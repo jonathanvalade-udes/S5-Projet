@@ -42,7 +42,7 @@ bool MotorShmBridge::check_watchdog(uint64_t current_heartbeat, int max_misses) 
     return (m_watchdog_starvation_cycles > max_misses);
 }
 
-void MotorShmBridge::publish_telemetry(float target_speed, float target_steering) {
+void MotorShmBridge::publish_telemetry(float target_speed, float target_steering, const shared::motors::MotorsConfig& config) {
     if (m_mem_server && m_mem_server->isValid()) {
         shared::motors::MotorsComponentTelemetry telem{};
         telem.leftMotor.normalizedMotorThrottleApplied = target_speed / 100.0f;
@@ -53,6 +53,7 @@ void MotorShmBridge::publish_telemetry(float target_speed, float target_steering
         telem.steeringServo.flags = shared::servos::flags::RDY;
 
         telem.componentFlags = shared::motors::flags::component::DISCOVERABLE;
+        telem.config = config;
         m_mem_server->publish(telem);
     }
 

@@ -51,6 +51,7 @@ private:
 
     bool apply_config_key(const std::string& key, float value);
     void update_controllers();
+    shared::fsm::FSMConfig get_current_config() const;
 };
 
 } // namespace services

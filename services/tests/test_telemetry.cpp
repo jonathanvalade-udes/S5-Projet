@@ -191,6 +191,8 @@ void test_tcp_server_ping_pong_and_stream() {
 
     // Préparer des données de capteurs dans la SHM
     shared::services::memory::MemoryShareComponentServer sensor_pub("Sensors");
+    shared::services::memory::MemoryShareComponentServer motor_pub("Motors");
+    shared::services::memory::MemoryShareComponentServer fsm_telem_pub("FSM");
     shared::services::memory::MemoryShareComponentServer fsm_pub("FsmCommand");
 
     shared::sensors::SensorsTelemetry sensors_telem{};
@@ -198,7 +200,28 @@ void test_tcp_server_ping_pong_and_stream() {
     sensors_telem.ultrasonicSensor.rawDistanceCm = 55.0f;
     sensors_telem.lineFollower.sensorsData[2].normalizedValue = 1.0f;
     sensors_telem.flags = shared::sensors::flags::DISCOVERABLE;
+    sensors_telem.config.hz = 100.0f;
+    sensors_telem.config.filter_alpha = 0.25f;
+    sensors_telem.config.median_window = 5.0f;
     sensor_pub.publish(sensors_telem);
+
+    shared::motors::MotorsComponentTelemetry motors_telem{};
+    motors_telem.leftMotor.normalizedMotorThrottleApplied = 0.4f;
+    motors_telem.rightMotor.normalizedMotorThrottleApplied = 0.4f;
+    motors_telem.config.steering_offset = -5.0f;
+    motors_telem.config.hz = 100.0f;
+    motors_telem.config.invert = 0.0f;
+    motor_pub.publish(motors_telem);
+
+    shared::fsm::FSMTelemetry fsm_telem{};
+    fsm_telem.currentState = shared::fsm::MachineStates::LineFollowingForward;
+    fsm_telem.requestedState = shared::fsm::MachineStates::LineFollowingForward;
+    fsm_telem.flags = shared::fsm::flags::DISCOVERABLE;
+    fsm_telem.config.hz = 50.0f;
+    fsm_telem.config.straight_cruise_speed = 0.32f;
+    fsm_telem.config.avoidance.angle_1_deg = 45.0f;
+    fsm_telem.config.avoidance.time_1_s = 1.10f;
+    fsm_telem_pub.publish(fsm_telem);
 
     shared::fsm::FsmCommandPayload fsm_cmd{};
     fsm_cmd.target_speed = 40.0f;
@@ -322,6 +345,17 @@ void test_tcp_server_ping_pong_and_stream() {
         assert(approx_equal(received_car_telem.motors.leftMotor.normalizedMotorThrottleApplied, 0.4f));
         assert(received_car_telem.fsm.currentState == static_cast<shared::fsm::MachineStates>(3));
         assert((received_car_telem.services.flags & shared::services::flags::SOCKET_ENABLED) != 0);
+
+        // Validation des structures de configuration reçues
+        assert(approx_equal(received_car_telem.sensors.config.hz, 100.0f));
+        assert(approx_equal(received_car_telem.sensors.config.filter_alpha, 0.25f));
+        assert(approx_equal(received_car_telem.sensors.config.median_window, 5.0f));
+        assert(approx_equal(received_car_telem.motors.config.steering_offset, -5.0f));
+        assert(approx_equal(received_car_telem.motors.config.hz, 100.0f));
+        assert(approx_equal(received_car_telem.fsm.config.hz, 50.0f));
+        assert(approx_equal(received_car_telem.fsm.config.straight_cruise_speed, 0.32f));
+        assert(approx_equal(received_car_telem.fsm.config.avoidance.angle_1_deg, 45.0f));
+        assert(approx_equal(received_car_telem.fsm.config.avoidance.time_1_s, 1.10f));
 
         std::cout << "    [Frame " << frame + 1 << "] Seq=" << stream_hdr.seqNumber 
                   << " | Dist=" << received_car_telem.sensors.ultrasonicSensor.calculatedDistance << " cm"

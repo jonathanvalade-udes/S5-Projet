@@ -3,6 +3,7 @@
 #include "motor_states.hpp"
 #include "motor_telemetry.hpp"
 #include "servo/servo_telemetry.hpp"
+#include "motorsConfig.hpp"
 
 namespace shared::motors{
 
@@ -23,5 +24,6 @@ namespace shared::motors{
         servos::ServoTelemetry steeringServo; // Direction intégrée directement dans le composant Motors
         MotorStates state;
         uint16_t componentFlags;
+        MotorsConfig config;
     };
 }

@@ -186,7 +186,7 @@ void FSM::run() {
 
         // 7. Publish targets to SHM
         m_shm_bridge.publish_control_commands(motor_power_pct, nav_out.desired_steering,
-                                              nav_out.req_emergency, m_current_state);
+                                              nav_out.req_emergency, m_current_state, 0.0f, get_current_config());
 
         // 8. 1 Hz periodic log
         loop_count++;
@@ -284,6 +284,36 @@ bool FSM::apply_config_key(const std::string& key, float value) {
         return true;
     }
     return false;
+}
+
+shared::fsm::FSMConfig FSM::get_current_config() const {
+    shared::fsm::FSMConfig cfg{};
+    cfg.hz = static_cast<float>(m_hz);
+    cfg.max_acceleration = m_max_acceleration;
+    cfg.straight_cruise_speed = m_straight_cruise_speed;
+    cfg.max_power_pct = m_max_power_pct;
+    cfg.min_curve_speed = m_min_curve_speed;
+    cfg.curve_safety_factor = m_curve_safety_factor;
+    cfg.line_kp = m_line_kp;
+    cfg.line_kd = m_line_kd;
+    cfg.obstacle_stop_dist_cm = m_obstacle_stop_dist_cm;
+    cfg.reverse_speed = m_reverse_speed;
+    cfg.avoid_side = m_avoid_side;
+
+    cfg.avoidance.reverse_dist_m = m_avoid.reverse_dist_m;
+    cfg.avoidance.angle_1_deg = m_avoid.angle1_deg;
+    cfg.avoidance.time_1_s = m_avoid.time1_s;
+    cfg.avoidance.diag_time_s = m_avoid.diag_time_s;
+    cfg.avoidance.diag_speed = m_avoid.diag_speed;
+    cfg.avoidance.angle_2_deg = m_avoid.angle2_deg;
+    cfg.avoidance.time_2_s = m_avoid.time2_s;
+    cfg.avoidance.parallel_time_s = m_avoid.parallel_time_s;
+    cfg.avoidance.angle_3_deg = m_avoid.angle3_deg;
+    cfg.avoidance.time_3_s = m_avoid.time3_s;
+    cfg.avoidance.return_time_s = m_avoid.return_time_s;
+    cfg.avoidance.return_speed = m_avoid.return_speed;
+
+    return cfg;
 }
 
 } // namespace services

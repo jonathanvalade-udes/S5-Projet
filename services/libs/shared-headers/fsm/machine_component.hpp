@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include "machine_states.hpp"
+#include "fsmConfig.hpp"
 
 namespace shared::fsm{
     namespace flags {
@@ -25,5 +26,6 @@ namespace shared::fsm{
         MachineStates requestedState;
         uint16_t flags;
         uint32_t errorCode;
+        FSMConfig config;
     };
 }

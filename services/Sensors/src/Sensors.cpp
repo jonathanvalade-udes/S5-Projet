@@ -79,7 +79,12 @@ void Sensors::run() {
         float line_error = m_last_line_error;
 
         // 5. Publish to pub/sub SHM
-        m_shm_bridge.publish_telemetry(filtered_dist, line_darkness, raw_adc, has_line, m_acquisition.get_consecutive_us_errors());
+        shared::sensors::SensorsConfig cfg{
+            static_cast<float>(m_hz),
+            m_filter_alpha,
+            static_cast<float>(m_median_window)
+        };
+        m_shm_bridge.publish_telemetry(filtered_dist, line_darkness, raw_adc, has_line, m_acquisition.get_consecutive_us_errors(), cfg);
 
         // 7. 1 Hz periodic log
         loop_count++;
