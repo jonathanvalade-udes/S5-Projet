@@ -6,6 +6,8 @@
 #include "control/motion_profiler.hpp"
 #include "control/picar_constants.hpp"
 #include "ObstacleAvoidance.hpp"
+#include "VehicleModel.hpp"
+#include "SpeedPlanner.hpp"
 
 namespace services {
 
@@ -58,16 +60,24 @@ public:
     /// Plafonne la vitesse pour pouvoir s'arreter a obstacle_stop_dist_cm sans depasser a_max (v = sqrt(2*a*d)).
     float limit_approach_speed(float desired_v, float current_dist_cm, float obstacle_stop_dist_cm) const;
 
+    VehicleModel& get_vehicle_model() { return m_vehicle_model; }
+    const VehicleModel& get_vehicle_model() const { return m_vehicle_model; }
+    SpeedPlanner& get_speed_planner() { return m_speed_planner; }
+    const SpeedPlanner& get_speed_planner() const { return m_speed_planner; }
+
 private:
     std::unique_ptr<LineFollowerController> m_line_controller;
     std::unique_ptr<MotionProfiler> m_motion_profiler;
     ObstacleAvoidance m_obstacle_avoidance;
+    VehicleModel m_vehicle_model;
+    SpeedPlanner m_speed_planner;
 
     float m_cruise_speed{0.35f};
     float m_min_curve_speed{0.17f};
     float m_last_steer_degrees{0.0f};
     float m_state_timer{0.0f};
     float m_state_distance{0.0f};
+    float m_line_lost_timer{0.0f};
     bool m_course_finished{false};
 };
 

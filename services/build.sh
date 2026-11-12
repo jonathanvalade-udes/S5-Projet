@@ -107,7 +107,7 @@ if [[ "${EMBEDDED_MODE}" == true ]]; then
     # docker.exe (Windows) ne comprend pas les chemins /c/... de Git Bash : on lui donne le chemin au format Windows
     DOCKER_DIR="${SCRIPT_DIR}"
     command -v cygpath &>/dev/null && DOCKER_DIR="$(cygpath -m "${SCRIPT_DIR}")"
-    if ! command -v aarch64-linux-gnu-g++ &>/dev/null && [[ "${HOST_ARCH}" != "aarch64" && "${HOST_ARCH}" != "arm64" ]]; then
+    if ! command -v aarch64-linux-gnu-g++ &>/dev/null && ([[ "${HOST_ARCH}" != "aarch64" && "${HOST_ARCH}" != "arm64" ]] || [[ "$(uname -s)" != "Linux" ]]); then
         if command -v docker &>/dev/null && docker info &>/dev/null; then
             echo "==> Pas de toolchain aarch64 sur cette machine (${HOST_ARCH})."
             echo "==> Compilation des binaires ARM64 statiques dans Docker (linux/arm64, émulé si besoin : plus lent)..."

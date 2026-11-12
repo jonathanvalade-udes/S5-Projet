@@ -25,6 +25,43 @@ target_include_directories(test_filters PRIVATE
 target_link_libraries(test_filters PRIVATE Threads::Threads)
 add_test(NAME test_filters COMMAND test_filters)
 
+add_executable(test_line_estimator 
+    test_line_estimator.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../Sensors/src/LineEstimator.cpp
+)
+target_include_directories(test_line_estimator PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/.. 
+    ${CMAKE_CURRENT_SOURCE_DIR}/../libs/shared-headers
+    ${CMAKE_CURRENT_SOURCE_DIR}/../Sensors/inc
+)
+target_link_libraries(test_line_estimator PRIVATE Threads::Threads)
+add_test(NAME test_line_estimator COMMAND test_line_estimator)
+
+add_executable(test_motor_actuator 
+    test_motor_actuator.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../Motors/src/MotorActuator.cpp
+)
+target_include_directories(test_motor_actuator PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/.. 
+    ${CMAKE_CURRENT_SOURCE_DIR}/../libs/shared-headers
+    ${CMAKE_CURRENT_SOURCE_DIR}/../Motors/inc
+)
+target_link_libraries(test_motor_actuator PRIVATE Threads::Threads)
+add_test(NAME test_motor_actuator COMMAND test_motor_actuator)
+
+add_executable(test_vehicle_and_speed_planner 
+    test_vehicle_and_speed_planner.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../FSM/src/VehicleModel.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../FSM/src/SpeedPlanner.cpp
+)
+target_include_directories(test_vehicle_and_speed_planner PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/.. 
+    ${CMAKE_CURRENT_SOURCE_DIR}/../libs/shared-headers
+    ${CMAKE_CURRENT_SOURCE_DIR}/../FSM/inc
+)
+target_link_libraries(test_vehicle_and_speed_planner PRIVATE Threads::Threads)
+add_test(NAME test_vehicle_and_speed_planner COMMAND test_vehicle_and_speed_planner)
+
 add_executable(test_ipc test_ipc_services.cpp)
 target_include_directories(test_ipc PRIVATE 
     ${CMAKE_CURRENT_SOURCE_DIR}/.. 
@@ -112,6 +149,8 @@ add_executable(test_fsm_navigator
     test_fsm_navigator.cpp
     ../FSM/src/FsmNavigator.cpp
     ../FSM/src/ObstacleAvoidance.cpp
+    ../FSM/src/VehicleModel.cpp
+    ../FSM/src/SpeedPlanner.cpp
 )
 target_include_directories(test_fsm_navigator PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../FSM/inc

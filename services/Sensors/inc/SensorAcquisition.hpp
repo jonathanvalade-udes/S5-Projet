@@ -18,7 +18,7 @@ public:
                                float filter_alpha = 0.25f, size_t median_window = 5);
     ~SensorAcquisition() = default;
 
-    bool init();
+    bool init(bool require_hardware = false);
     void reset_pipeline(float initial_dist = 100.0f);
 
     void read_line(float darkness[5], uint8_t binarized[5], uint32_t raw_adc[5], bool& has_line, uint64_t loop_tick = 0, int hz = 100);

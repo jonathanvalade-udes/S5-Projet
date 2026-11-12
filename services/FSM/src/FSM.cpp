@@ -113,16 +113,30 @@ bool FSM::init() {
 }
 
 void FSM::run() {
-    const auto period = std::chrono::nanoseconds(1000000000LL / m_hz);
+    auto period = std::chrono::nanoseconds(1000000000LL / m_hz);
     auto next_deadline = std::chrono::steady_clock::now();
-    const float dt = 1.0f / static_cast<float>(m_hz);
-    const int max_watchdog_cycles = (m_hz * 250) / 1000;
+    auto last_time = next_deadline;
+    float nominal_dt = 1.0f / static_cast<float>(m_hz);
+    int max_watchdog_cycles = (m_hz * 250) / 1000;
     uint64_t loop_count = 0;
 
     std::cout << "[FSM] Navigation & Avoidance loop started at " << m_hz << " Hz." << std::endl;
 
     while (m_running.load(std::memory_order_relaxed)) {
+        period = std::chrono::nanoseconds(1000000000LL / m_hz);
+        nominal_dt = 1.0f / static_cast<float>(m_hz);
+        max_watchdog_cycles = (m_hz * 250) / 1000;
+
         next_deadline += period;
+
+        // Mesure du dt réel écoulé
+        auto current_time = std::chrono::steady_clock::now();
+        std::chrono::duration<float> elapsed = current_time - last_time;
+        last_time = current_time;
+        float dt = elapsed.count();
+        if (dt <= 0.0f || dt > 0.2f) {
+            dt = nominal_dt;
+        }
 
         // 1. Process non-blocking IPC commands (/tmp/fsm.sock)
         m_ipc_handler.process_pending_commands();
@@ -169,6 +183,14 @@ void FSM::run() {
 
         if (nav_out.state_changed) {
             transition_to(nav_out.next_state);
+        }
+
+        // Protection des valeurs numériques
+        if (!std::isfinite(nav_out.desired_velocity)) {
+            nav_out.desired_velocity = 0.0f;
+        }
+        if (!std::isfinite(nav_out.desired_steering)) {
+            nav_out.desired_steering = 0.0f;
         }
 
         // 6. Smooth velocity profiling & power computation

@@ -13,19 +13,21 @@ public:
                            float steering_offset = picar::i2c::calibration::DEFAULT_STEERING_OFFSET_DEG);
     ~MotorActuator() = default;
 
-    bool init();
+    bool init(bool require_hardware = false);
     void update_actuation(float target_speed, float target_steering, float dt, bool emergency_stop);
     void emergency_stop();
 
     void set_steering_offset(float offset_deg);
     float get_steering_offset() const { return m_steering_offset; }
     float get_applied_steering() const { return m_applied_steering; }
+    float get_applied_speed() const { return m_applied_speed; }
     bool is_hardware_present() const { return m_driver != nullptr; }
 
 private:
     bool m_invert{false};
     float m_steering_offset{0.0f};
     float m_applied_steering{0.0f};
+    float m_applied_speed{0.0f};
     std::unique_ptr<IMotorDriver> m_driver;
 };
 

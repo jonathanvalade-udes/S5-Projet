@@ -12,6 +12,9 @@ void FsmNavigator::init(float kp, float kd, float cruise_speed, float min_curve_
     m_min_curve_speed = min_curve_speed;
     m_line_controller = std::make_unique<LineFollowerController>(kp, kd, cruise_speed, min_curve_speed);
     m_motion_profiler = std::make_unique<MotionProfiler>(max_accel, cruise_speed);
+    m_speed_planner.set_max_accel(max_accel);
+    m_speed_planner.set_max_brake(max_accel);
+    m_speed_planner.set_ball_max_accel(max_accel);
 }
 
 void FsmNavigator::update_controllers(float kp, float kd, float cruise_speed, float min_curve_speed, float max_accel) {
@@ -27,14 +30,19 @@ void FsmNavigator::update_controllers(float kp, float kd, float cruise_speed, fl
         m_line_controller->set_cruise_speed(cruise_speed);
         m_line_controller->set_min_curve_speed(min_curve_speed);
     }
+    m_speed_planner.set_max_accel(max_accel);
+    m_speed_planner.set_max_brake(max_accel);
+    m_speed_planner.set_ball_max_accel(max_accel);
 }
 
 void FsmNavigator::reset_controllers() {
     if (m_line_controller) m_line_controller->reset();
     if (m_motion_profiler) m_motion_profiler->reset(0.0f);
+    m_speed_planner.reset(0.0f);
     m_last_steer_degrees = 0.0f;
     m_state_timer = 0.0f;
     m_state_distance = 0.0f;
+    m_line_lost_timer = 0.0f;
     m_course_finished = false;
 }
 
@@ -68,6 +76,7 @@ FsmNavOutput FsmNavigator::step(shared::fsm::MachineStates current_state, float 
                                float current_dist_cm, const float line_darkness[5],
                                bool start_triggered, float avoid_side, float obstacle_stop_dist_cm,
                                float reverse_speed, float curve_safety_factor) {
+    (void)reverse_speed;
     FsmNavOutput out{};
     float curr_v = get_current_speed();
     float cruise_spd = m_cruise_speed;
@@ -78,6 +87,7 @@ FsmNavOutput FsmNavigator::step(shared::fsm::MachineStates current_state, float 
         out.next_state = next;
         m_state_timer = 0.0f;
         m_state_distance = 0.0f;
+        m_line_lost_timer = 0.0f;
     };
 
     switch (current_state) {
@@ -119,11 +129,26 @@ FsmNavOutput FsmNavigator::step(shared::fsm::MachineStates current_state, float 
             }
 
             if (line_out.is_line_lost) {
-                // En perte de ligne dans un tournant, maintenir le braquage et la vitesse minimale
-                // jusqu'à réacquisition du ruban (aucun passage en Failure ni marche arrière)
-                out.desired_steering = m_last_steer_degrees;
-                out.desired_velocity = min_curve_spd;
+                m_line_lost_timer += dt;
+                if (m_line_lost_timer < 0.25f) {
+                    // Étape 1 perte immédiate : maintien braquage et réduction vitesse
+                    out.desired_steering = m_last_steer_degrees;
+                    out.desired_velocity = min_curve_spd;
+                } else if (m_line_lost_timer < 1.0f) {
+                    // Étape 2 recherche maîtrisée : braquage modéré
+                    float search_steer = std::clamp(m_last_steer_degrees, -30.0f, 30.0f);
+                    out.desired_steering = search_steer;
+                    out.desired_velocity = min_curve_spd * 0.85f;
+                } else {
+                    // Étape 3 délai de recherche expiré -> arrêt sécuritaire
+                    set_transition(shared::fsm::MachineStates::Failure);
+                    out.desired_velocity = 0.0f;
+                    out.desired_steering = 0.0f;
+                    out.req_emergency = true;
+                    break;
+                }
             } else {
+                m_line_lost_timer = 0.0f;
                 out.desired_steering = line_out.steer_degrees;
                 m_last_steer_degrees = line_out.steer_degrees;
 
@@ -172,8 +197,6 @@ FsmNavOutput FsmNavigator::step(shared::fsm::MachineStates current_state, float 
         case shared::fsm::MachineStates::RightDeviation:
         case shared::fsm::MachineStates::LeftDeviation: {
             float side = (current_state == shared::fsm::MachineStates::RightDeviation) ? 1.0f : -1.0f;
-            // Vitesse RÉELLE : la vitesse du FSM est convertie en puissance moteur avec la croisière = 50 %, donc elle ne vaut pas
-            // des m/s réels (sur le robot, 50 % de puissance = ~0,32 m/s, que la croisière configurée soit 0,35 ou 0,45).
             const float odo_scale = picar::constants::PHYSICAL_SPEED_AT_HALF_THROTTLE / std::max(m_cruise_speed, 0.05f);
             auto res = m_obstacle_avoidance.update(side, dt, line_darkness, curr_v * odo_scale, min_curve_spd, out.desired_steering, out.desired_velocity);
             if (res == ObstacleAvoidance::DeviationResult::LineFound) {

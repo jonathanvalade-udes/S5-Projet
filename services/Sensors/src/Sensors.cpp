@@ -52,13 +52,23 @@ bool Sensors::init() {
 void Sensors::run() {
     const auto period = std::chrono::nanoseconds(1000000000LL / m_hz);
     auto next_deadline = std::chrono::steady_clock::now();
-    const float dt = 1.0f / static_cast<float>(m_hz);
+    auto last_time = next_deadline;
+    const float nominal_dt = 1.0f / static_cast<float>(m_hz);
     uint64_t loop_count = 0;
 
     std::cout << "[Sensors] Service running at " << m_hz << " Hz." << std::endl;
 
     while (m_running.load(std::memory_order_relaxed)) {
         next_deadline += period;
+
+        // Mesure du dt réel écoulé
+        auto current_time = std::chrono::steady_clock::now();
+        std::chrono::duration<float> elapsed = current_time - last_time;
+        last_time = current_time;
+        float dt = elapsed.count();
+        if (dt <= 0.0f || dt > 0.2f) {
+            dt = nominal_dt;
+        }
 
         // 1. Process non-blocking IPC commands from /tmp/sensors.sock
         m_ipc_handler.process_pending_commands();
@@ -67,15 +77,19 @@ void Sensors::run() {
         float line_darkness[5] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
         uint8_t line_sensors[5] = {0, 0, 0, 0, 0};
         uint32_t raw_adc[5] = {0, 0, 0, 0, 0};
-        bool has_line = false;
-        m_acquisition.read_line(line_darkness, line_sensors, raw_adc, has_line, loop_count, m_hz);
+        bool hw_has_line = false;
+        m_acquisition.read_line(line_darkness, line_sensors, raw_adc, hw_has_line, loop_count, m_hz);
 
         // 3. Acquire distance with synchronous rate-isolation
         float current_speed = m_shm_bridge.read_current_speed();
         float filtered_dist = m_acquisition.acquire_distance(loop_count, m_hz, dt, current_speed);
 
-        // 4. Compute line centroid error
-        m_last_line_error = LineEstimator::compute_line_error_analog(line_darkness, m_last_line_error);
+        // 4. Compute line centroid error & confidence
+        LineEstimate est = LineEstimator::estimate_line(line_darkness);
+        if (est.is_valid) {
+            m_last_line_error = est.error;
+        }
+        bool has_line = est.is_valid;
         float line_error = m_last_line_error;
 
         // 5. Publish to pub/sub SHM
@@ -93,10 +107,9 @@ void Sensors::run() {
                       << " cm | Line: [" 
                       << (int)line_sensors[0] << " " << (int)line_sensors[1] << " "
                       << (int)line_sensors[2] << " " << (int)line_sensors[3] << " "
-                      << (int)line_sensors[4] << "] ADC: ["
-                      << raw_adc[0] << " " << raw_adc[1] << " "
-                      << raw_adc[2] << " " << raw_adc[3] << " "
-                      << raw_adc[4] << "] (err: " << line_error << ")"
+                      << (int)line_sensors[4] << "] (err: " << line_error 
+                      << ", conf: " << est.confidence << ")"
+                      << (est.is_t_stop ? " [T-STOP]" : "")
                       << (has_line ? "" : " [PERTE DE LIGNE]") << std::endl;
         }
 

@@ -9,7 +9,12 @@ SensorAcquisition::SensorAcquisition(int trig_pin, int echo_pin, float filter_al
       m_filter_alpha(filter_alpha),
       m_median_window(median_window) {}
 
-bool SensorAcquisition::init() {
+bool SensorAcquisition::init(bool require_hardware) {
+    const char* env_req = std::getenv("PICAR_REQUIRE_HARDWARE");
+    if (env_req && (std::string(env_req) == "1" || std::string(env_req) == "true")) {
+        require_hardware = true;
+    }
+
     try {
         m_driver = std::make_unique<PiCarHatsSensorDriver>(m_trig_pin, m_echo_pin);
         std::cout << "[SensorAcquisition] Hardware driver initialized (Trig=" << m_trig_pin << ", Echo=" << m_echo_pin << ")." << std::endl;
@@ -22,6 +27,10 @@ bool SensorAcquisition::init() {
     } catch (const std::exception& e) {
         std::cout << "[SensorAcquisition] Note: Hardware sensor driver fallback (" << e.what() << ")." << std::endl;
         m_driver.reset();
+        if (require_hardware) {
+            std::cerr << "[SensorAcquisition] ERROR: Hardware sensor driver required but failed to initialize!" << std::endl;
+            return false;
+        }
     }
 
     try {
@@ -32,10 +41,18 @@ bool SensorAcquisition::init() {
                       << std::hex << static_cast<int>(m_line_device->get_active_address()) << std::dec << std::endl;
         } else {
             std::cout << "[SensorAcquisition] Suiveur de ligne I2C non détecté, mode fallback actif." << std::endl;
+            if (require_hardware && !m_driver) {
+                std::cerr << "[SensorAcquisition] ERROR: Hardware I2C line follower required but not detected!" << std::endl;
+                return false;
+            }
         }
     } catch (const std::exception& e) {
         std::cout << "[SensorAcquisition] I2C exception (" << e.what() << "), fallback actif." << std::endl;
         m_line_device.reset();
+        if (require_hardware) {
+            std::cerr << "[SensorAcquisition] ERROR: Hardware I2C line follower exception (" << e.what() << ")!" << std::endl;
+            return false;
+        }
     }
 
     m_pipeline = std::make_unique<UltrasonicPipeline>(m_median_window, m_filter_alpha);
@@ -91,11 +108,17 @@ float SensorAcquisition::acquire_distance(uint64_t loop_tick, int hz, float dt, 
         return m_last_filtered_dist;
     }
 
+    if (dt <= 0.0f) {
+        dt = (hz > 0) ? (1.0f / static_cast<float>(hz)) : 0.02f;
+    } else if (dt > 0.5f) {
+        dt = 0.5f;
+    }
+
     // Rate-isolate physical ultrasonic trigger/echo at ~50 Hz to prevent 5ms thread stalls
     const uint64_t us_interval = (hz > 50) ? static_cast<uint64_t>(hz / 50) : 1;
     if (loop_tick % us_interval == 0) {
         float raw = m_driver->read_raw_ultrasonic_cm();
-        if (raw < 0.0f) {
+        if (raw < 0.0f || raw > 400.0f || !std::isfinite(raw)) {
             m_consecutive_us_errors++;
         } else {
             m_consecutive_us_errors = 0;

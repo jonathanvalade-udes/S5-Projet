@@ -67,7 +67,7 @@ bool TelemetryService::init() {
         }
     }
 
-    //m_usb_logger.init();
+    m_usb_logger.init();
     m_running.store(true);
     return true;
 }
@@ -202,9 +202,9 @@ void TelemetryService::run() {
         broadcast_udp();
 
         // 6. Push to background USB logger (if active)
-        /*if (m_usb_logger.is_active()) {
+        if (m_usb_logger.is_active()) {
             m_usb_logger.push_sample(m_collector.get_sample());
-        }*/
+        }
 
         // 7. Deterministic RT sleep without delay
         auto now = std::chrono::steady_clock::now();
@@ -222,7 +222,7 @@ void TelemetryService::stop() {
     }
     m_tcp_streamer.stop();
     m_posix_client.disconnect();
-    //m_usb_logger.stop();
+    m_usb_logger.stop();
 }
 
 } // namespace services

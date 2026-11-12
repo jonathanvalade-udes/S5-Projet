@@ -56,16 +56,31 @@ bool Motors::init() {
 }
 
 void Motors::run() {
-    const auto period = std::chrono::nanoseconds(1000000000LL / m_hz);
+    auto period = std::chrono::nanoseconds(1000000000LL / m_hz);
     auto next_deadline = std::chrono::steady_clock::now();
-    const float dt = 1.0f / static_cast<float>(m_hz);
+    auto last_time = next_deadline;
+    float nominal_dt = 1.0f / static_cast<float>(m_hz);
     uint64_t loop_count = 0;
-    const int max_watchdog_misses = (m_hz * 250) / 1000; // 250 ms timeout
+    int max_watchdog_misses = (m_hz * 250) / 1000; // 250 ms timeout
 
     std::cout << "[Motors] Control loop started at " << m_hz << " Hz (Watchdog timeout: 250ms)." << std::endl;
 
     while (m_running.load(std::memory_order_relaxed)) {
+        // Mise à jour de la période si la fréquence change à chaud
+        period = std::chrono::nanoseconds(1000000000LL / m_hz);
+        nominal_dt = 1.0f / static_cast<float>(m_hz);
+        max_watchdog_misses = (m_hz * 250) / 1000;
+
         next_deadline += period;
+
+        // Mesure du dt réel écoulé
+        auto current_time = std::chrono::steady_clock::now();
+        std::chrono::duration<float> elapsed = current_time - last_time;
+        last_time = current_time;
+        float dt = elapsed.count();
+        if (dt <= 0.0f || dt > 0.2f) {
+            dt = nominal_dt;
+        }
 
         // 1. Non-blocking IPC commands (/tmp/motors.sock)
         m_ipc_handler.process_pending_commands();
@@ -77,6 +92,12 @@ void Motors::run() {
         uint64_t current_heartbeat = 0;
 
         m_shm_bridge.read_fsm_command(target_speed, target_steering, emergency_stop, current_heartbeat);
+
+        // Protection contre les valeurs invalides (NaN / Inf)
+        if (!std::isfinite(target_speed) || !std::isfinite(target_steering)) {
+            target_speed = 0.0f;
+            target_steering = 0.0f;
+        }
 
         // 3. Watchdog check
         if (m_shm_bridge.check_watchdog(current_heartbeat, max_watchdog_misses)) {

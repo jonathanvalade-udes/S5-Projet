@@ -386,6 +386,14 @@ void test_usb_fifo_direct_streaming() {
     // S'assurer que /tmp/telemetry.csv n'existe pas
     unlink("/tmp/telemetry.csv");
 
+    shared::services::memory::MemoryShareComponentServer fsm_pub("FsmCommand");
+    shared::fsm::FsmCommandPayload fsm_cmd{};
+    fsm_cmd.target_speed = 30.0f;
+    fsm_cmd.target_steering = 0.0f;
+    fsm_cmd.state = shared::fsm::MachineStates::LineFollowingForward;
+    fsm_cmd.heartbeat = 1;
+    fsm_pub.publish(fsm_cmd);
+
     services::TelemetryService telem_service(20, false, 0, 0);
     assert(telem_service.init());
 
@@ -393,7 +401,11 @@ void test_usb_fifo_direct_streaming() {
         telem_service.run();
     });
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+    for (int k = 0; k < 10; ++k) {
+        fsm_cmd.heartbeat = k + 2;
+        fsm_pub.publish(fsm_cmd);
+        std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    }
 
     telem_service.stop();
     if (th.joinable()) th.join();
