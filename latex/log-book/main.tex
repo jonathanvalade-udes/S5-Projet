@@ -1,6 +1,7 @@
 \documentclass[a4paper, 11pt]{article}
 
 \usepackage{document}
+\usepackage{fancyhdr}
 \usepackage{titlepage}
 \usepackage{mathrsfs}
 \usepackage{numprint}
@@ -9,7 +10,10 @@
 \usepackage{toolbox}
 \usepackage{listings}
 
-
+\pagestyle{fancy}
+\fancyhf{} % Clears all default header and footer fields
+\renewcommand{\footrulewidth}{0pt}
+\cfoot{\thepage} % Keeps the page number at the bottom center
 
 % Image insertion template:
 %
@@ -75,9 +79,12 @@
 \pagenumbering{arabic}
 
 % BEGIN OF SECTIONS
-\entry{Architecture du système embarqué}{15 octobre 2026}{Marc-Antoine}{\ui}{Aucune}{logs/architecture1}
 
-\entry{Système Linux embarqué}{15 octobre 2026}{Marc-Antoine}{\ui}{Aucune}{logs/os}
+\entry{Définition du projet}{6 octobre 2026}{L'Équipe}{\ui}{Aucune}{logs/24sept}
+
+\entry{Architecture du système embarqué}{15 octobre 2026}{Marc-Antoine Gauthier}{\ui}{Aucune}{logs/architecture1}
+
+\entry{Système Linux embarqué}{15 octobre 2026}{Marc-Antoine Gauthier}{\ui}{Aucune}{logs/os}
 
 \entry{Avancements et modification}{2 novembre 2026}{Jonathan Valade}{\ui}{Aucune}{logs/2nov}
 

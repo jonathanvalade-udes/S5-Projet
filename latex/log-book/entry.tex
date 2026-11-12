@@ -64,6 +64,8 @@
 }
 
 \newcommand{\entry}[6]{
+    \fancyhead[R]{#1 - #2}
+    
     \section{#1}
     \vspace{-0.5em} 
     \noindent\rule{\textwidth}{0.4pt}
@@ -87,4 +89,7 @@
         \signraph
         \signvalade
     \newpage
+    
+    % Clear the header for the pages that follow
+    \fancyhead[C]{} 
 }

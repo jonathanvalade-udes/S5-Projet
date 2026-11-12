@@ -1,0 +1,251 @@
+\ProvidesPackage{document}
+
+% \usepackage{showframe}
+
+%~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~%
+%                                  Packages                                  %
+%~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~%
+
+
+% Margin Setup according to University methodology:
+\RequirePackage{tocloft}
+\RequirePackage[top=2.5cm,bottom=2.5cm,inner=2.5cm,outer=2.5cm]{geometry}
+\RequirePackage{textcomp}
+\RequirePackage{gensymb}
+\usepackage{hyperref}               % Make insternal links in pdf document
+\hypersetup{colorlinks, allcolors=black}
+\RequirePackage{booktabs}         % Elegant tables
+\RequirePackage{colortbl}         % Allow the use of colors in tables
+
+% \RequirePackage[utf8]{inputenc}     % Sensible text encoding (Not always required)
+\RequirePackage[french]{babel}      % French document environment
+\RequirePackage{fancyhdr}           % Footer customisation
+\RequirePackage{setspace}           % Line spacing
+\usepackage{titlesec}               % Font sizes for sections/subsection
+\RequirePackage{titletoc}           % Should help force the capitalization of ToC
+
+\RequirePackage{amsmath}            % Mathematics environments
+\RequirePackage{amssymb}            % Mathematical symbols
+\RequirePackage{siunitx}            % SI Units
+\RequirePackage[french]{cleveref}   % To make eqation reference better
+% Use the command \cref to cleverly reference equations
+
+\RequirePackage{graphicx}           % For the usage of multiple graphics
+\RequirePackage{float}              % Accurate positionning of figures
+% \RequirePackage{subfig}             % Required to add subfloat images
+\RequirePackage{subcaption}       % Adding subcaptions to subfigures
+
+\RequirePackage{booktabs}           % Elegant tables
+\RequirePackage[export]{adjustbox}  % Helps with bigger table
+
+\RequirePackage{pdfpages}           % Allow to add pdf docs to your latex file
+
+\RequirePackage{color}
+\RequirePackage[dvipsnames]{xcolor}
+\RequirePackage{listings}
+% \RequirePackage{lstlinebgrd}
+
+\RequirePackage[shortlabels]{enumitem}  % To allow the change of default \itemize since "french" is a bitch...
+
+
+\RequirePackage{pdflscape}
+\usepackage{textgreek}        % Add straight greek characters
+\RequirePackage{seqsplit}
+
+
+\RequirePackage[T1]{fontenc}      % French compatibility
+\RequirePackage[french]{babel}    % French document environment
+
+\RequirePackage{blindtext}         % Allows for descriptions and stuff
+
+% Allows the creations of appendices
+
+% Allows code snippet
+% \RequirePackage{listings}
+% \usepackage{lstaddons} % see http://www.ctan.org/pkg/lstaddons
+\NewDocumentCommand{\codeword}{v}{%
+\texttt{\textcolor{black}{#1}}%
+}
+\lstset{
+breakindent=0em,
+% language=C,
+basicstyle=\footnotesize,
+% numbers=left,
+% numberstyle=\footnotesize,
+stepnumber=2,
+numbersep=5pt,
+% backgroundcolor=\color{white},
+showspaces=false,
+showstringspaces=false,
+showtabs=false,
+frame=single,
+tabsize=2,
+captionpos=b,
+breaklines=true,
+% breakatwhitespace=true,
+% breakautoindent=true,
+escapeinside={\%*}{*)},
+linewidth=\textwidth,
+% https://tex.stackexchange.com/questions/30512/how-to-insert-code-with-accents-with-listings
+literate=%
+    {é}{{\'e}}{1}%
+    {è}{{\`e}}{1}%
+    {à}{{\`a}}{1}%
+    {ç}{{\c{c}}}{1}%
+    {œ}{{\oe}}{1}%
+    {ù}{{\`u}}{1}%
+    {É}{{\'E}}{1}%
+    {È}{{\`E}}{1}%
+    {À}{{\`A}}{1}%
+    {Ç}{{\c{C}}}{1}%
+    {Œ}{{\OE}}{1}%
+    {Ê}{{\^E}}{1}%
+    {ê}{{\^e}}{1}%
+    {î}{{\^i}}{1}%
+    {ô}{{\^o}}{1}%
+    {û}{{\^u}}{1}%
+    {ä}{{\"{a}}}1
+    {ë}{{\"{e}}}1
+    {ï}{{\"{i}}}1
+    {ö}{{\"{o}}}1
+    {ü}{{\"{u}}}1
+    {û}{{\^{u}}}1
+    {â}{{\^{a}}}1
+    {Â}{{\^{A}}}1
+    {Î}{{\^{I}}}1
+}
+
+% SI Unit X fix
+\DeclareSIPrefix{\micro}{%
+  \text{%
+    \fontencoding{TS1}\fontfamily{kurier}\selectfont
+    \symbol{"B5}%
+  }%
+}{-6}
+
+
+%~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~%
+%                               Equations/Math                               %
+%~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~%
+% Number equation with section number (ex: First equation in section 3 is 3.1)
+\numberwithin{equation}{section}
+% Use french commas when writing numbers
+\sisetup{locale=FR}
+
+
+
+%~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~%
+%                               Headers/Footers                              %
+%~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~%
+
+\renewcommand{\footrulewidth}{.5pt} % Line at the bottom
+\cfoot{\thepage}                    % Centered page number (footer)
+
+
+%~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~%
+%                                  Sections                                  %
+%~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~%
+
+% Font size for section (16)
+\titleformat{\section}
+{\normalfont\fontsize{16}{19}\bfseries}{\thesection}{1em}{}
+% Font size for subsection (14)
+\titleformat{\subsection}
+{\normalfont\fontsize{14}{16}\bfseries}{\thesubsection}{1em}{}
+
+
+
+%~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~%
+%                                Line Spacing                                %
+%~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~%
+
+% Set 1.5 linespacing for the document
+\onehalfspacing
+
+
+%~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~%
+%                               Figures/Tables                               %
+%~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~%
+
+% Count within sections (third table of section 5 would be Table 5.3)
+\counterwithin{figure}{section}
+\counterwithin{table}{section}
+
+% Uncomment to separate section number from fig/table with a hyphen (5-3 instead of 5.3)
+% \renewcommand{\thefigure}{\thesection-\arabic{figure}}
+\renewcommand{\frenchtablename}{Tableau}        % TOASTER!!!!!
+\renewcommand{\thetable}{\thesection-\arabic{table}}
+
+% more control over table layouts
+\usepackage{tabularx}
+\usepackage{tabulary}
+\usepackage{multirow}
+\usepackage{makecell}
+\newcolumntype{R}{>{\raggedleft\arraybackslash}X}
+\newcolumntype{M}[1]{>{\centering\arraybackslash}m{#1}}
+%\restylefloat{table}
+
+% Horizontal line and separator
+\newcommand{\HRule}{\rule{\linewidth}{0.5mm}}
+\newcommand{\hseparator}{\hspace{0.3em}.\hspace{0.3em}}
+
+
+%~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~%
+%                              French Table Naming                           %
+%~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~%
+% Sets the "Table - xx" to "Tableau - xx"
+\renewcommand{\frenchtablename}{Tableau}
+\renewcommand{\thetable}{\thesection-\arabic{table}}
+
+
+
+%~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~%
+%                              Table of Content                              %
+%~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~%
+
+% For dotted table of content
+% \RequirePackage{natbib}
+% \renewcommand{\bibsection}{\section{\bibname}}
+\makeatletter
+\renewcommand\@dotsep{1}     % Dot separation
+\renewcommand*\l@section{\@dottedtocline{1}{0 em}{2 em}}
+\renewcommand*\l@subsection{\@dottedtocline{1}{0.7 em}{2 em}}
+\renewcommand*\l@subsubsection{\@dottedtocline{1}{1.4 em}{3 em}}
+\makeatother
+
+
+%~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~%
+%                                   Lists                                    %
+%~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~%
+
+\setlist[itemize]{label=\textbullet}
+
+
+%~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~%
+%                                  Reference                                 %
+%~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~%
+
+\usepackage{csquotes}
+%\usepackage[style=numeric,backend=biber,sorting=nty]{biblatex}
+\usepackage[style=ieee]{biblatex}
+\DeclareNameAlias{author}{family-given}     % Display the Bibliography as: Surename, Name
+
+
+% Caption
+\usepackage{capt-of}
+
+% Page layout
+%\pagestyle{fancy}
+\lhead{\suni\hseparator\studyprogram}
+\rhead{\doctitle}
+
+
+%~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~%
+%                            French Appendix Naming                          %
+%~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~%
+% Sets "Appendix" to "Annexe"
+\RequirePackage[title,toc,titletoc,page]{appendix}
+\addto\captionsfrench{
+  \renewcommand\appendixname{Annexe}
+  \renewcommand\appendixpagename{Annexe}
+}
