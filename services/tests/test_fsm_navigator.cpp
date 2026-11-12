@@ -41,131 +41,140 @@ int main() {
     // Une consigne deja plus lente que la limite n'est jamais augmentee
     assert(near(nav.limit_approach_speed(0.05f, 35.0f, stop_cm), 0.05f));
 
-    // --- Evitement : diagonale de la phase 2 reglable (AVOID_DIAG_TIME_S / AVOID_DIAG_SPEED) ---
+    // --- Evitement : manoeuvre en 12 etapes (angles, durees et vitesses reglables, cles AVOID_*) ---
     {
+        using services::AvoidanceSettings;
         using services::ObstacleAvoidance;
-        const float dark[5] = {0, 0, 0, 0, 0};
-        // Premier pas (dt = 20 ms) ou la manoeuvre atteint la phase 3, et vitesse commandee a mi-diagonale
-        auto step_phase3 = [&](float diag_time, float diag_speed, float& speed_mid_diag) {
+        using Result = ObstacleAvoidance::DeviationResult;
+        const float dark[5] = {0, 0, 0, 0, 0};           // aucun ruban : la derniere etape va jusqu'a sa duree maximale
+        const float dt = 0.02f;
+
+        // Deroule la manoeuvre (cote droit) : releve, pour chaque etape de mouvement (1,3,5,7,8,10,12), le premier pas, le
+        // nombre de pas, le braquage et la vitesse commandes ; retourne le pas d'abandon (SearchLine)
+        struct StepLog { int first = -1; int count = 0; float steer = 0.0f; float vel = 0.0f; };
+        auto run = [&](const AvoidanceSettings& cfg, StepLog (&log)[13], float side) {
             ObstacleAvoidance av;
-            av.set_diagonal(diag_time, diag_speed);
+            av.set_settings(cfg);
             av.reset(0.0f, 0.2f);
             float steer = 0.0f, vel = 0.0f, v = 0.0f;
-            speed_mid_diag = 0.0f;
-            int phase2_start = -1;
-            for (int k = 0; k < 2000; ++k) {
-                v += (vel * 0.9f - v) * (0.02f / 0.1f);
-                av.update(1.0f, 0.02f, dark, v, 0.2f, steer, vel);
-                if (av.get_phase() == 2 && phase2_start < 0) phase2_start = k;
-                if (av.get_phase() == 2 && k == phase2_start + 70) speed_mid_diag = vel;   // 1,4 s apres le debut de la phase 2 : en pleine diagonale
-                if (av.get_phase() == 3) return k;
+            for (int k = 0; k < 3000; ++k) {
+                v += (vel * 0.9f - v) * (dt / 0.1f);                 // vitesse reelle : reponse du premier ordre (negative en recul)
+                const int step = av.get_step();                      // etape active pendant ce pas
+                const auto r = av.update(side, dt, dark, v, 0.2f, steer, vel);
+                StepLog& l = log[step];
+                if (l.first < 0) l.first = k;
+                l.count++;
+                l.steer = steer;
+                l.vel = vel;
+                if (r == Result::SearchLine) return k;
             }
             return -1;
         };
-        float sp = 0.0f;
-        const int k_default = step_phase3(ObstacleAvoidance::DEFAULT_DIAG_TIME_S, ObstacleAvoidance::DEFAULT_DIAG_SPEED, sp);
-        assert(k_default > 0);
-        assert(near(sp, ObstacleAvoidance::DEFAULT_DIAG_SPEED));
 
-        // Une diagonale plus longue de 0,9 s retarde la fin de la phase 2 de 45 pas de 20 ms
-        const int k_long = step_phase3(2.0f, 0.16f, sp);
-        assert(k_long - k_default >= 44 && k_long - k_default <= 46);
+        auto about = [](int value, int expected) { return value >= expected - 1 && value <= expected + 1; };   // +-1 pas (arrondi des flottants)
+        const AvoidanceSettings def;
+        StepLog base[13];
+        const int k_giveup = run(def, base, 1.0f);
+        assert(k_giveup > 0);
 
-        // La vitesse de la diagonale est bien celle demandee
-        step_phase3(1.5f, 0.22f, sp);
-        assert(near(sp, 0.22f));
+        // Les 7 segments se suivent dans l'ordre des etapes, avec le braquage et la vitesse prevus (cote droit = +1)
+        const int order[7] = {1, 3, 5, 7, 8, 10, 12};
+        for (int i = 1; i < 7; ++i) assert(base[order[i]].first == base[order[i - 1]].first + base[order[i - 1]].count);
+        assert(near(base[1].steer, 0.0f) && base[1].vel < 0.0f);                       // etape 1 : recul, roues droites
+        assert(near(base[3].steer, 45.0f) && near(base[3].vel, 0.16f));                // etapes 2-3 : roues a 45 deg, cote choisi
+        assert(near(base[5].steer, 0.0f) && near(base[5].vel, def.diag_speed));        // etapes 4-5 : roues droites, diagonale
+        assert(near(base[7].steer, -45.0f));                                           // etapes 6-7 : l'autre cote
+        assert(near(base[8].steer, 0.0f));                                             // etape 8 : roues droites
+        assert(near(base[10].steer, -45.0f));                                          // etapes 9-10 : vers la ligne
+        assert(near(base[12].steer, 0.0f) && near(base[12].vel, def.return_speed));    // etapes 11-12 : roues droites
+        // Le cote gauche inverse les braquages
+        StepLog left[13];
+        run(def, left, -1.0f);
+        assert(near(left[3].steer, -45.0f) && near(left[7].steer, 45.0f) && near(left[10].steer, 45.0f));
 
-        // Valeurs hors bornes : ramenees a 0,3..3 s et 0,12..0,25 m/s
-        const int k_min = step_phase3(0.0f, 0.16f, sp);       // 0 s -> 0,3 s
-        assert(k_default - k_min >= 39 && k_default - k_min <= 41);   // 0,8 s de moins = 40 pas
-        step_phase3(1.5f, 9.0f, sp);
-        assert(near(sp, 0.25f));
-        step_phase3(1.5f, 0.01f, sp);
-        assert(near(sp, 0.12f));
+        // Duree d'une etape = nombre de pas x 20 ms ; changer une cle change seulement cette etape
+        auto steps_of = [&](const AvoidanceSettings& cfg, int step) {
+            StepLog l[13];
+            run(cfg, l, 1.0f);
+            return l[step].count;
+        };
+        const int n3 = steps_of(def, 3), n5 = steps_of(def, 5), n7 = steps_of(def, 7), n8 = steps_of(def, 8), n10 = steps_of(def, 10);
+        assert(n3 >= 54 && n3 <= 56 && n5 >= 54 && n5 <= 56 && n7 >= 34 && n7 <= 36 && n8 >= 49 && n8 <= 51 && n10 >= 34 && n10 <= 36);
+
+        AvoidanceSettings c = def;
+        c.time1_s = 1.60f;                         // etape 3 plus longue de 0,5 s = 25 pas, les autres ne bougent pas
+        assert(about(steps_of(c, 3) - n3, 25) && steps_of(c, 5) == n5 && steps_of(c, 7) == n7);
+        c = def; c.diag_time_s = 2.10f;            // etape 5 : +1,0 s = 50 pas
+        assert(about(steps_of(c, 5) - n5, 50) && steps_of(c, 3) == n3);
+        c = def; c.time2_s = 0.90f;                // etape 7 : +0,2 s = 10 pas
+        assert(about(steps_of(c, 7) - n7, 10) && steps_of(c, 10) == n10);
+        c = def; c.parallel_time_s = 1.80f;        // etape 8 : +0,8 s = 40 pas
+        assert(about(steps_of(c, 8) - n8, 40));
+        c = def; c.time3_s = 0.50f;                // etape 10 : -0,2 s = -10 pas
+        assert(about(n10 - steps_of(c, 10), 10));
+        c = def; c.return_time_s = 2.0f;           // etape 12 : abandon 1,5 s plus tot = 75 pas
+        StepLog tmp[13];
+        assert(about(k_giveup - run(c, tmp, 1.0f), 75));
+
+        // Angles : chaque virage a le sien
+        c = def; c.angle1_deg = 30.0f; c.angle2_deg = 20.0f; c.angle3_deg = 40.0f;
+        StepLog ang[13];
+        run(c, ang, 1.0f);
+        assert(near(ang[3].steer, 30.0f) && near(ang[7].steer, -20.0f) && near(ang[10].steer, -40.0f));
+
+        // Vitesses : etape 5 et etape 12
+        c = def; c.diag_speed = 0.22f; c.return_speed = 0.20f;
+        StepLog spd[13];
+        run(c, spd, 1.0f);
+        assert(near(spd[5].vel, 0.22f) && near(spd[12].vel, 0.20f) && near(spd[8].vel, 0.16f));
+
+        // Recul : la distance est mesuree (vitesse x duree) ; plus loin = plus de pas
+        c = def; c.reverse_dist_m = 0.40f;
+        assert(steps_of(c, 1) > steps_of(def, 1) + 40);
+
+        // Hors bornes : ramene dans l'intervalle (via set_settings)
+        c = def; c.angle1_deg = 99.0f; c.time1_s = 0.0f; c.return_speed = 9.0f; c.reverse_dist_m = 0.0f;
+        ObstacleAvoidance bounded;
+        bounded.set_settings(c);
+        assert(near(bounded.settings().angle1_deg, 45.0f) && near(bounded.settings().time1_s, 0.3f));
+        assert(near(bounded.settings().return_speed, 0.25f) && near(bounded.settings().reverse_dist_m, 0.10f));
+
+        // La structure de reglages : 12 cles distinctes, set() borne et refuse les cles inconnues
+        AvoidanceSettings st;
+        assert(AvoidanceSettings::fields().size() == 12);
+        assert(st.set("AVOID_PARALLEL_TIME_S", 99.0f) && near(st.parallel_time_s, 4.0f));
+        assert(st.set("AVOID_ANGLE_2_DEG", 2.0f) && near(st.get("AVOID_ANGLE_2_DEG"), 15.0f));
+        assert(!st.set("AVOID_INCONNUE", 1.0f));
+        assert(near(def.parallel_time_s, 1.0f));      // etape 8 : valeur par defaut plus longue que les autres lignes droites
     }
 
-    // --- Evitement : deuxieme diagonale (phase 5) reglable (AVOID_RETURN_TIME_S / AVOID_RETURN_SPEED) ---
+    // --- Arret : coupure brutale seulement en urgence ; a l'arrivee (Stopped) la puissance descend progressivement ---
     {
-        using services::ObstacleAvoidance;
-        const float dark[5] = {0, 0, 0, 0, 0};   // aucun ruban : la phase 5 va jusqu'a sa duree maximale
-        // Pas ou la manoeuvre abandonne (SearchLine), et vitesse commandee a 1 s du debut de la phase 5
-        auto step_giveup = [&](float ret_time, float ret_speed, float& speed_in_phase5) {
-            ObstacleAvoidance av;
-            av.set_return(ret_time, ret_speed);
-            av.reset(0.0f, 0.2f);
-            float steer = 0.0f, vel = 0.0f, v = 0.0f;
-            speed_in_phase5 = 0.0f;
-            int phase5_start = -1;
-            for (int k = 0; k < 2000; ++k) {
-                v += (vel * 0.9f - v) * (0.02f / 0.1f);
-                const auto r = av.update(1.0f, 0.02f, dark, v, 0.2f, steer, vel);
-                if (av.get_phase() == 5 && phase5_start < 0) phase5_start = k;
-                if (phase5_start >= 0 && k == phase5_start + 50) speed_in_phase5 = vel;
-                if (r == ObstacleAvoidance::DeviationResult::SearchLine) return k;
-            }
-            return -1;
-        };
-        float sp = 0.0f;
-        const int k_default = step_giveup(ObstacleAvoidance::DEFAULT_RETURN_TIME_S, ObstacleAvoidance::DEFAULT_RETURN_SPEED, sp);
-        assert(k_default > 0);
-        assert(near(sp, ObstacleAvoidance::DEFAULT_RETURN_SPEED));
+        using shared::fsm::MachineStates;
+        assert(!FsmNavigator::must_cut_power(MachineStates::Stopped, false));            // arrivee / pause : freinage progressif
+        assert(!FsmNavigator::must_cut_power(MachineStates::LineFollowingForward, false));
+        assert(!FsmNavigator::must_cut_power(MachineStates::Armed, false));
+        assert(FsmNavigator::must_cut_power(MachineStates::Failure, false));             // echec : coupure immediate
+        assert(FsmNavigator::must_cut_power(MachineStates::Abort, false));               // arret d'urgence
+        assert(FsmNavigator::must_cut_power(MachineStates::LineFollowingForward, true)); // urgence demandee par la navigation
 
-        // Une recherche plus courte de 1,5 s abandonne 75 pas de 20 ms plus tot
-        const int k_short = step_giveup(2.0f, 0.16f, sp);
-        assert(k_default - k_short >= 74 && k_default - k_short <= 76);
-
-        // La vitesse de la deuxieme diagonale est bien celle demandee
-        step_giveup(3.0f, 0.22f, sp);
-        assert(near(sp, 0.22f));
-
-        // Hors bornes : ramenees a 1..5 s et 0,12..0,25 m/s
-        const int k_min = step_giveup(0.0f, 0.16f, sp);           // 0 s -> 1 s : 2,5 s de moins que 3,5 s = 125 pas
-        assert(k_default - k_min >= 124 && k_default - k_min <= 126);
-        step_giveup(3.0f, 9.0f, sp);
-        assert(near(sp, 0.25f));
-        step_giveup(3.0f, 0.01f, sp);
-        assert(near(sp, 0.12f));
-    }
-
-    // --- Evitement : virages reglables (AVOID_TURN_ANGLE_DEG / AVOID_TURN_OUT_TIME_S / AVOID_TURN_TIME_S) ---
-    {
-        using services::ObstacleAvoidance;
-        const float dark[5] = {0, 0, 0, 0, 0};
-        // Braquage commande 0,5 s apres le debut de la phase 2, et pas de la fin de la phase 2 (arrivee en phase 3)
-        auto run = [&](float angle, float out_time, float turn_time, float& steer_phase2, int& k_phase3) {
-            ObstacleAvoidance av;
-            av.set_turn(angle, out_time, turn_time);
-            av.reset(0.0f, 0.2f);
-            float steer = 0.0f, vel = 0.0f, v = 0.0f;
-            steer_phase2 = 0.0f;
-            k_phase3 = -1;
-            int p2 = -1;
-            for (int k = 0; k < 2000; ++k) {
-                v += (vel * 0.9f - v) * (0.02f / 0.1f);
-                av.update(1.0f, 0.02f, dark, v, 0.2f, steer, vel);
-                if (av.get_phase() == 2 && p2 < 0) p2 = k;
-                if (p2 >= 0 && k == p2 + 25) steer_phase2 = steer;
-                if (av.get_phase() == 3) { k_phase3 = k; return; }
-            }
-        };
-        float st = 0.0f;
-        int k_def = 0, k = 0;
-        run(ObstacleAvoidance::DEFAULT_TURN_ANGLE_DEG, ObstacleAvoidance::DEFAULT_TURN_OUT_TIME_S,
-            ObstacleAvoidance::DEFAULT_TURN_TIME_S, st, k_def);
-        assert(k_def > 0 && near(st, 45.0f));                       // defaut : roues a fond
-
-        run(30.0f, 1.10f, 0.70f, st, k);
-        assert(near(st, 30.0f));                                    // l'angle demande est bien applique
-
-        run(45.0f, 1.60f, 0.70f, st, k);                            // 1er virage plus long de 0,5 s : phase 2 plus longue de 25 pas
-        assert(k - k_def >= 24 && k - k_def <= 26);
-
-        run(99.0f, 1.10f, 0.70f, st, k);                            // hors bornes : 15..45 deg
-        assert(near(st, 45.0f));
-        run(1.0f, 1.10f, 0.70f, st, k);
-        assert(near(st, 15.0f));
-        run(45.0f, 0.0f, 0.70f, st, k);                             // 0 s -> 0,3 s : 0,8 s de moins = 40 pas
-        assert(k_def - k >= 39 && k_def - k <= 41);
+        // Du plein regime a l'arret : la puissance ne baisse jamais de plus de ~2,3 points par cycle de 20 ms
+        FsmNavigator stopper;
+        stopper.init(0.58f, 0.035f, 0.32f, 0.20f, 0.735f);
+        float v = 0.0f;
+        for (int i = 0; i < 100; ++i) v = stopper.compute_bounded_velocity(0.32f, 0.02f);    // monte a la croisiere
+        assert(near(stopper.compute_motor_power(v, 0.32f), 50.0f));
+        float prev_power = 50.0f;
+        int steps_to_stop = 0;
+        for (int i = 0; i < 200; ++i) {
+            v = stopper.compute_bounded_velocity(0.0f, 0.02f);                               // consigne nulle : arrivee
+            const float power = stopper.compute_motor_power(v, 0.32f);
+            assert(prev_power - power <= 2.4f);                                              // jamais de chute brutale
+            prev_power = power;
+            if (power <= 0.0f && steps_to_stop == 0) steps_to_stop = i + 1;
+        }
+        assert(steps_to_stop >= 20 && steps_to_stop <= 24);                                  // ~0,43 s pour s'arreter depuis 0,32 m/s
+        assert(near(prev_power, 0.0f));
     }
 
     // --- Puissance moteur : vitesse / croisiere x puissance a la croisiere (MAX_POWER_PCT) ---

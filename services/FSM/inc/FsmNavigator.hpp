@@ -30,22 +30,19 @@ public:
                       bool start_triggered, float avoid_side, float obstacle_stop_dist_cm,
                       float reverse_speed, float curve_safety_factor);
 
-    /// Diagonale de la phase 2 de l'evitement : duree (s) et vitesse (m/s), lues dans fsm.conf.
-    void set_avoidance_diagonal(float time_s, float speed) { m_obstacle_avoidance.set_diagonal(time_s, speed); }
-
-    /// Deuxieme diagonale de l'evitement (phase 5) : duree maximale (s) et vitesse (m/s), lues dans fsm.conf.
-    void set_avoidance_return(float time_s, float speed) { m_obstacle_avoidance.set_return(time_s, speed); }
-
-    /// Virages de l'evitement : angle de braquage (deg), duree du 1er virage et des virages suivants (s), lus dans fsm.conf.
-    void set_avoidance_turn(float angle_deg, float out_time_s, float time_s) {
-        m_obstacle_avoidance.set_turn(angle_deg, out_time_s, time_s);
-    }
+    /// Reglages de l'evitement d'obstacle (12 etapes : angles, durees, vitesses), lus dans fsm.conf.
+    void set_avoidance(const AvoidanceSettings& settings) { m_obstacle_avoidance.set_settings(settings); }
 
     void reset_controllers();
     float get_current_speed() const;
     float compute_bounded_velocity(float desired_v, float dt);
     /// Puissance moteur (%) pour une vitesse donnee : vitesse / croisiere x power_at_cruise_pct.
     float compute_motor_power(float bounded_v, float cruise_speed, float power_at_cruise_pct = REFERENCE_POWER_PCT);
+
+    /// Vrai si la puissance moteur doit etre coupee d'un coup : urgence demandee, Failure ou Abort. L'etat Stopped n'en fait PAS
+    /// partie : a l'arrivee (ou en pause) le profil de vitesse freine progressivement (acceleration maximale), ce qui evite de
+    /// faire tomber la bille. Une coupure brusque a pleine vitesse la ferait tomber.
+    static bool must_cut_power(shared::fsm::MachineStates state, bool req_emergency);
 
     /// Puissance (%) a la vitesse de croisiere. 50 = reference validee (environ 0,32 m/s) sur laquelle l'evitement est calibre.
     static constexpr float REFERENCE_POWER_PCT = 50.0f;

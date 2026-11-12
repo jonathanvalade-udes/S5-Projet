@@ -87,30 +87,16 @@ bool FSM::init() {
     m_reverse_speed         = m_ipc_handler.get_float("REVERSE_SPEED", m_reverse_speed);
     m_avoid_side            = m_ipc_handler.get_float("AVOID_SIDE", m_avoid_side);
     apply_avoid_side_env(m_avoid_side);
-    m_avoid_diag_time_s = std::clamp(m_ipc_handler.get_float("AVOID_DIAG_TIME_S", m_avoid_diag_time_s),
-                                     ObstacleAvoidance::MIN_DIAG_TIME_S, ObstacleAvoidance::MAX_DIAG_TIME_S);
-    m_avoid_diag_speed  = std::clamp(m_ipc_handler.get_float("AVOID_DIAG_SPEED", m_avoid_diag_speed),
-                                     ObstacleAvoidance::MIN_DIAG_SPEED, ObstacleAvoidance::MAX_DIAG_SPEED);
-    m_navigator.set_avoidance_diagonal(m_avoid_diag_time_s, m_avoid_diag_speed);
-    std::cout << "[FSM] Evitement, diagonale de la phase 2 : " << m_avoid_diag_speed << " m/s pendant "
-              << m_avoid_diag_time_s << " s (~" << m_avoid_diag_speed * m_avoid_diag_time_s * 100.0f << " cm)" << std::endl;
-    m_avoid_return_time_s = std::clamp(m_ipc_handler.get_float("AVOID_RETURN_TIME_S", m_avoid_return_time_s),
-                                       ObstacleAvoidance::MIN_RETURN_TIME_S, ObstacleAvoidance::MAX_RETURN_TIME_S);
-    m_avoid_return_speed  = std::clamp(m_ipc_handler.get_float("AVOID_RETURN_SPEED", m_avoid_return_speed),
-                                       ObstacleAvoidance::MIN_RETURN_SPEED, ObstacleAvoidance::MAX_RETURN_SPEED);
-    m_navigator.set_avoidance_return(m_avoid_return_time_s, m_avoid_return_speed);
-    m_avoid_turn_angle_deg  = std::clamp(m_ipc_handler.get_float("AVOID_TURN_ANGLE_DEG", m_avoid_turn_angle_deg),
-                                         ObstacleAvoidance::MIN_TURN_ANGLE_DEG, ObstacleAvoidance::MAX_TURN_ANGLE_DEG);
-    m_avoid_turn_out_time_s = std::clamp(m_ipc_handler.get_float("AVOID_TURN_OUT_TIME_S", m_avoid_turn_out_time_s),
-                                         ObstacleAvoidance::MIN_TURN_OUT_TIME_S, ObstacleAvoidance::MAX_TURN_OUT_TIME_S);
-    m_avoid_turn_time_s     = std::clamp(m_ipc_handler.get_float("AVOID_TURN_TIME_S", m_avoid_turn_time_s),
-                                         ObstacleAvoidance::MIN_TURN_TIME_S, ObstacleAvoidance::MAX_TURN_TIME_S);
-    m_navigator.set_avoidance_turn(m_avoid_turn_angle_deg, m_avoid_turn_out_time_s, m_avoid_turn_time_s);
-    std::cout << "[FSM] Evitement, virages : roues a " << m_avoid_turn_angle_deg << " deg pendant " << m_avoid_turn_out_time_s
-              << " s (1er virage) puis " << m_avoid_turn_time_s << " s" << std::endl;
-    std::cout << "[FSM] Evitement, diagonale de retour (phase 5) : " << m_avoid_return_speed << " m/s, "
-              << m_avoid_return_time_s << " s maximum (~" << m_avoid_return_speed * m_avoid_return_time_s * 100.0f
-              << " cm au plus)" << std::endl;
+    // Reglages de l'evitement (12 etapes) : chaque cle AVOID_* est lue dans fsm.conf et bornee
+    for (const auto& field : AvoidanceSettings::fields()) {
+        m_avoid.set(field.key, m_ipc_handler.get_float(field.key, m_avoid.get(field.key)));
+    }
+    m_navigator.set_avoidance(m_avoid);
+    std::cout << "[FSM] Evitement (angle/duree) : etape 2-3 " << m_avoid.angle1_deg << " deg " << m_avoid.time1_s
+              << " s | 4-5 droit " << m_avoid.diag_time_s << " s a " << m_avoid.diag_speed << " m/s | 6-7 " << m_avoid.angle2_deg
+              << " deg " << m_avoid.time2_s << " s | 8 droit " << m_avoid.parallel_time_s << " s | 9-10 " << m_avoid.angle3_deg
+              << " deg " << m_avoid.time3_s << " s | 11-12 droit jusqu'a la ligne (max " << m_avoid.return_time_s << " s a "
+              << m_avoid.return_speed << " m/s) | recul " << m_avoid.reverse_dist_m << " m" << std::endl;
     std::cout << "[FSM] Contournement des obstacles par la " << (m_avoid_side < 0.0f ? "GAUCHE" : "DROITE") << std::endl;
     m_hz = std::clamp(static_cast<int>(m_ipc_handler.get_float("HZ", static_cast<float>(m_hz))), 10, 10000);
 
@@ -192,10 +178,9 @@ void FSM::run() {
                                m_current_state == shared::fsm::MachineStates::LeftDeviation);
         float motor_power_pct = m_navigator.compute_motor_power(bounded_velocity, m_straight_cruise_speed,
                                                                 avoiding ? FsmNavigator::REFERENCE_POWER_PCT : m_max_power_pct);
-        if (nav_out.req_emergency ||
-            m_current_state == shared::fsm::MachineStates::Stopped ||
-            m_current_state == shared::fsm::MachineStates::Failure ||
-            m_current_state == shared::fsm::MachineStates::Abort) {
+        // Coupure immediate seulement en urgence/echec. En Stopped (arrivee, pause), la vitesse suit le profil de freinage
+        // (acceleration maximale) jusqu'a zero : une coupure brusque a pleine vitesse fait tomber la bille.
+        if (FsmNavigator::must_cut_power(m_current_state, nav_out.req_emergency)) {
             motor_power_pct = 0.0f;
         }
 
@@ -288,46 +273,9 @@ bool FSM::apply_config_key(const std::string& key, float value) {
         m_ipc_handler.set_float("AVOID_SIDE", m_avoid_side);
         return true;
     }
-    if (key == "AVOID_DIAG_TIME_S") {
-        m_avoid_diag_time_s = std::clamp(value, ObstacleAvoidance::MIN_DIAG_TIME_S, ObstacleAvoidance::MAX_DIAG_TIME_S);
-        m_ipc_handler.set_float("AVOID_DIAG_TIME_S", m_avoid_diag_time_s);
-        m_navigator.set_avoidance_diagonal(m_avoid_diag_time_s, m_avoid_diag_speed);
-        return true;
-    }
-    if (key == "AVOID_DIAG_SPEED") {
-        m_avoid_diag_speed = std::clamp(value, ObstacleAvoidance::MIN_DIAG_SPEED, ObstacleAvoidance::MAX_DIAG_SPEED);
-        m_ipc_handler.set_float("AVOID_DIAG_SPEED", m_avoid_diag_speed);
-        m_navigator.set_avoidance_diagonal(m_avoid_diag_time_s, m_avoid_diag_speed);
-        return true;
-    }
-    if (key == "AVOID_TURN_ANGLE_DEG") {
-        m_avoid_turn_angle_deg = std::clamp(value, ObstacleAvoidance::MIN_TURN_ANGLE_DEG, ObstacleAvoidance::MAX_TURN_ANGLE_DEG);
-        m_ipc_handler.set_float("AVOID_TURN_ANGLE_DEG", m_avoid_turn_angle_deg);
-        m_navigator.set_avoidance_turn(m_avoid_turn_angle_deg, m_avoid_turn_out_time_s, m_avoid_turn_time_s);
-        return true;
-    }
-    if (key == "AVOID_TURN_OUT_TIME_S") {
-        m_avoid_turn_out_time_s = std::clamp(value, ObstacleAvoidance::MIN_TURN_OUT_TIME_S, ObstacleAvoidance::MAX_TURN_OUT_TIME_S);
-        m_ipc_handler.set_float("AVOID_TURN_OUT_TIME_S", m_avoid_turn_out_time_s);
-        m_navigator.set_avoidance_turn(m_avoid_turn_angle_deg, m_avoid_turn_out_time_s, m_avoid_turn_time_s);
-        return true;
-    }
-    if (key == "AVOID_TURN_TIME_S") {
-        m_avoid_turn_time_s = std::clamp(value, ObstacleAvoidance::MIN_TURN_TIME_S, ObstacleAvoidance::MAX_TURN_TIME_S);
-        m_ipc_handler.set_float("AVOID_TURN_TIME_S", m_avoid_turn_time_s);
-        m_navigator.set_avoidance_turn(m_avoid_turn_angle_deg, m_avoid_turn_out_time_s, m_avoid_turn_time_s);
-        return true;
-    }
-    if (key == "AVOID_RETURN_TIME_S") {
-        m_avoid_return_time_s = std::clamp(value, ObstacleAvoidance::MIN_RETURN_TIME_S, ObstacleAvoidance::MAX_RETURN_TIME_S);
-        m_ipc_handler.set_float("AVOID_RETURN_TIME_S", m_avoid_return_time_s);
-        m_navigator.set_avoidance_return(m_avoid_return_time_s, m_avoid_return_speed);
-        return true;
-    }
-    if (key == "AVOID_RETURN_SPEED") {
-        m_avoid_return_speed = std::clamp(value, ObstacleAvoidance::MIN_RETURN_SPEED, ObstacleAvoidance::MAX_RETURN_SPEED);
-        m_ipc_handler.set_float("AVOID_RETURN_SPEED", m_avoid_return_speed);
-        m_navigator.set_avoidance_return(m_avoid_return_time_s, m_avoid_return_speed);
+    if (m_avoid.set(key, value)) {   // AVOID_* de l'evitement (12 etapes) : borne puis memorise dans fsm.conf
+        m_ipc_handler.set_float(key, m_avoid.get(key));
+        m_navigator.set_avoidance(m_avoid);
         return true;
     }
     if (key == "HZ") {

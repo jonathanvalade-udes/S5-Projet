@@ -481,11 +481,11 @@
                 </div>
             </div>
 
-            <!-- Sous-Section Evitement d'obstacle (service FSM) -->
+            <!-- Sous-Section Evitement d'obstacle (service FSM) : 12 etapes, une ligne par reglage -->
             <div class="service-config-block">
                 <div class="service-config-header fsm-header">
-                    <span class="service-badge fsm-badge">ÉVITEMENT D'OBSTACLE (FSM)</span>
-                    <span class="service-desc">Arrêt devant le cube, côté de contournement et diagonale de la phase 2 ; les valeurs sont conservées dans fsm.conf sur le robot</span>
+                    <span class="service-badge fsm-badge">ÉVITEMENT D'OBSTACLE (FSM) : 12 ÉTAPES</span>
+                    <span class="service-desc">Arrêt devant le cube, reculer, 3 virages et 3 lignes droites pour le contourner, puis avancer jusqu'à trouver la ligne. Valeurs conservées dans fsm.conf sur le robot.</span>
                 </div>
                 <div class="config-table">
                     <div class="config-row">
@@ -514,12 +514,48 @@
 
                     <div class="config-row">
                         <div class="config-label-group">
-                            <span class="config-name">AVOID_DIAG_TIME_S</span>
-                            <span class="config-unit">Phase 2 : durée de la diagonale pour s'écarter (s), de 0.3 à 3.0</span>
-                            <span class="live-tag" id="live-avoid-dist">Distance diagonale : -- cm</span>
+                            <span class="config-name">AVOID_REVERSE_DIST_M</span>
+                            <span class="config-unit">Étape 1 : reculer : distance de recul (m), de 0.10 à 0.50</span>
+                            <span class="live-tag" id="live-avoid-rev">--</span>
                         </div>
                         <div class="config-input-group">
-                            <input type="number" step="0.05" min="0.3" max="3" id="cfg-avoid-diag-time" value="1.10" oninput="updateAvoidDistance()">
+                            <input type="number" step="0.01" min="0.10" max="0.50" id="cfg-avoid-rev" value="0.25" oninput="updateAvoidTags()">
+                            <button class="btn-sm" onclick="applyConfig('FSM', 'AVOID_REVERSE_DIST_M', 'cfg-avoid-rev')">Appliquer</button>
+                        </div>
+                    </div>
+
+                    <div class="config-row">
+                        <div class="config-label-group">
+                            <span class="config-name">AVOID_ANGLE_1_DEG</span>
+                            <span class="config-unit">Étape 2 : roues braquées côté choisi : angle des roues (°), de 15 à 45 (45 = à fond)</span>
+                            <span class="live-tag" id="live-avoid-a1">--</span>
+                        </div>
+                        <div class="config-input-group">
+                            <input type="number" step="1" min="15" max="45" id="cfg-avoid-a1" value="45" oninput="updateAvoidTags()">
+                            <button class="btn-sm" onclick="applyConfig('FSM', 'AVOID_ANGLE_1_DEG', 'cfg-avoid-a1')">Appliquer</button>
+                        </div>
+                    </div>
+
+                    <div class="config-row">
+                        <div class="config-label-group">
+                            <span class="config-name">AVOID_TIME_1_S</span>
+                            <span class="config-unit">Étape 3 : avancer roues braquées : durée (s), de 0.3 à 3.0</span>
+                            <span class="live-tag" id="live-avoid-t1">--</span>
+                        </div>
+                        <div class="config-input-group">
+                            <input type="number" step="0.05" min="0.3" max="3.0" id="cfg-avoid-t1" value="1.10" oninput="updateAvoidTags()">
+                            <button class="btn-sm" onclick="applyConfig('FSM', 'AVOID_TIME_1_S', 'cfg-avoid-t1')">Appliquer</button>
+                        </div>
+                    </div>
+
+                    <div class="config-row">
+                        <div class="config-label-group">
+                            <span class="config-name">AVOID_DIAG_TIME_S</span>
+                            <span class="config-unit">Étapes 4-5 : roues droites, avancer (diagonale) : durée (s), de 0.3 à 3.0</span>
+                            <span class="live-tag" id="live-avoid-diag">--</span>
+                        </div>
+                        <div class="config-input-group">
+                            <input type="number" step="0.05" min="0.3" max="3.0" id="cfg-avoid-diag-time" value="1.10" oninput="updateAvoidTags()">
                             <button class="btn-sm" onclick="applyConfig('FSM', 'AVOID_DIAG_TIME_S', 'cfg-avoid-diag-time')">Appliquer</button>
                         </div>
                     </div>
@@ -527,23 +563,83 @@
                     <div class="config-row">
                         <div class="config-label-group">
                             <span class="config-name">AVOID_DIAG_SPEED</span>
-                            <span class="config-unit">Phase 2 : vitesse pendant la diagonale (m/s), de 0.12 à 0.25</span>
-                            <span class="live-tag" id="live-avoid-speed">Distance = vitesse × durée</span>
+                            <span class="config-unit">Étapes 4-5 : vitesse de la diagonale : vitesse (m/s), de 0.12 à 0.25</span>
+                            <span class="live-tag" id="live-avoid-diag-speed">--</span>
                         </div>
                         <div class="config-input-group">
-                            <input type="number" step="0.01" min="0.12" max="0.25" id="cfg-avoid-diag-speed" value="0.16" oninput="updateAvoidDistance()">
+                            <input type="number" step="0.01" min="0.12" max="0.25" id="cfg-avoid-diag-speed" value="0.16" oninput="updateAvoidTags()">
                             <button class="btn-sm" onclick="applyConfig('FSM', 'AVOID_DIAG_SPEED', 'cfg-avoid-diag-speed')">Appliquer</button>
                         </div>
                     </div>
 
                     <div class="config-row">
                         <div class="config-label-group">
-                            <span class="config-name">AVOID_RETURN_TIME_S</span>
-                            <span class="config-unit">Phase 5 : durée maximale de la 2ᵉ diagonale, retour vers la ligne (s), de 1.0 à 5.0. Elle s'arrête dès que le ruban est vu.</span>
-                            <span class="live-tag" id="live-avoid-return-dist">Distance maximale : -- cm</span>
+                            <span class="config-name">AVOID_ANGLE_2_DEG</span>
+                            <span class="config-unit">Étape 6 : roues braquées de l'autre côté : angle des roues (°), de 15 à 45</span>
+                            <span class="live-tag" id="live-avoid-a2">--</span>
                         </div>
                         <div class="config-input-group">
-                            <input type="number" step="0.1" min="1" max="5" id="cfg-avoid-ret-time" value="3.5" oninput="updateAvoidDistance()">
+                            <input type="number" step="1" min="15" max="45" id="cfg-avoid-a2" value="45" oninput="updateAvoidTags()">
+                            <button class="btn-sm" onclick="applyConfig('FSM', 'AVOID_ANGLE_2_DEG', 'cfg-avoid-a2')">Appliquer</button>
+                        </div>
+                    </div>
+
+                    <div class="config-row">
+                        <div class="config-label-group">
+                            <span class="config-name">AVOID_TIME_2_S</span>
+                            <span class="config-unit">Étape 7 : avancer roues braquées : durée (s), de 0.2 à 2.0</span>
+                            <span class="live-tag" id="live-avoid-t2">--</span>
+                        </div>
+                        <div class="config-input-group">
+                            <input type="number" step="0.05" min="0.2" max="2.0" id="cfg-avoid-t2" value="0.70" oninput="updateAvoidTags()">
+                            <button class="btn-sm" onclick="applyConfig('FSM', 'AVOID_TIME_2_S', 'cfg-avoid-t2')">Appliquer</button>
+                        </div>
+                    </div>
+
+                    <div class="config-row">
+                        <div class="config-label-group">
+                            <span class="config-name">AVOID_PARALLEL_TIME_S</span>
+                            <span class="config-unit">Étape 8 : roues droites, avancer plus (parallèle à la ligne) : durée (s), de 0.2 à 4.0</span>
+                            <span class="live-tag" id="live-avoid-par">--</span>
+                        </div>
+                        <div class="config-input-group">
+                            <input type="number" step="0.05" min="0.2" max="4.0" id="cfg-avoid-par" value="1.00" oninput="updateAvoidTags()">
+                            <button class="btn-sm" onclick="applyConfig('FSM', 'AVOID_PARALLEL_TIME_S', 'cfg-avoid-par')">Appliquer</button>
+                        </div>
+                    </div>
+
+                    <div class="config-row">
+                        <div class="config-label-group">
+                            <span class="config-name">AVOID_ANGLE_3_DEG</span>
+                            <span class="config-unit">Étape 9 : roues braquées vers la ligne : angle des roues (°), de 15 à 45</span>
+                            <span class="live-tag" id="live-avoid-a3">--</span>
+                        </div>
+                        <div class="config-input-group">
+                            <input type="number" step="1" min="15" max="45" id="cfg-avoid-a3" value="45" oninput="updateAvoidTags()">
+                            <button class="btn-sm" onclick="applyConfig('FSM', 'AVOID_ANGLE_3_DEG', 'cfg-avoid-a3')">Appliquer</button>
+                        </div>
+                    </div>
+
+                    <div class="config-row">
+                        <div class="config-label-group">
+                            <span class="config-name">AVOID_TIME_3_S</span>
+                            <span class="config-unit">Étape 10 : avancer roues braquées : durée (s), de 0.2 à 2.0</span>
+                            <span class="live-tag" id="live-avoid-t3">--</span>
+                        </div>
+                        <div class="config-input-group">
+                            <input type="number" step="0.05" min="0.2" max="2.0" id="cfg-avoid-t3" value="0.70" oninput="updateAvoidTags()">
+                            <button class="btn-sm" onclick="applyConfig('FSM', 'AVOID_TIME_3_S', 'cfg-avoid-t3')">Appliquer</button>
+                        </div>
+                    </div>
+
+                    <div class="config-row">
+                        <div class="config-label-group">
+                            <span class="config-name">AVOID_RETURN_TIME_S</span>
+                            <span class="config-unit">Étapes 11-12 : roues droites, avancer jusqu'à trouver la ligne : durée MAXIMALE (s), de 1.0 à 5.0 ; s'arrête dès que le ruban est vu</span>
+                            <span class="live-tag" id="live-avoid-ret">--</span>
+                        </div>
+                        <div class="config-input-group">
+                            <input type="number" step="0.1" min="1.0" max="5.0" id="cfg-avoid-ret-time" value="3.5" oninput="updateAvoidTags()">
                             <button class="btn-sm" onclick="applyConfig('FSM', 'AVOID_RETURN_TIME_S', 'cfg-avoid-ret-time')">Appliquer</button>
                         </div>
                     </div>
@@ -551,48 +647,12 @@
                     <div class="config-row">
                         <div class="config-label-group">
                             <span class="config-name">AVOID_RETURN_SPEED</span>
-                            <span class="config-unit">Phase 5 : vitesse pendant la 2ᵉ diagonale (m/s), de 0.12 à 0.25</span>
-                            <span class="live-tag" id="live-avoid-return-speed">Distance max = vitesse × durée max</span>
+                            <span class="config-unit">Étapes 11-12 : vitesse de la recherche : vitesse (m/s), de 0.12 à 0.25</span>
+                            <span class="live-tag" id="live-avoid-ret-speed">--</span>
                         </div>
                         <div class="config-input-group">
-                            <input type="number" step="0.01" min="0.12" max="0.25" id="cfg-avoid-ret-speed" value="0.16" oninput="updateAvoidDistance()">
+                            <input type="number" step="0.01" min="0.12" max="0.25" id="cfg-avoid-ret-speed" value="0.16" oninput="updateAvoidTags()">
                             <button class="btn-sm" onclick="applyConfig('FSM', 'AVOID_RETURN_SPEED', 'cfg-avoid-ret-speed')">Appliquer</button>
-                        </div>
-                    </div>
-
-                    <div class="config-row">
-                        <div class="config-label-group">
-                            <span class="config-name">AVOID_TURN_ANGLE_DEG</span>
-                            <span class="config-unit">Virages (phases 2, 3 et 4) : angle de braquage des roues (°), de 15 à 45 (45 = à fond)</span>
-                            <span class="live-tag" id="live-avoid-turn-angle">Braquage : 45°</span>
-                        </div>
-                        <div class="config-input-group">
-                            <input type="number" step="1" min="15" max="45" id="cfg-avoid-turn-angle" value="45" oninput="updateAvoidTurn()">
-                            <button class="btn-sm" onclick="applyConfig('FSM', 'AVOID_TURN_ANGLE_DEG', 'cfg-avoid-turn-angle')">Appliquer</button>
-                        </div>
-                    </div>
-
-                    <div class="config-row">
-                        <div class="config-label-group">
-                            <span class="config-name">AVOID_TURN_OUT_TIME_S</span>
-                            <span class="config-unit">Phase 2 : durée pendant laquelle les roues restent braquées pour le 1er virage (s), de 0.3 à 3.0</span>
-                            <span class="live-tag" id="live-avoid-turn-out">Rotation du cap estimée : ~45°</span>
-                        </div>
-                        <div class="config-input-group">
-                            <input type="number" step="0.05" min="0.3" max="3" id="cfg-avoid-turn-out" value="1.10" oninput="updateAvoidTurn()">
-                            <button class="btn-sm" onclick="applyConfig('FSM', 'AVOID_TURN_OUT_TIME_S', 'cfg-avoid-turn-out')">Appliquer</button>
-                        </div>
-                    </div>
-
-                    <div class="config-row">
-                        <div class="config-label-group">
-                            <span class="config-name">AVOID_TURN_TIME_S</span>
-                            <span class="config-unit">Phases 3 et 4 : durée pendant laquelle les roues restent braquées pour les virages suivants (s), de 0.2 à 2.0</span>
-                            <span class="live-tag" id="live-avoid-turn">Rotation du cap estimée : ~45°</span>
-                        </div>
-                        <div class="config-input-group">
-                            <input type="number" step="0.05" min="0.2" max="2" id="cfg-avoid-turn" value="0.70" oninput="updateAvoidTurn()">
-                            <button class="btn-sm" onclick="applyConfig('FSM', 'AVOID_TURN_TIME_S', 'cfg-avoid-turn')">Appliquer</button>
                         </div>
                     </div>
                 </div>

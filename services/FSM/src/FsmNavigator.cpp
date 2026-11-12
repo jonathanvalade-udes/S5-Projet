@@ -46,6 +46,12 @@ float FsmNavigator::compute_bounded_velocity(float desired_v, float dt) {
     return m_motion_profiler ? m_motion_profiler->update(desired_v, dt) : desired_v;
 }
 
+bool FsmNavigator::must_cut_power(shared::fsm::MachineStates state, bool req_emergency) {
+    return req_emergency ||
+           state == shared::fsm::MachineStates::Failure ||
+           state == shared::fsm::MachineStates::Abort;
+}
+
 float FsmNavigator::compute_motor_power(float bounded_v, float cruise_speed, float power_at_cruise_pct) {
     if (cruise_speed <= 0.01f) return 0.0f;
     float pct = (bounded_v / cruise_speed) * power_at_cruise_pct;

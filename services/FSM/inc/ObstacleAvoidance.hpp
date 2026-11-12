@@ -1,55 +1,33 @@
 #pragma once
 
 #include <algorithm>
+#include "AvoidanceSettings.hpp"
 
 namespace services {
 
-/// Manoeuvre de contournement d'un obstacle : 5 phases simples, sans capteur de position.
-/// Toutes les valeurs (distances, angles, durees) sont ecrites en dur en tete de ObstacleAvoidance.cpp.
+/// Manoeuvre de contournement d'un obstacle, sans capteur de position : une suite de 7 segments, qui couvre les 12 etapes
+/// decrites dans AvoidanceSettings.hpp. Chaque segment fixe l'angle des roues et la vitesse, et dure un temps reglable
+/// (le premier dure une distance, le dernier jusqu'a ce que la ligne soit retrouvee).
 ///
-///   phase 1  RECULER        recule en ligne droite (distance reglable)
-///   phase 2  S'ECARTER      vire a 45 deg du cote choisi, puis avance en diagonale
-///   phase 3  SE REDRESSER   vire a 45 deg de l'autre cote (cap parallele a la piste), puis avance droit
-///                           pour depasser le cube
-///   phase 4  REVENIR        vire encore a 45 deg de l'autre cote (cap vers la piste)
-///   phase 5  RETROUVER      avance en diagonale jusqu'a ce qu'un capteur voie le ruban
+///   segment 1  etape 1        reculer
+///   segment 2  etapes 2-3     roues braquees (cote choisi), avancer
+///   segment 3  etapes 4-5     roues droites, avancer (diagonale)
+///   segment 4  etapes 6-7     roues braquees de l'autre cote, avancer
+///   segment 5  etape 8        roues droites, avancer plus (parallele a la ligne)
+///   segment 6  etapes 9-10    roues braquees vers la ligne, avancer
+///   segment 7  etapes 11-12   roues droites, avancer jusqu'a trouver la ligne
 ///
 /// Appelee a chaque cycle par FsmNavigator (etats RightDeviation / LeftDeviation).
 class ObstacleAvoidance {
 public:
     enum class DeviationResult { Running, LineFound, SearchLine };
 
-    /// Valeurs par defaut de la diagonale de la phase 2 (reglables dans fsm.conf : AVOID_DIAG_TIME_S / AVOID_DIAG_SPEED).
-    /// Distance parcourue en diagonale = vitesse x duree (0,16 x 1,10 = environ 18 cm).
-    static constexpr float DEFAULT_DIAG_TIME_S = 1.10f;
-    static constexpr float DEFAULT_DIAG_SPEED = 0.16f;
-    /// Bornes acceptees (une valeur hors bornes est ramenee dans l'intervalle).
-    static constexpr float MIN_DIAG_TIME_S = 0.3f;
-    static constexpr float MAX_DIAG_TIME_S = 3.0f;
-    static constexpr float MIN_DIAG_SPEED = 0.12f;
-    static constexpr float MAX_DIAG_SPEED = 0.25f;
-
-    /// Deuxieme diagonale (phase 5, retour vers la piste) : AVOID_RETURN_TIME_S = duree maximale de la recherche du ruban,
-    /// AVOID_RETURN_SPEED = vitesse. La phase s'arrete des que le ruban est vu.
-    static constexpr float DEFAULT_RETURN_TIME_S = 3.5f;
-    static constexpr float DEFAULT_RETURN_SPEED = 0.16f;
-    static constexpr float MIN_RETURN_TIME_S = 1.0f;
-    static constexpr float MAX_RETURN_TIME_S = 5.0f;
-    static constexpr float MIN_RETURN_SPEED = 0.12f;
-    static constexpr float MAX_RETURN_SPEED = 0.25f;
-
-    /// Virages (phases 2, 3 et 4) : AVOID_TURN_ANGLE_DEG = braquage des roues (45 = a fond), AVOID_TURN_OUT_TIME_S = duree du
-    /// premier virage (le robot repart de l'arret : plus long), AVOID_TURN_TIME_S = duree des deux virages suivants.
-    /// Avec 45 deg et ces durees, chaque virage tourne le cap d'environ 45 deg.
-    static constexpr float DEFAULT_TURN_ANGLE_DEG = 45.0f;
-    static constexpr float DEFAULT_TURN_OUT_TIME_S = 1.10f;
-    static constexpr float DEFAULT_TURN_TIME_S = 0.70f;
-    static constexpr float MIN_TURN_ANGLE_DEG = 15.0f;
-    static constexpr float MAX_TURN_ANGLE_DEG = 45.0f;
-    static constexpr float MIN_TURN_OUT_TIME_S = 0.3f;
-    static constexpr float MAX_TURN_OUT_TIME_S = 3.0f;
-    static constexpr float MIN_TURN_TIME_S = 0.2f;
-    static constexpr float MAX_TURN_TIME_S = 2.0f;
+    /// Reglages (angles, durees, vitesses). Valeurs bornees. A appeler avant reset() ou a chaud.
+    void set_settings(const AvoidanceSettings& settings) {
+        m_cfg = settings;
+        m_cfg.clamp_all();
+    }
+    const AvoidanceSettings& settings() const { return m_cfg; }
 
     /// Demarre une manoeuvre. trim_deg = biais de braquage appris (roues mal alignees).
     /// obstacle_dist (m) n'est plus utilise : la manoeuvre est reglee par des durees fixes.
@@ -61,48 +39,30 @@ public:
                            float current_speed, float min_curve_speed,
                            float& steering_deg, float& velocity);
 
-    /// Regle la diagonale de la phase 2 : duree (s) et vitesse (m/s). Valeurs bornees (0,3 a 3 s ; 0,12 a 0,25 m/s).
-    void set_diagonal(float time_s, float speed);
-
-    /// Regle la deuxieme diagonale (phase 5) : duree maximale (s) et vitesse (m/s), bornees comme ci-dessus.
-    void set_return(float time_s, float speed);
-
-    /// Regle les virages : angle de braquage (deg), duree du premier virage (phase 2) et duree des virages suivants
-    /// (phases 3 et 4). Tant que le virage dure, les roues restent braquees a cet angle. Valeurs bornees.
-    void set_turn(float angle_deg, float out_time_s, float time_s);
-
     void set_ignore_finish(float duration_s) { m_ignore_finish_s = duration_s; }
     void update_ignore_finish(float dt) { m_ignore_finish_s = std::max(0.0f, m_ignore_finish_s - dt); }
     bool is_finish_ignored() const { return m_ignore_finish_s > 0.0f; }
 
-    int get_phase() const { return m_phase; }
+    /// Numero de l'etape (1 a 12) pendant laquelle le robot est en mouvement : 1, 3, 5, 7, 8, 10 ou 12.
+    int get_step() const;
 
 private:
-    // Chaque phase fixe le braquage et la vitesse, et retourne true quand elle est terminee.
-    bool phase_reverse(float reverse_speed, float& steering_deg, float& velocity) const;
-    bool phase_move_away(float side, float forward_speed, float& steering_deg, float& velocity) const;
-    bool phase_straighten(float side, float forward_speed, float& steering_deg, float& velocity) const;
-    bool phase_turn_back(float side, float forward_speed, float& steering_deg, float& velocity) const;
-    bool phase_find_line(float& steering_deg, float& velocity) const;
+    enum Segment { Reverse = 0, TurnAway, Diagonal, TurnOpposite, Parallel, TurnToLine, FindLine, SegmentCount };
 
-    /// Vire a fond (turn_direction = +1 / -1) pendant turn_time_s, puis roule droit : braquage selon le temps ecoule dans la phase.
-    float turn_then_straight(float turn_direction, float turn_time_s) const;
+    struct Command { float steering_deg; float velocity; };
 
-    float total_timeout_s() const;   // securite : au moins la somme des durees reglees
+    Command command_for(Segment seg, float side) const;   // angle des roues et vitesse du segment
+    float duration_of(Segment seg) const;                 // duree (s) du segment ; ignoree pour Reverse (distance) et FindLine (maximum)
+    bool segment_done() const;
+    float total_timeout_s() const;                        // securite : au moins la somme des durees reglees
     static bool line_seen(const float darkness[5]);
-    void next_phase();
+    void next_segment();
 
-    float m_diag_time_s{DEFAULT_DIAG_TIME_S};   // phase 2 : duree de la diagonale
-    float m_diag_speed{DEFAULT_DIAG_SPEED};     // phase 2 : vitesse pendant la diagonale
-    float m_return_time_s{DEFAULT_RETURN_TIME_S};   // phase 5 : duree maximale de la diagonale de retour
-    float m_return_speed{DEFAULT_RETURN_SPEED};     // phase 5 : vitesse pendant la diagonale de retour
-    float m_turn_angle_deg{DEFAULT_TURN_ANGLE_DEG};     // virages : braquage des roues
-    float m_turn_out_time_s{DEFAULT_TURN_OUT_TIME_S};   // phase 2 : duree du premier virage
-    float m_turn_time_s{DEFAULT_TURN_TIME_S};           // phases 3 et 4 : duree des virages
+    AvoidanceSettings m_cfg;
 
-    int m_phase{1};
-    float m_phase_time{0.0f};        // temps ecoule dans la phase courante (s)
-    float m_phase_distance{0.0f};    // distance parcourue dans la phase courante (m)
+    Segment m_segment{Reverse};
+    float m_segment_time{0.0f};       // temps ecoule dans le segment courant (s)
+    float m_segment_distance{0.0f};   // distance parcourue dans le segment courant (m)
     float m_total_time{0.0f};
     float m_trim_deg{0.0f};
     float m_ignore_finish_s{0.0f};

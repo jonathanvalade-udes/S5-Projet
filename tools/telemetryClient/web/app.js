@@ -703,37 +703,58 @@ function updateMaxPowerSpeed() {
 }
 document.addEventListener('DOMContentLoaded', updateMaxPowerSpeed);
 
-// Evitement, virages : estimation lineaire de la rotation du cap (45 deg pour 45 deg de braquage et la duree de reference).
-// Simple repere : la vraie rotation depend de la vitesse et du servo ; a valider en simulation.
-function updateAvoidTurn() {
-    const val = id => parseFloat((document.getElementById(id) || {}).value);
-    const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
-    const a = val('cfg-avoid-turn-angle'), tOut = val('cfg-avoid-turn-out'), t = val('cfg-avoid-turn');
-    const tagA = document.getElementById('live-avoid-turn-angle');
-    const tagOut = document.getElementById('live-avoid-turn-out');
-    const tagT = document.getElementById('live-avoid-turn');
-    if (!tagA || !tagOut || !tagT) return;
-    if (isNaN(a)) {
-        tagA.textContent = 'Braquage : --';
-    } else {
-        const ac0 = clamp(a, 15, 45);
-        tagA.textContent = `Braquage : ${ac0}°${ac0 !== a ? ' (ramené aux bornes du FSM)' : ''}`;
-    }
-    const ac = clamp(isNaN(a) ? 45 : a, 15, 45);
-    tagOut.textContent = isNaN(tOut) ? 'Rotation du cap estimée : --'
-        : `Rotation du cap estimée : ~${Math.round(45 * clamp(tOut, 0.3, 3.0) / 1.10 * ac / 45)}°`;
-    tagT.textContent = isNaN(t) ? 'Rotation du cap estimée : --'
-        : `Rotation du cap estimée : ~${Math.round(45 * clamp(t, 0.2, 2.0) / 0.70 * ac / 45)}°`;
-}
-document.addEventListener('DOMContentLoaded', updateAvoidTurn);
+// Evitement d'obstacle (12 etapes) : etiquettes en direct sous chaque reglage, avec les memes bornes que le FSM.
+// Distance = vitesse x duree. Rotation du cap : estimation lineaire (45 deg pour 45 deg de braquage et la duree de reference) ;
+// simple repere, la vraie rotation depend de la vitesse et du servo (a valider en simulation).
+const AVOID_FORWARD_SPEED = 0.16;   // vitesse d'avance des etapes sans vitesse reglable (m/s du FSM)
 
-function updateAvoidDistance() {
-    avoidDistanceText('cfg-avoid-diag-time', 'cfg-avoid-diag-speed', 'live-avoid-dist',
-                      'Distance diagonale', 0.3, 3.0, 0.12, 0.25);
-    avoidDistanceText('cfg-avoid-ret-time', 'cfg-avoid-ret-speed', 'live-avoid-return-dist',
-                      'Distance maximale', 1.0, 5.0, 0.12, 0.25);
+function updateAvoidTags() {
+    const num = id => parseFloat((document.getElementById(id) || {}).value);
+    const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+    const setTag = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+    const note = (v, c) => (c !== v ? ' (ramené aux bornes du FSM)' : '');
+    const cm = m => Math.round(m * 100);
+
+    // Etape 1 : recul
+    const rev = num('cfg-avoid-rev');
+    if (isNaN(rev)) setTag('live-avoid-rev', 'Recul : --');
+    else { const c = clamp(rev, 0.10, 0.50); setTag('live-avoid-rev', `Recul : ${cm(c)} cm (~${(c / AVOID_FORWARD_SPEED).toFixed(1)} s)${note(rev, c)}`); }
+
+    // Angles des 3 virages
+    const angles = {};
+    for (const [n, tag] of [['a1', 'live-avoid-a1'], ['a2', 'live-avoid-a2'], ['a3', 'live-avoid-a3']]) {
+        const a = num('cfg-avoid-' + n);
+        if (isNaN(a)) { setTag(tag, 'Braquage : --'); angles[n] = 45; }
+        else { const c = clamp(a, 15, 45); angles[n] = c; setTag(tag, `Braquage : ${c}°${note(a, c)}`); }
+    }
+
+    // Durees des 3 virages : rotation du cap estimee
+    for (const [t, a, tag, ref, lo, hi] of [['t1', 'a1', 'live-avoid-t1', 1.10, 0.3, 3.0],
+                                            ['t2', 'a2', 'live-avoid-t2', 0.70, 0.2, 2.0],
+                                            ['t3', 'a3', 'live-avoid-t3', 0.70, 0.2, 2.0]]) {
+        const v = num('cfg-avoid-' + t);
+        if (isNaN(v)) setTag(tag, 'Rotation du cap estimée : --');
+        else { const c = clamp(v, lo, hi); setTag(tag, `Rotation du cap estimée : ~${Math.round(45 * c / ref * angles[a] / 45)}°${note(v, c)}`); }
+    }
+
+    // Lignes droites : distance parcourue
+    const diagT = num('cfg-avoid-diag-time'), diagV = num('cfg-avoid-diag-speed');
+    if (isNaN(diagT) || isNaN(diagV)) setTag('live-avoid-diag', 'Distance diagonale : -- cm');
+    else { const tc = clamp(diagT, 0.3, 3.0), vc = clamp(diagV, 0.12, 0.25);
+           setTag('live-avoid-diag', `Distance diagonale : ~${cm(tc * vc)} cm${(tc !== diagT || vc !== diagV) ? ' (ramené aux bornes du FSM)' : ''}`); }
+    setTag('live-avoid-diag-speed', 'Distance = vitesse × durée');
+
+    const par = num('cfg-avoid-par');
+    if (isNaN(par)) setTag('live-avoid-par', 'Distance : -- cm');
+    else { const c = clamp(par, 0.2, 4.0); setTag('live-avoid-par', `Distance : ~${cm(c * AVOID_FORWARD_SPEED)} cm${note(par, c)}`); }
+
+    const retT = num('cfg-avoid-ret-time'), retV = num('cfg-avoid-ret-speed');
+    if (isNaN(retT) || isNaN(retV)) setTag('live-avoid-ret', 'Distance maximale : -- cm');
+    else { const tc = clamp(retT, 1.0, 5.0), vc = clamp(retV, 0.12, 0.25);
+           setTag('live-avoid-ret', `Distance maximale : ~${cm(tc * vc)} cm${(tc !== retT || vc !== retV) ? ' (ramené aux bornes du FSM)' : ''}`); }
+    setTag('live-avoid-ret-speed', 'Distance max = vitesse × durée max');
 }
-document.addEventListener('DOMContentLoaded', updateAvoidDistance);
+document.addEventListener('DOMContentLoaded', updateAvoidTags);
 
 async function applyConfig(service, key, inputId) {
     const input = document.getElementById(inputId);
