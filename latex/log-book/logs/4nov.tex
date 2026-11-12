@@ -2,6 +2,8 @@
 Le service responsable des capteurs possède maintenant la capacité de détecter des objets en utilisant le capteur ultrason.
 Celui-ci utilise les broches \textit{GPIO} pour envoyer une ondes et attendre la réception.
 
+Un rapport détaillé expliquant les fondements et modélisation mathématique est disponible avec le nom : \textit{Calcule tes distances}.
+
 \subsection{Shared memory Region (Marc-Antoine Gauthier)}
 Au lieu d'utiliser une seule région partagée entre les services, le système utilise maintenant une région par service pour le transfert sans délai d'information.
 Cela allège les changements de contextes et isole correctement les fichiers mémoires des services.

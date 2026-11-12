@@ -28,4 +28,9 @@
 \contentsline {subsection}{\numberline {7.2}Shared memory Region (Marc-Antoine Gauthier)}{11}{subsection.7.2}%
 \contentsline {subsection}{\numberline {7.3}Fichiers de configuration}{11}{subsection.7.3}%
 \contentsline {subsection}{\numberline {7.4}Signatures}{11}{subsection.7.4}%
+\contentsline {section}{\numberline {8}Avancements}{13}{section.8}%
+\contentsline {subsection}{\numberline {8.1}FSM (Jonathan Valade)}{13}{subsection.8.1}%
+\contentsline {subsection}{\numberline {8.2}Configuration variable (Tristan Faucher)}{13}{subsection.8.2}%
+\contentsline {subsection}{\numberline {8.3}Outils d'interprétation}{13}{subsection.8.3}%
+\contentsline {subsection}{\numberline {8.4}Signatures}{13}{subsection.8.4}%
 \contentsfinish 

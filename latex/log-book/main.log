@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.28 (TeX Live 2025/Debian) (preloaded format=pdflatex 2026.8.13)  11 NOV 2026 19:56
+This is pdfTeX, Version 3.141592653-2.6-1.40.28 (TeX Live 2025/Debian) (preloaded format=pdflatex 2026.8.13)  11 NOV 2026 20:13
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -1507,27 +1507,27 @@ LaTeX Font Warning: Font shape `T1/cmr/bx/n' in size <16> not available
 (Font)              size <17.28> substituted on input line 83.
 
 (./logs/24sept.tex)
-<signatures/marc.png, id=166, 632.3625pt x 173.64874pt>
+<signatures/marc.png, id=192, 632.3625pt x 173.64874pt>
 File: signatures/marc.png Graphic file (type png)
 <use signatures/marc.png>
 Package pdftex.def Info: signatures/marc.png  used on input line 83.
 (pdftex.def)             Requested size: 155.41745pt x 42.67912pt.
-<signatures/je.png, id=168, 632.3625pt x 173.64874pt>
+<signatures/je.png, id=194, 632.3625pt x 173.64874pt>
 File: signatures/je.png Graphic file (type png)
 <use signatures/je.png>
 Package pdftex.def Info: signatures/je.png  used on input line 83.
 (pdftex.def)             Requested size: 155.41745pt x 42.67912pt.
-<signatures/tiroux.png, id=169, 632.3625pt x 173.64874pt>
+<signatures/tiroux.png, id=195, 632.3625pt x 173.64874pt>
 File: signatures/tiroux.png Graphic file (type png)
 <use signatures/tiroux.png>
 Package pdftex.def Info: signatures/tiroux.png  used on input line 83.
 (pdftex.def)             Requested size: 155.41745pt x 42.67912pt.
-<signatures/bonhomme.png, id=170, 496.85625pt x 262.9825pt>
+<signatures/bonhomme.png, id=196, 496.85625pt x 262.9825pt>
 File: signatures/bonhomme.png Graphic file (type png)
 <use signatures/bonhomme.png>
 Package pdftex.def Info: signatures/bonhomme.png  used on input line 83.
 (pdftex.def)             Requested size: 80.62825pt x 42.67912pt.
-<signatures/valade.png, id=171, 890.32625pt x 495.8525pt>
+<signatures/valade.png, id=197, 890.32625pt x 495.8525pt>
 File: signatures/valade.png Graphic file (type png)
 <use signatures/valade.png>
 Package pdftex.def Info: signatures/valade.png  used on input line 83.
@@ -1764,7 +1764,44 @@ Package fancyhdr Warning: \headheight is too small (12.0pt):
 (fancyhdr)                You might also make \topmargin smaller:
 (fancyhdr)                \addtolength{\topmargin}{-1.59999pt}.
 
-[12] (./main.aux (./figures.aux) (./entry.aux)
+[12] (./logs/5nov.tex)
+File: signatures/marc.png Graphic file (type png)
+<use signatures/marc.png>
+Package pdftex.def Info: signatures/marc.png  used on input line 97.
+(pdftex.def)             Requested size: 155.41745pt x 42.67912pt.
+File: signatures/je.png Graphic file (type png)
+<use signatures/je.png>
+Package pdftex.def Info: signatures/je.png  used on input line 97.
+(pdftex.def)             Requested size: 155.41745pt x 42.67912pt.
+File: signatures/tiroux.png Graphic file (type png)
+<use signatures/tiroux.png>
+Package pdftex.def Info: signatures/tiroux.png  used on input line 97.
+(pdftex.def)             Requested size: 155.41745pt x 42.67912pt.
+File: signatures/bonhomme.png Graphic file (type png)
+<use signatures/bonhomme.png>
+Package pdftex.def Info: signatures/bonhomme.png  used on input line 97.
+(pdftex.def)             Requested size: 80.62825pt x 42.67912pt.
+File: signatures/valade.png Graphic file (type png)
+<use signatures/valade.png>
+Package pdftex.def Info: signatures/valade.png  used on input line 97.
+(pdftex.def)             Requested size: 76.6209pt x 42.67912pt.
+
+
+Package fancyhdr Warning: \headheight is too small (12.0pt): 
+(fancyhdr)                Make it at least 13.59999pt, for example:
+(fancyhdr)                \setlength{\headheight}{13.59999pt}.
+(fancyhdr)                You might also make \topmargin smaller:
+(fancyhdr)                \addtolength{\topmargin}{-1.59999pt}.
+
+[13]
+
+Package fancyhdr Warning: \headheight is too small (12.0pt): 
+(fancyhdr)                Make it at least 13.59999pt, for example:
+(fancyhdr)                \setlength{\headheight}{13.59999pt}.
+(fancyhdr)                You might also make \topmargin smaller:
+(fancyhdr)                \addtolength{\topmargin}{-1.59999pt}.
+
+[14] (./main.aux (./figures.aux) (./entry.aux)
 Package cleveref Info: loaded `french' language definitions on input line 15.
 )
  ***********
@@ -1777,24 +1814,24 @@ LaTeX Font Warning: Size substitutions with differences
 (Font)              up to 1.28pt have occurred.
 
 Package rerunfilecheck Info: File `main.out' has not changed.
-(rerunfilecheck)             Checksum: 9235AFB017D11FB9991A995D49ABAA11;4225.
+(rerunfilecheck)             Checksum: FD75C2BC4E66A12EAAF13F0D7795FD13;5059.
 Package logreq Info: Writing requests to 'main.run.xml'.
 \openout1 = `main.run.xml'.
 
  ) 
 Here is how much of TeX's memory you used:
- 35038 strings out of 467533
- 666678 string characters out of 5422138
- 1516082 words of memory out of 5000000
- 63423 multiletter control sequences out of 15000+600000
+ 35058 strings out of 467533
+ 666971 string characters out of 5422138
+ 1518085 words of memory out of 5000000
+ 63433 multiletter control sequences out of 15000+600000
  639974 words of font info for 72 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
  90i,11n,98p,1242b,2099s stack positions out of 10000i,1000n,20000p,200000b,200000s
 </usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmr8.pfb></usr/share/texmf/fonts/type1/public/cm-super/sfbx1095.pfb></usr/share/texmf/fonts/type1/public/cm-super/sfbx1440.pfb></usr/share/texmf/fonts/type1/public/cm-super/sfbx1728.pfb></usr/share/texmf/fonts/type1/public/cm-super/sfrm1095.pfb></usr/share/texmf/fonts/type1/public/cm-super/sfrm1200.pfb></usr/share/texmf/fonts/type1/public/cm-super/sfrm1728.pfb></usr/share/texmf/fonts/type1/public/cm-super/sfti1095.pfb>
-Output written on main.pdf (15 pages, 280996 bytes).
+Output written on main.pdf (17 pages, 285941 bytes).
 PDF statistics:
- 280 PDF objects out of 1000 (max. 8388607)
- 235 compressed objects within 3 object streams
- 44 named destinations out of 1000 (max. 500000)
- 258 words of extra memory for PDF output out of 10000 (max. 10000000)
+ 314 PDF objects out of 1000 (max. 8388607)
+ 267 compressed objects within 3 object streams
+ 51 named destinations out of 1000 (max. 500000)
+ 298 words of extra memory for PDF output out of 10000 (max. 10000000)
 
