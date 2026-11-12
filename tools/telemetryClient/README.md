@@ -18,7 +18,7 @@ Outil client TCP avec tableau de bord web interactif pour la télémétrie et le
   * Badge d'état de la machine d'état FSM (`LineFollowingForward`, `CollisionRisk`, etc.).
 * **Panneau de Commandes Interactif** :
   * Boutons d'action rapide : **Départ FSM** (`trigger_start`), **Arrêt d'Urgence** (`emergency_stop`), **Export USB** (`export_usb`).
-  * Ajustement en un clic des paramètres dynamiques (`MAX_ACCELERATION`, `CRUISE_SPEED`, `MIN_CURVE_SPEED`, `LINE_KP`, `LINE_KD`).
+  * Panneau **Réglages du robot** : 31 réglages en 7 groupes (vitesse, suivi de ligne, obstacle, évitement en 12 étapes, moteurs, capteurs, fréquences). Chaque ligne a un titre clair, une description, la valeur par défaut, la plage conseillée, les limites du robot et la valeur actuelle lue en direct. Recherche, bouton « Appliquer les valeurs modifiées » par groupe. Voir la section *Réglages du robot* plus bas.
   * Console terminal intégrée pour envoyer n'importe quelle commande personnalisée.
 * **Respect des règles du projet** :
   * En-têtes [`services/libs/shared-headers`](file:///Users/jonathanvalade/Documents/Github/S5-Projet/services/libs/shared-headers) utilisés **strictement en lecture seule**.
@@ -70,3 +70,42 @@ cmake --build .
 * `--web-port <port>` : Port du serveur web local (défaut : `8080` ou variable `WEB_PORT`).
 * `--web-root <dir>` : Répertoire des fichiers web (défaut : `web`).
 * `--no-web` : Désactive le serveur web (mode console pure).
+
+---
+
+## ⚙️ Réglages du robot (panneau web)
+
+Le panneau est **généré** à partir d'un seul catalogue, `PARAMS`, au début de la section « RÉGLAGES DU ROBOT » de `web/app.js`.
+
+| Information affichée | Sens |
+| --- | --- |
+| **Défaut** | Valeur de `fsm.conf` |
+| **Conseillé** | Plage qui marche en pratique. Un avertissement orange, jamais un blocage : on peut saisir n'importe quelle valeur |
+| **Limite du robot** | Seule vraie limite : le logiciel du robot ramène la valeur dans cet intervalle (message rouge sous le champ) |
+| **Actuel (robot)** | Valeur renvoyée par le robot dans la télémétrie. Après « Appliquer », l'étiquette indique *Confirmé par le robot*, ou *Le robot a gardé X au lieu de Y* après 4 s |
+| *Pas de retour du robot* | Réglage que la télémétrie ne renvoie pas (`OBSTACLE_SLOWDOWN_DIST_CM`, `OBSTACLE_AVOID_MARGIN_CM`, `OBSTACLE_STOP_WAIT_S`) : l'envoi n'est pas confirmé, voir la console du FSM |
+
+Ajouter un réglage : une entrée dans `PARAMS` (champs expliqués dans l'en-tête de la section). Le service concerné doit accepter la clé.
+
+### Vérifier que le catalogue colle au robot
+
+```bash
+node tools/telemetryClient/tests/test_params_catalogue.js
+```
+
+Le test vérifie, pour chaque réglage : la clé existe dans le code du service ; la valeur « actuelle » existe dans le JSON de `ProtocolHandler.cpp` ; le défaut est celui de `fsm.conf` ; les limites affichées sont celles du code C++ ; et tout réglage accepté par le FSM est présent dans l'interface.
+
+### Limites actuelles du robot (FSM)
+
+Elles ont été élargies : seules des valeurs absurdes sont refusées.
+
+| Réglage | Limite |
+| --- | --- |
+| `AVOID_*` durées | 0,05 à 30 s (recherche de ligne : 0,5 à 60 s) |
+| `AVOID_*` angles | 0 à 45° (limite du servo) |
+| `AVOID_*` vitesses | 0,05 à 0,60 m/s |
+| `AVOID_REVERSE_DIST_M` | 0,02 à 3 m |
+| `MAX_POWER_PCT` | 5 à 100 % |
+| `STRAIGHT_CRUISE_SPEED` | 0,05 à 2 m/s |
+| `CURVE_SAFETY_FACTOR` | 0,05 à 5 |
+| `OBSTACLE_STOP_DIST_CM` | au moins 2 cm |

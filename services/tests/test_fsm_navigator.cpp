@@ -132,19 +132,25 @@ int main() {
         c = def; c.reverse_dist_m = 0.40f;
         assert(steps_of(c, 1) > steps_of(def, 1) + 40);
 
-        // Hors bornes : ramene dans l'intervalle (via set_settings)
+        // Hors bornes : ramene dans l'intervalle (via set_settings). Les bornes sont larges : seulement des valeurs absurdes
+        // (duree ou vitesse nulle) ou impossibles (roues a plus de 45 deg) sont corrigees.
         c = def; c.angle1_deg = 99.0f; c.time1_s = 0.0f; c.return_speed = 9.0f; c.reverse_dist_m = 0.0f;
         ObstacleAvoidance bounded;
         bounded.set_settings(c);
-        assert(near(bounded.settings().angle1_deg, 45.0f) && near(bounded.settings().time1_s, 0.3f));
-        assert(near(bounded.settings().return_speed, 0.25f) && near(bounded.settings().reverse_dist_m, 0.10f));
+        assert(near(bounded.settings().angle1_deg, 45.0f) && near(bounded.settings().time1_s, 0.05f));
+        assert(near(bounded.settings().return_speed, 0.60f) && near(bounded.settings().reverse_dist_m, 0.02f));
 
         // La structure de reglages : 12 cles distinctes, set() borne et refuse les cles inconnues
         AvoidanceSettings st;
         assert(AvoidanceSettings::fields().size() == 12);
-        assert(st.set("AVOID_PARALLEL_TIME_S", 99.0f) && near(st.parallel_time_s, 4.0f));
-        assert(st.set("AVOID_ANGLE_2_DEG", 2.0f) && near(st.get("AVOID_ANGLE_2_DEG"), 15.0f));
+        assert(st.set("AVOID_PARALLEL_TIME_S", 99.0f) && near(st.parallel_time_s, 30.0f));
+        assert(st.set("AVOID_ANGLE_2_DEG", -5.0f) && near(st.get("AVOID_ANGLE_2_DEG"), 0.0f));
         assert(!st.set("AVOID_INCONNUE", 1.0f));
+        // Les anciennes bornes ne bloquent plus : 3,1 s, 10 deg ou 0,40 m/s sont acceptes tels quels
+        assert(st.set("AVOID_TIME_1_S", 3.1f) && near(st.time1_s, 3.1f));
+        assert(st.set("AVOID_ANGLE_1_DEG", 10.0f) && near(st.angle1_deg, 10.0f));
+        assert(st.set("AVOID_DIAG_SPEED", 0.40f) && near(st.diag_speed, 0.40f));
+        assert(st.set("AVOID_REVERSE_DIST_M", 0.80f) && near(st.reverse_dist_m, 0.80f));
         assert(near(def.parallel_time_s, 1.0f));      // etape 8 : valeur par defaut plus longue que les autres lignes droites
     }
 
@@ -189,6 +195,59 @@ int main() {
         assert(FsmNavigator::MIN_POWER_PCT < FsmNavigator::REFERENCE_POWER_PCT);
         assert(FsmNavigator::REFERENCE_POWER_PCT < FsmNavigator::MAX_POWER_PCT);
         assert(FsmNavigator::MIN_CRUISE_SPEED > 0.0f);
+        assert(near(FsmNavigator::MAX_POWER_PCT, 100.0f));                     // plus de plafond a 75 %
+    }
+
+    // --- Approche d'un obstacle : distance de ralentissement, marge avant l'evitement, attente apres l'arret ---
+    {
+        using shared::fsm::MachineStates;
+        using services::ObstacleTuning;
+
+        // Valeurs par defaut = comportement d'avant (45 cm, +5 cm, 0,2 s)
+        ObstacleTuning def;
+        assert(near(def.slowdown_dist_cm, 45.0f) && near(def.avoid_margin_cm, 5.0f) && near(def.stop_wait_s, 0.2f));
+
+        // set() borne, refuse les cles inconnues, get() relit
+        ObstacleTuning t;
+        assert(ObstacleTuning::fields().size() == 3);
+        assert(t.set("OBSTACLE_SLOWDOWN_DIST_CM", 80.0f) && near(t.get("OBSTACLE_SLOWDOWN_DIST_CM"), 80.0f));
+        assert(t.set("OBSTACLE_STOP_WAIT_S", -3.0f) && near(t.stop_wait_s, 0.0f));
+        assert(t.set("OBSTACLE_AVOID_MARGIN_CM", 5000.0f) && near(t.avoid_margin_cm, 100.0f));
+        assert(!t.set("OBSTACLE_INCONNUE", 1.0f));
+
+        // Distance de ralentissement : a 70 cm, rien par defaut ; avec 80 cm, la vitesse est plafonnee (v = sqrt(2 a d))
+        FsmNavigator n;
+        n.init(0.75f, 0.2f, 0.45f, 0.22f, 0.735f);
+        assert(near(n.limit_approach_speed(1.0f, 70.0f, 20.0f), 1.0f));
+        ObstacleTuning far_slowdown;
+        far_slowdown.slowdown_dist_cm = 80.0f;
+        n.set_obstacle_tuning(far_slowdown);
+        assert(near(n.limit_approach_speed(1.0f, 70.0f, 20.0f), std::sqrt(2.0f * 0.735f * 0.50f)));
+
+        // Apres l'arret (Stopped), l'obstacle a 28 cm : avec la marge par defaut (+5 = 25 cm) on reprend la ligne ;
+        // avec une marge de 10 cm (30 cm) on evite, apres l'attente choisie (0,5 s = 25 pas de 20 ms)
+        const float dark[5] = {0.0f, 0.0f, 1.0f, 0.0f, 0.0f};
+        auto first_change = [&](FsmNavigator& nav, MachineStates& next) {
+            for (int i = 1; i <= 100; ++i) {
+                auto out = nav.step(MachineStates::Stopped, 0.02f, 28.0f, dark, false, 1.0f, 20.0f, 0.12f, 0.8f);
+                if (out.state_changed) { next = out.next_state; return i; }
+            }
+            return -1;
+        };
+        MachineStates next = MachineStates::Init;
+        FsmNavigator keep_line;
+        keep_line.init(0.75f, 0.2f, 0.45f, 0.22f, 0.735f);
+        int steps = first_change(keep_line, next);
+        assert(next == MachineStates::LineFollowingForward && steps >= 9 && steps <= 11);       // 0,2 s
+
+        FsmNavigator avoid;
+        avoid.init(0.75f, 0.2f, 0.45f, 0.22f, 0.735f);
+        ObstacleTuning tuned;
+        tuned.avoid_margin_cm = 10.0f;
+        tuned.stop_wait_s = 0.5f;
+        avoid.set_obstacle_tuning(tuned);
+        steps = first_change(avoid, next);
+        assert(next == MachineStates::RightDeviation && steps >= 24 && steps <= 26);            // 0,5 s
     }
 
     std::cout << "test_fsm_navigator: tous les tests passent" << std::endl;

@@ -92,6 +92,14 @@ bool FSM::init() {
         m_avoid.set(field.key, m_ipc_handler.get_float(field.key, m_avoid.get(field.key)));
     }
     m_navigator.set_avoidance(m_avoid);
+    // Approche d'un obstacle : ralentissement, marge avant l'evitement, attente apres l'arret (cles OBSTACLE_*)
+    for (const auto& field : ObstacleTuning::fields()) {
+        m_obstacle_tuning.set(field.key, m_ipc_handler.get_float(field.key, m_obstacle_tuning.get(field.key)));
+    }
+    m_navigator.set_obstacle_tuning(m_obstacle_tuning);
+    std::cout << "[FSM] Obstacle : ralentit a " << m_obstacle_tuning.slowdown_dist_cm << " cm, s'arrete a " << m_obstacle_stop_dist_cm
+              << " cm, evite si encore a +" << m_obstacle_tuning.avoid_margin_cm << " cm apres " << m_obstacle_tuning.stop_wait_s
+              << " s d'arret" << std::endl;
     std::cout << "[FSM] Evitement (angle/duree) : etape 2-3 " << m_avoid.angle1_deg << " deg " << m_avoid.time1_s
               << " s | 4-5 droit " << m_avoid.diag_time_s << " s a " << m_avoid.diag_speed << " m/s | 6-7 " << m_avoid.angle2_deg
               << " deg " << m_avoid.time2_s << " s | 8 droit " << m_avoid.parallel_time_s << " s | 9-10 " << m_avoid.angle3_deg
@@ -254,12 +262,12 @@ bool FSM::apply_config_key(const std::string& key, float value) {
         return true;
     }
     if (key == "CURVE_SAFETY_FACTOR") {
-        m_curve_safety_factor = std::clamp(value, 0.1f, 2.0f);
+        m_curve_safety_factor = std::clamp(value, 0.05f, 5.0f);
         m_ipc_handler.set_float("CURVE_SAFETY_FACTOR", m_curve_safety_factor);
         return true;
     }
     if (key == "OBSTACLE_STOP_DIST_CM") {
-        m_obstacle_stop_dist_cm = std::max(value, 5.0f);
+        m_obstacle_stop_dist_cm = std::max(value, 2.0f);
         m_ipc_handler.set_float("OBSTACLE_STOP_DIST_CM", m_obstacle_stop_dist_cm);
         return true;
     }
@@ -271,6 +279,11 @@ bool FSM::apply_config_key(const std::string& key, float value) {
     if (key == "AVOID_SIDE") {
         m_avoid_side = (value < 0.0f) ? -1.0f : 1.0f;
         m_ipc_handler.set_float("AVOID_SIDE", m_avoid_side);
+        return true;
+    }
+    if (m_obstacle_tuning.set(key, value)) {   // OBSTACLE_SLOWDOWN_DIST_CM, OBSTACLE_AVOID_MARGIN_CM, OBSTACLE_STOP_WAIT_S
+        m_ipc_handler.set_float(key, m_obstacle_tuning.get(key));
+        m_navigator.set_obstacle_tuning(m_obstacle_tuning);
         return true;
     }
     if (m_avoid.set(key, value)) {   // AVOID_* de l'evitement (12 etapes) : borne puis memorise dans fsm.conf

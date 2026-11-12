@@ -17,7 +17,8 @@ namespace services {
 ///   9 + 10 Roues braquees de X deg vers la ligne, avancer X s   AVOID_ANGLE_3_DEG, AVOID_TIME_3_S
 ///   11 + 12 Roues droites, avancer jusqu'a trouver la ligne     AVOID_RETURN_TIME_S (duree max), AVOID_RETURN_SPEED
 ///
-/// Les valeurs par defaut sont celles validees en simulation. Une valeur hors bornes est ramenee dans l'intervalle.
+/// Les valeurs par defaut sont celles validees en simulation. Les bornes sont larges : elles ne servent qu'a refuser des valeurs absurdes
+/// (duree nulle, vitesse nulle) ou impossibles (les roues ne braquent pas au-dela de 45 degres). Une valeur hors bornes est ramenee dans l'intervalle.
 /// Vitesses en m/s du FSM : avec STRAIGHT_CRUISE_SPEED = 0.32, 0.16 = 25 % de puissance moteur (environ 0,16 m/s).
 struct AvoidanceSettings {
     float reverse_dist_m{0.25f};      // etape 1
@@ -42,18 +43,18 @@ struct AvoidanceSettings {
 
     static const std::array<Field, 12>& fields() {
         static const std::array<Field, 12> table{{
-            {"AVOID_REVERSE_DIST_M",   &AvoidanceSettings::reverse_dist_m,  0.10f, 0.50f},
-            {"AVOID_ANGLE_1_DEG",      &AvoidanceSettings::angle1_deg,      15.0f, 45.0f},
-            {"AVOID_TIME_1_S",         &AvoidanceSettings::time1_s,         0.3f,  3.0f},
-            {"AVOID_DIAG_TIME_S",      &AvoidanceSettings::diag_time_s,     0.3f,  3.0f},
-            {"AVOID_DIAG_SPEED",       &AvoidanceSettings::diag_speed,      0.12f, 0.25f},
-            {"AVOID_ANGLE_2_DEG",      &AvoidanceSettings::angle2_deg,      15.0f, 45.0f},
-            {"AVOID_TIME_2_S",         &AvoidanceSettings::time2_s,         0.2f,  2.0f},
-            {"AVOID_PARALLEL_TIME_S",  &AvoidanceSettings::parallel_time_s, 0.2f,  4.0f},
-            {"AVOID_ANGLE_3_DEG",      &AvoidanceSettings::angle3_deg,      15.0f, 45.0f},
-            {"AVOID_TIME_3_S",         &AvoidanceSettings::time3_s,         0.2f,  2.0f},
-            {"AVOID_RETURN_TIME_S",    &AvoidanceSettings::return_time_s,   1.0f,  5.0f},
-            {"AVOID_RETURN_SPEED",     &AvoidanceSettings::return_speed,    0.12f, 0.25f},
+            {"AVOID_REVERSE_DIST_M",   &AvoidanceSettings::reverse_dist_m,  0.02f, 3.0f},
+            {"AVOID_ANGLE_1_DEG",      &AvoidanceSettings::angle1_deg,      0.0f,  45.0f},
+            {"AVOID_TIME_1_S",         &AvoidanceSettings::time1_s,         0.05f, 30.0f},
+            {"AVOID_DIAG_TIME_S",      &AvoidanceSettings::diag_time_s,     0.05f, 30.0f},
+            {"AVOID_DIAG_SPEED",       &AvoidanceSettings::diag_speed,      0.05f, 0.60f},
+            {"AVOID_ANGLE_2_DEG",      &AvoidanceSettings::angle2_deg,      0.0f,  45.0f},
+            {"AVOID_TIME_2_S",         &AvoidanceSettings::time2_s,         0.05f, 30.0f},
+            {"AVOID_PARALLEL_TIME_S",  &AvoidanceSettings::parallel_time_s, 0.05f, 30.0f},
+            {"AVOID_ANGLE_3_DEG",      &AvoidanceSettings::angle3_deg,      0.0f,  45.0f},
+            {"AVOID_TIME_3_S",         &AvoidanceSettings::time3_s,         0.05f, 30.0f},
+            {"AVOID_RETURN_TIME_S",    &AvoidanceSettings::return_time_s,   0.5f,  60.0f},
+            {"AVOID_RETURN_SPEED",     &AvoidanceSettings::return_speed,    0.05f, 0.60f},
         }};
         return table;
     }

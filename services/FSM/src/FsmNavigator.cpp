@@ -59,7 +59,7 @@ float FsmNavigator::compute_motor_power(float bounded_v, float cruise_speed, flo
 }
 
 float FsmNavigator::limit_approach_speed(float desired_v, float current_dist_cm, float obstacle_stop_dist_cm) const {
-    if (!m_motion_profiler || current_dist_cm >= OBSTACLE_SLOWDOWN_THRESHOLD_CM) return desired_v;
+    if (!m_motion_profiler || current_dist_cm >= m_tuning.slowdown_dist_cm) return desired_v;
     const float distance_to_stop_m = (current_dist_cm - obstacle_stop_dist_cm) / 100.0f;
     return std::min(desired_v, m_motion_profiler->calculate_max_safe_approach_speed(distance_to_stop_m));
 }
@@ -137,7 +137,7 @@ FsmNavOutput FsmNavigator::step(shared::fsm::MachineStates current_state, float 
         }
 
         case shared::fsm::MachineStates::CollisionRisk:
-            if (current_dist_cm > obstacle_stop_dist_cm + 5.0f) {
+            if (current_dist_cm > obstacle_stop_dist_cm + m_tuning.avoid_margin_cm) {
                 // Obstacle temporaire disparu (ex: piéton) : reprise sans arrêt complet
                 set_transition(shared::fsm::MachineStates::LineFollowingForward);
                 break;
@@ -156,8 +156,8 @@ FsmNavOutput FsmNavigator::step(shared::fsm::MachineStates current_state, float 
                 }
                 break;
             }
-            if (m_state_timer >= 0.2f) {
-                const float obstacle_check_dist = obstacle_stop_dist_cm + 5.0f;
+            if (m_state_timer >= m_tuning.stop_wait_s) {
+                const float obstacle_check_dist = obstacle_stop_dist_cm + m_tuning.avoid_margin_cm;
                 if (current_dist_cm <= obstacle_check_dist) {
                     set_transition(avoid_side < 0.0f ? shared::fsm::MachineStates::LeftDeviation : shared::fsm::MachineStates::RightDeviation);
                     float trim = m_line_controller ? m_line_controller->steering_trim() * 45.0f : 0.0f;

@@ -6,6 +6,7 @@
 #include "control/motion_profiler.hpp"
 #include "control/picar_constants.hpp"
 #include "ObstacleAvoidance.hpp"
+#include "ObstacleTuning.hpp"
 
 namespace services {
 
@@ -33,6 +34,9 @@ public:
     /// Reglages de l'evitement d'obstacle (12 etapes : angles, durees, vitesses), lus dans fsm.conf.
     void set_avoidance(const AvoidanceSettings& settings) { m_obstacle_avoidance.set_settings(settings); }
 
+    /// Reglages de l'approche d'un obstacle : distance de ralentissement, marge avant l'evitement, attente apres l'arret.
+    void set_obstacle_tuning(const ObstacleTuning& tuning) { m_tuning = tuning; }
+
     void reset_controllers();
     float get_current_speed() const;
     float compute_bounded_velocity(float desired_v, float dt);
@@ -46,14 +50,12 @@ public:
 
     /// Puissance (%) a la vitesse de croisiere. 50 = reference validee (environ 0,32 m/s) sur laquelle l'evitement est calibre.
     static constexpr float REFERENCE_POWER_PCT = 50.0f;
-    /// Bornes de MAX_POWER_PCT (puissance a la croisiere) et de STRAIGHT_CRUISE_SPEED.
-    static constexpr float MIN_POWER_PCT = 20.0f;
-    static constexpr float MAX_POWER_PCT = 75.0f;
-    static constexpr float MIN_CRUISE_SPEED = 0.10f;
-    static constexpr float MAX_CRUISE_SPEED = 0.60f;
-
-    /// Distance (cm) sous laquelle la voiture commence a ralentir avant l'obstacle.
-    static constexpr float OBSTACLE_SLOWDOWN_THRESHOLD_CM = 45.0f;
+    /// Bornes de MAX_POWER_PCT (puissance a la croisiere) et de STRAIGHT_CRUISE_SPEED : seulement des valeurs absurdes
+    /// sont refusees (un moteur ne tourne pas sous quelques % de puissance, et la puissance ne depasse pas 100 %).
+    static constexpr float MIN_POWER_PCT = 5.0f;
+    static constexpr float MAX_POWER_PCT = 100.0f;
+    static constexpr float MIN_CRUISE_SPEED = 0.05f;
+    static constexpr float MAX_CRUISE_SPEED = 2.0f;
 
     /// Plafonne la vitesse pour pouvoir s'arreter a obstacle_stop_dist_cm sans depasser a_max (v = sqrt(2*a*d)).
     float limit_approach_speed(float desired_v, float current_dist_cm, float obstacle_stop_dist_cm) const;
@@ -62,6 +64,7 @@ private:
     std::unique_ptr<LineFollowerController> m_line_controller;
     std::unique_ptr<MotionProfiler> m_motion_profiler;
     ObstacleAvoidance m_obstacle_avoidance;
+    ObstacleTuning m_tuning;
 
     float m_cruise_speed{0.35f};
     float m_min_curve_speed{0.17f};

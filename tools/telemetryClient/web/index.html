@@ -343,443 +343,55 @@
             </div>
         </section>
 
-        <!-- Section Édition & Ajustement des Paramètres par Service -->
+        <!-- Réglages du robot : le contenu des groupes est généré par app.js à partir du catalogue PARAMS -->
         <section class="card config-card">
-            <h2>🔧 Ajustement Dynamique des Paramètres & Télémétrie en Direct</h2>
-            <p class="section-desc">Chaque paramètre affiche sa valeur actuelle en direct issue du paquet de télémétrie <code>CarTelemetry</code> et permet un ajustement à chaud avec validation CRC32.</p>
+            <h2>🔧 Réglages du robot</h2>
+            <p class="section-desc">
+                Chaque ligne explique à quoi sert le réglage et montre sa valeur actuelle dans le robot (lue en direct).
+                Les <b>plages conseillées</b> sont des avertissements, pas des blocages : tu peux saisir n'importe quelle valeur.
+                Seules les <b>limites du robot</b> (affichées sous chaque réglage) sont appliquées par le logiciel du robot,
+                qui ramène alors la valeur dans l'intervalle.
+            </p>
 
-            <!-- Sous-Section FSM -->
-            <div class="service-config-block">
-                <div class="service-config-header fsm-header">
-                    <span class="service-badge fsm-badge">SERVICE FSM (ID: 0x03)</span>
-                    <span class="service-desc">Contrôle décisionnel, vitesse adaptative & navigation</span>
-                    <div class="service-actions">
-                        <button class="btn-sm btn-fsm-arm" onclick="sendServiceActive('FSM', true)">▶ Armer / Démarrer</button>
-                        <button class="btn-sm btn-fsm-pause" onclick="sendServiceActive('FSM', false)">⏸ Pause</button>
-                    </div>
-                </div>
-                <div class="config-table">
-                    <div class="config-row">
-                        <div class="config-label-group">
-                            <span class="config-name">STRAIGHT_CRUISE_SPEED</span>
-                            <span class="config-unit">Vitesse croisière ligne droite (m/s)</span>
-                            <span class="live-tag" id="live-fsm-cruise">Actuel: -- m/s</span>
-                        </div>
-                        <div class="config-input-group">
-                            <input type="number" step="0.01" min="0.10" max="0.60" id="cfg-fsm-cruise" value="0.32">
-                            <button class="btn-sm" onclick="applyConfig('FSM', 'STRAIGHT_CRUISE_SPEED', 'cfg-fsm-cruise')">Appliquer</button>
-                        </div>
-                    </div>
-
-                    <div class="config-row">
-                        <div class="config-label-group">
-                            <span class="config-name">MAX_POWER_PCT</span>
-                            <span class="config-unit">Puissance moteur (%) quand la vitesse atteint la croisière (20 à 75)</span>
-                            <span class="live-tag" id="live-fsm-maxpower">Actuel (robot) : -- %</span>
-                        </div>
-                        <div class="config-input-group">
-                            <input type="number" step="1" min="20" max="75" id="cfg-fsm-maxpower" value="50">
-                            <button class="btn-sm" onclick="applyConfig('FSM', 'MAX_POWER_PCT', 'cfg-fsm-maxpower')">Appliquer</button>
-                        </div>
-                    </div>
-
-                    <div class="config-row">
-                        <div class="config-label-group">
-                            <span class="config-name">MIN_CURVE_SPEED</span>
-                            <span class="config-unit">Vitesse plancher en virage serré (m/s)</span>
-                            <span class="live-tag" id="live-fsm-mincurve">Actuel: -- m/s</span>
-                        </div>
-                        <div class="config-input-group">
-                            <input type="number" step="0.01" id="cfg-fsm-mincurve" value="0.20">
-                            <button class="btn-sm" onclick="applyConfig('FSM', 'MIN_CURVE_SPEED', 'cfg-fsm-mincurve')">Appliquer</button>
-                        </div>
-                    </div>
-
-                    <div class="config-row">
-                        <div class="config-label-group">
-                            <span class="config-name">CURVE_SAFETY_FACTOR</span>
-                            <span class="config-unit">Facteur sécurité courbe (vitesse virage)</span>
-                            <span class="live-tag" id="live-fsm-safety">Actuel: --</span>
-                        </div>
-                        <div class="config-input-group">
-                            <input type="number" step="0.05" id="cfg-fsm-safety" value="0.90">
-                            <button class="btn-sm" onclick="applyConfig('FSM', 'CURVE_SAFETY_FACTOR', 'cfg-fsm-safety')">Appliquer</button>
-                        </div>
-                    </div>
-
-                    <div class="config-row">
-                        <div class="config-label-group">
-                            <span class="config-name">MAX_ACCELERATION</span>
-                            <span class="config-unit">Accélération & décélération max bille (m/s²)</span>
-                            <span class="live-tag" id="live-fsm-accel">Actuel: -- m/s²</span>
-                        </div>
-                        <div class="config-input-group">
-                            <input type="number" step="0.02" id="cfg-fsm-accel" value="0.735">
-                            <button class="btn-sm" onclick="applyConfig('FSM', 'MAX_ACCELERATION', 'cfg-fsm-accel')">Appliquer</button>
-                        </div>
-                    </div>
-
-                    <div class="config-row">
-                        <div class="config-label-group">
-                            <span class="config-name">LINE_KP</span>
-                            <span class="config-unit">Gain proportionnel suivi de ligne</span>
-                            <span class="live-tag" id="live-fsm-kp">Actuel: --</span>
-                        </div>
-                        <div class="config-input-group">
-                            <input type="number" step="0.01" id="cfg-fsm-kp" value="0.58">
-                            <button class="btn-sm" onclick="applyConfig('FSM', 'LINE_KP', 'cfg-fsm-kp')">Appliquer</button>
-                        </div>
-                    </div>
-
-                    <div class="config-row">
-                        <div class="config-label-group">
-                            <span class="config-name">LINE_KD</span>
-                            <span class="config-unit">Gain dérivé amortissement suivi de ligne</span>
-                            <span class="live-tag" id="live-fsm-kd">Actuel: --</span>
-                        </div>
-                        <div class="config-input-group">
-                            <input type="number" step="0.005" id="cfg-fsm-kd" value="0.035">
-                            <button class="btn-sm" onclick="applyConfig('FSM', 'LINE_KD', 'cfg-fsm-kd')">Appliquer</button>
-                        </div>
-                    </div>
-
-                    <div class="config-row">
-                        <div class="config-label-group">
-                            <span class="config-name">REVERSE_SPEED</span>
-                            <span class="config-unit">Vitesse marche arrière de récupération (m/s)</span>
-                            <span class="live-tag" id="live-fsm-reverse">Actuel: -- m/s</span>
-                        </div>
-                        <div class="config-input-group">
-                            <input type="number" step="0.01" id="cfg-fsm-reverse" value="0.12">
-                            <button class="btn-sm" onclick="applyConfig('FSM', 'REVERSE_SPEED', 'cfg-fsm-reverse')">Appliquer</button>
-                        </div>
-                    </div>
-
-                    <div class="config-row">
-                        <div class="config-label-group">
-                            <span class="config-name">AUTO_START_DELAY</span>
-                            <span class="config-unit">Délai départ auto sans bouton physique (s)</span>
-                            <span class="live-tag" id="live-fsm-autostart">Actuel: -- s</span>
-                        </div>
-                        <div class="config-input-group">
-                            <input type="number" step="0.5" id="cfg-fsm-autostart" value="0.0">
-                            <button class="btn-sm" onclick="applyConfig('FSM', 'AUTO_START_DELAY', 'cfg-fsm-autostart')">Appliquer</button>
-                        </div>
-                    </div>
-
-                    <div class="config-row">
-                        <div class="config-label-group">
-                            <span class="config-name">HZ</span>
-                            <span class="config-unit">Fréquence de la boucle FSM (Hz)</span>
-                            <span class="live-tag" id="live-fsm-hz">Actuel: 50.0 Hz</span>
-                        </div>
-                        <div class="config-input-group">
-                            <input type="number" step="5" id="cfg-fsm-hz" value="50.0">
-                            <button class="btn-sm" onclick="applyConfig('FSM', 'HZ', 'cfg-fsm-hz')">Appliquer</button>
-                        </div>
-                    </div>
+            <div class="config-toolbar">
+                <input type="search" id="param-search" placeholder="Rechercher un réglage (ex. virage, vitesse, distance, HZ)…" autocomplete="off" aria-label="Rechercher un réglage">
+                <div class="service-actions">
+                    <button class="btn-sm btn-fsm-arm" onclick="sendServiceActive('FSM', true)" title="Arme le FSM : le robot est prêt à partir (le départ se fait avec DÉPART FSM)">▶ Armer le FSM</button>
+                    <button class="btn-sm btn-fsm-pause" onclick="sendServiceActive('FSM', false)" title="Met le FSM en pause : le robot s'arrête progressivement">⏸ Pause du FSM</button>
                 </div>
             </div>
 
-            <!-- Sous-Section Evitement d'obstacle (service FSM) : 12 etapes, une ligne par reglage -->
-            <div class="service-config-block">
-                <div class="service-config-header fsm-header">
-                    <span class="service-badge fsm-badge">ÉVITEMENT D'OBSTACLE (FSM) : 12 ÉTAPES</span>
-                    <span class="service-desc">Arrêt devant le cube, reculer, 3 virages et 3 lignes droites pour le contourner, puis avancer jusqu'à trouver la ligne. Valeurs conservées dans fsm.conf sur le robot.</span>
-                </div>
-                <div class="config-table">
-                    <div class="config-row">
-                        <div class="config-label-group">
-                            <span class="config-name">OBSTACLE_STOP_DIST_CM</span>
-                            <span class="config-unit">Distance d'arrêt devant obstacle (cm)</span>
-                            <span class="live-tag" id="live-fsm-dist">Actuel (robot) : -- cm</span>
-                        </div>
-                        <div class="config-input-group">
-                            <input type="number" step="1.0" id="cfg-fsm-dist" value="20.0">
-                            <button class="btn-sm" onclick="applyConfig('FSM', 'OBSTACLE_STOP_DIST_CM', 'cfg-fsm-dist')">Appliquer</button>
-                        </div>
-                    </div>
+            <div id="param-groups"></div>
 
-                    <div class="config-row">
-                        <div class="config-label-group">
-                            <span class="config-name">AVOID_SIDE</span>
-                            <span class="config-unit">Côté évitement (-1.0 = Gauche, +1.0 = Droite)</span>
-                            <span class="live-tag" id="live-fsm-side">Actuel (robot) : --</span>
-                        </div>
-                        <div class="config-input-group">
-                            <input type="number" step="1.0" min="-1" max="1" id="cfg-fsm-side" value="1.0">
-                            <button class="btn-sm" onclick="applyConfig('FSM', 'AVOID_SIDE', 'cfg-fsm-side')">Appliquer</button>
-                        </div>
-                    </div>
-
-                    <div class="config-row">
-                        <div class="config-label-group">
-                            <span class="config-name">AVOID_REVERSE_DIST_M</span>
-                            <span class="config-unit">Étape 1 : reculer : distance de recul (m), de 0.10 à 0.50</span>
-                            <span class="live-tag" id="live-avoid-rev">Actuel (robot) : -- m</span>
-                        </div>
-                        <div class="config-input-group">
-                            <input type="number" step="0.01" min="0.10" max="0.50" id="cfg-avoid-rev" value="0.25">
-                            <button class="btn-sm" onclick="applyConfig('FSM', 'AVOID_REVERSE_DIST_M', 'cfg-avoid-rev')">Appliquer</button>
-                        </div>
-                    </div>
-
-                    <div class="config-row">
-                        <div class="config-label-group">
-                            <span class="config-name">AVOID_ANGLE_1_DEG</span>
-                            <span class="config-unit">Étape 2 : roues braquées côté choisi : angle des roues (°), de 15 à 45</span>
-                            <span class="live-tag" id="live-avoid-a1">Actuel (robot) : --°</span>
-                        </div>
-                        <div class="config-input-group">
-                            <input type="number" step="1" min="15" max="45" id="cfg-avoid-a1" value="45">
-                            <button class="btn-sm" onclick="applyConfig('FSM', 'AVOID_ANGLE_1_DEG', 'cfg-avoid-a1')">Appliquer</button>
-                        </div>
-                    </div>
-
-                    <div class="config-row">
-                        <div class="config-label-group">
-                            <span class="config-name">AVOID_TIME_1_S</span>
-                            <span class="config-unit">Étape 3 : avancer roues braquées : durée (s), de 0.3 à 3.0</span>
-                            <span class="live-tag" id="live-avoid-t1">Actuel (robot) : -- s</span>
-                        </div>
-                        <div class="config-input-group">
-                            <input type="number" step="0.05" min="0.3" max="3.0" id="cfg-avoid-t1" value="1.10">
-                            <button class="btn-sm" onclick="applyConfig('FSM', 'AVOID_TIME_1_S', 'cfg-avoid-t1')">Appliquer</button>
-                        </div>
-                    </div>
-
-                    <div class="config-row">
-                        <div class="config-label-group">
-                            <span class="config-name">AVOID_DIAG_TIME_S</span>
-                            <span class="config-unit">Étapes 4-5 : roues droites, avancer (diagonale) : durée (s), de 0.3 à 3.0</span>
-                            <span class="live-tag" id="live-avoid-diag">Actuel (robot) : -- s</span>
-                        </div>
-                        <div class="config-input-group">
-                            <input type="number" step="0.05" min="0.3" max="3.0" id="cfg-avoid-diag-time" value="1.10">
-                            <button class="btn-sm" onclick="applyConfig('FSM', 'AVOID_DIAG_TIME_S', 'cfg-avoid-diag-time')">Appliquer</button>
-                        </div>
-                    </div>
-
-                    <div class="config-row">
-                        <div class="config-label-group">
-                            <span class="config-name">AVOID_DIAG_SPEED</span>
-                            <span class="config-unit">Étapes 4-5 : vitesse de la diagonale : vitesse (m/s), de 0.12 à 0.25</span>
-                            <span class="live-tag" id="live-avoid-diag-speed">Actuel (robot) : -- m/s</span>
-                        </div>
-                        <div class="config-input-group">
-                            <input type="number" step="0.01" min="0.12" max="0.25" id="cfg-avoid-diag-speed" value="0.16">
-                            <button class="btn-sm" onclick="applyConfig('FSM', 'AVOID_DIAG_SPEED', 'cfg-avoid-diag-speed')">Appliquer</button>
-                        </div>
-                    </div>
-
-                    <div class="config-row">
-                        <div class="config-label-group">
-                            <span class="config-name">AVOID_ANGLE_2_DEG</span>
-                            <span class="config-unit">Étape 6 : roues braquées de l'autre côté : angle des roues (°), de 15 à 45</span>
-                            <span class="live-tag" id="live-avoid-a2">Actuel (robot) : --°</span>
-                        </div>
-                        <div class="config-input-group">
-                            <input type="number" step="1" min="15" max="45" id="cfg-avoid-a2" value="45">
-                            <button class="btn-sm" onclick="applyConfig('FSM', 'AVOID_ANGLE_2_DEG', 'cfg-avoid-a2')">Appliquer</button>
-                        </div>
-                    </div>
-
-                    <div class="config-row">
-                        <div class="config-label-group">
-                            <span class="config-name">AVOID_TIME_2_S</span>
-                            <span class="config-unit">Étape 7 : avancer roues braquées : durée (s), de 0.2 à 2.0</span>
-                            <span class="live-tag" id="live-avoid-t2">Actuel (robot) : -- s</span>
-                        </div>
-                        <div class="config-input-group">
-                            <input type="number" step="0.05" min="0.2" max="2.0" id="cfg-avoid-t2" value="0.70">
-                            <button class="btn-sm" onclick="applyConfig('FSM', 'AVOID_TIME_2_S', 'cfg-avoid-t2')">Appliquer</button>
-                        </div>
-                    </div>
-
-                    <div class="config-row">
-                        <div class="config-label-group">
-                            <span class="config-name">AVOID_PARALLEL_TIME_S</span>
-                            <span class="config-unit">Étape 8 : roues droites, avancer plus (parallèle) : durée (s), de 0.2 à 4.0</span>
-                            <span class="live-tag" id="live-avoid-par">Actuel (robot) : -- s</span>
-                        </div>
-                        <div class="config-input-group">
-                            <input type="number" step="0.05" min="0.2" max="4.0" id="cfg-avoid-par" value="1.00">
-                            <button class="btn-sm" onclick="applyConfig('FSM', 'AVOID_PARALLEL_TIME_S', 'cfg-avoid-par')">Appliquer</button>
-                        </div>
-                    </div>
-
-                    <div class="config-row">
-                        <div class="config-label-group">
-                            <span class="config-name">AVOID_ANGLE_3_DEG</span>
-                            <span class="config-unit">Étape 9 : roues braquées vers la ligne : angle des roues (°), de 15 à 45</span>
-                            <span class="live-tag" id="live-avoid-a3">Actuel (robot) : --°</span>
-                        </div>
-                        <div class="config-input-group">
-                            <input type="number" step="1" min="15" max="45" id="cfg-avoid-a3" value="45">
-                            <button class="btn-sm" onclick="applyConfig('FSM', 'AVOID_ANGLE_3_DEG', 'cfg-avoid-a3')">Appliquer</button>
-                        </div>
-                    </div>
-
-                    <div class="config-row">
-                        <div class="config-label-group">
-                            <span class="config-name">AVOID_TIME_3_S</span>
-                            <span class="config-unit">Étape 10 : avancer roues braquées : durée (s), de 0.2 à 2.0</span>
-                            <span class="live-tag" id="live-avoid-t3">Actuel (robot) : -- s</span>
-                        </div>
-                        <div class="config-input-group">
-                            <input type="number" step="0.05" min="0.2" max="2.0" id="cfg-avoid-t3" value="0.70">
-                            <button class="btn-sm" onclick="applyConfig('FSM', 'AVOID_TIME_3_S', 'cfg-avoid-t3')">Appliquer</button>
-                        </div>
-                    </div>
-
-                    <div class="config-row">
-                        <div class="config-label-group">
-                            <span class="config-name">AVOID_RETURN_TIME_S</span>
-                            <span class="config-unit">Étapes 11-12 : roues droites, retour ligne : durée max (s), de 1.0 à 5.0</span>
-                            <span class="live-tag" id="live-avoid-ret">Actuel (robot) : -- s</span>
-                        </div>
-                        <div class="config-input-group">
-                            <input type="number" step="0.1" min="1.0" max="5.0" id="cfg-avoid-ret-time" value="3.5">
-                            <button class="btn-sm" onclick="applyConfig('FSM', 'AVOID_RETURN_TIME_S', 'cfg-avoid-ret-time')">Appliquer</button>
-                        </div>
-                    </div>
-
-                    <div class="config-row">
-                        <div class="config-label-group">
-                            <span class="config-name">AVOID_RETURN_SPEED</span>
-                            <span class="config-unit">Étapes 11-12 : vitesse de recherche ligne : vitesse (m/s), de 0.12 à 0.25</span>
-                            <span class="live-tag" id="live-avoid-ret-speed">Actuel (robot) : -- m/s</span>
-                        </div>
-                        <div class="config-input-group">
-                            <input type="number" step="0.01" min="0.12" max="0.25" id="cfg-avoid-ret-speed" value="0.16">
-                            <button class="btn-sm" onclick="applyConfig('FSM', 'AVOID_RETURN_SPEED', 'cfg-avoid-ret-speed')">Appliquer</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Sous-Section Motors -->
-            <div class="service-config-block">
-                <div class="service-config-header motors-header">
-                    <span class="service-badge motors-badge">SERVICE MOTORS (ID: 0x02)</span>
-                    <span class="service-desc">Actionneurs, moteurs de propulsion & servo direction</span>
-                    <div class="service-actions">
-                        <button class="btn-sm btn-stop" onclick="sendEmergencyStop('MOTORS')">🛑 Arrêt Urgence</button>
-                    </div>
-                </div>
-                <div class="config-table">
-                    <div class="config-row">
-                        <div class="config-label-group">
-                            <span class="config-name">STEERING_OFFSET</span>
-                            <span class="config-unit">Trim mécanique du servomoteur (degrés)</span>
-                            <span class="live-tag" id="live-mot-offset">Actuel: --° (CCR: --)</span>
-                        </div>
-                        <div class="config-input-group">
-                            <input type="number" step="0.5" id="cfg-mot-offset" value="0.0">
-                            <button class="btn-sm" onclick="applyConfig('MOTORS', 'STEERING_OFFSET', 'cfg-mot-offset')">Appliquer</button>
-                        </div>
-                    </div>
-
-                    <div class="config-row">
-                        <div class="config-label-group">
-                            <span class="config-name">INVERT</span>
-                            <span class="config-unit">Inversion polarité propulsion (0 = normal, 1 = inversé)</span>
-                            <span class="live-tag" id="live-mot-invert">Actuel: --</span>
-                        </div>
-                        <div class="config-input-group">
-                            <input type="number" step="1" min="0" max="1" id="cfg-mot-invert" value="0">
-                            <button class="btn-sm" onclick="applyConfig('MOTORS', 'INVERT', 'cfg-mot-invert')">Appliquer</button>
-                        </div>
-                    </div>
-
-                    <div class="config-row">
-                        <div class="config-label-group">
-                            <span class="config-name">HZ</span>
-                            <span class="config-unit">Fréquence de boucle Motors (Hz)</span>
-                            <span class="live-tag" id="live-mot-hz">Actuel: 100.0 Hz</span>
-                        </div>
-                        <div class="config-input-group">
-                            <input type="number" step="10" id="cfg-mot-hz" value="100.0">
-                            <button class="btn-sm" onclick="applyConfig('MOTORS', 'HZ', 'cfg-mot-hz')">Appliquer</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Sous-Section Sensors -->
-            <div class="service-config-block">
-                <div class="service-config-header sensors-header">
-                    <span class="service-badge sensors-badge">SERVICE SENSORS (ID: 0x01)</span>
-                    <span class="service-desc">Acquisition sonar HC-SR04 & suiveur de ligne TCRT5000</span>
-                </div>
-                <div class="config-table">
-                    <div class="config-row">
-                        <div class="config-label-group">
-                            <span class="config-name">FILTER_ALPHA</span>
-                            <span class="config-unit">Facteur lissage EMA distance sonar [0.01 - 1.0]</span>
-                            <span class="live-tag" id="live-sns-alpha">Actuel: --</span>
-                        </div>
-                        <div class="config-input-group">
-                            <input type="number" step="0.05" min="0.01" max="1.0" id="cfg-sns-alpha" value="0.25">
-                            <button class="btn-sm" onclick="applyConfig('SENSORS', 'FILTER_ALPHA', 'cfg-sns-alpha')">Appliquer</button>
-                        </div>
-                    </div>
-
-                    <div class="config-row">
-                        <div class="config-label-group">
-                            <span class="config-name">MEDIAN_WINDOW</span>
-                            <span class="config-unit">Taille de fenêtre du filtre médian [1 - 15]</span>
-                            <span class="live-tag" id="live-sns-window">Actuel: --</span>
-                        </div>
-                        <div class="config-input-group">
-                            <input type="number" step="1" min="1" max="15" id="cfg-sns-window" value="5">
-                            <button class="btn-sm" onclick="applyConfig('SENSORS', 'MEDIAN_WINDOW', 'cfg-sns-window')">Appliquer</button>
-                        </div>
-                    </div>
-
-                    <div class="config-row">
-                        <div class="config-label-group">
-                            <span class="config-name">HZ</span>
-                            <span class="config-unit">Fréquence de boucle Sensors (Hz)</span>
-                            <span class="live-tag" id="live-sns-hz">Actuel: 50.0 Hz</span>
-                        </div>
-                        <div class="config-input-group">
-                            <input type="number" step="5" id="cfg-sns-hz" value="50.0">
-                            <button class="btn-sm" onclick="applyConfig('SENSORS', 'HZ', 'cfg-sns-hz')">Appliquer</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Sous-Section Téléchargement & Commande Universelle Libre -->
-            <div class="service-config-block custom-config-block">
-                <div class="service-config-header telem-header">
-                    <span class="service-badge telem-badge">ENVOI DE COMMANDE UNIVERSELLE (TOUT SERVICE)</span>
-                    <span class="service-desc">Permet de définir n'importe quelle clé sur n'importe quel service</span>
-                </div>
+            <details class="param-group custom-config-block">
+                <summary class="param-group-title">
+                    <span class="param-group-name">Réglage libre (n'importe quelle clé)</span>
+                    <span class="param-group-count">avancé</span>
+                </summary>
+                <p class="param-group-intro">Pour une clé qui n'est pas dans la liste ci-dessus : choisir le service, écrire le nom exact de la clé et sa valeur. Le service ignore les clés qu'il ne connaît pas.</p>
                 <div class="custom-cmd-grid">
                     <div class="custom-field">
-                        <label for="cfg-custom-srv">Service Cible</label>
+                        <label for="cfg-custom-srv">Service cible</label>
                         <select id="cfg-custom-srv" class="custom-select">
-                            <option value="FSM" selected>FSM (ServiceID: 0x03)</option>
-                            <option value="MOTORS">MOTORS (ServiceID: 0x02)</option>
-                            <option value="SENSORS">SENSORS (ServiceID: 0x01)</option>
-                            <option value="TELEMETRY">TELEMETRY (ServiceID: 0x00)</option>
+                            <option value="FSM" selected>FSM</option>
+                            <option value="MOTORS">MOTORS</option>
+                            <option value="SENSORS">SENSORS</option>
+                            <option value="TELEMETRY">TELEMETRY</option>
                         </select>
                     </div>
                     <div class="custom-field">
-                        <label for="cfg-custom-key">Clé de Configuration</label>
-                        <input type="text" id="cfg-custom-key" placeholder="Ex: CURVE_SAFETY_FACTOR">
+                        <label for="cfg-custom-key">Clé</label>
+                        <input type="text" id="cfg-custom-key" placeholder="Ex : CURVE_SAFETY_FACTOR">
                     </div>
                     <div class="custom-field">
-                        <label for="cfg-custom-val">Valeur Float</label>
-                        <input type="number" step="any" id="cfg-custom-val" placeholder="Ex: 0.85">
+                        <label for="cfg-custom-val">Valeur</label>
+                        <input type="number" step="any" id="cfg-custom-val" placeholder="Ex : 0.85">
                     </div>
                     <div class="custom-field-btn">
-                        <button class="btn btn-apply-custom" onclick="applyCustomConfig()">⚡ Appliquer sur Service</button>
+                        <button class="btn btn-apply-custom" onclick="applyCustomConfig()">⚡ Appliquer</button>
                     </div>
                 </div>
-            </div>
+            </details>
         </section>
 
         <!-- Section Console de Commandes Personnalisées -->
