@@ -56,4 +56,11 @@
 \contentsline {subsection}{\numberline {12.3}Validation en simulation et problèmes ouverts}{21}{subsection.12.3}%
 \contentsline {subsection}{\numberline {12.4}Documentation}{21}{subsection.12.4}%
 \contentsline {subsection}{\numberline {12.5}Signatures}{21}{subsection.12.5}%
+\contentsline {section}{\numberline {13}Avancements et modification}{23}{section.13}%
+\contentsline {subsection}{\numberline {13.1}GoDot (Raphaël Bonhomme)}{23}{subsection.13.1}%
+\contentsline {subsection}{\numberline {13.2}Client pour télémétrie (Tristan Faucher)}{23}{subsection.13.2}%
+\contentsline {subsection}{\numberline {13.3}Rapport (Jérémie Perron)}{23}{subsection.13.3}%
+\contentsline {subsection}{\numberline {13.4}Affinage des paramètres (Jonathan Valade)}{23}{subsection.13.4}%
+\contentsline {subsection}{\numberline {13.5}Modification de la bibliothèque partagé}{23}{subsection.13.5}%
+\contentsline {subsection}{\numberline {13.6}Signatures}{23}{subsection.13.6}%
 \contentsfinish 
