@@ -39,7 +39,33 @@
     \end{minipage}
 }
 
+\newcommand{\signraph}{
+    \vspace{2em}
+    \hfill % Pushes the minipage to the right side of the document
+    \begin{minipage}{6cm}
+        \centering
+        \includegraphics[height=1.5cm]{signatures/bonhomme} \\
+        \vspace{-0.4cm}
+        \rule{\linewidth}{0.4pt} \\
+        \makebox[\linewidth][l]{Raphaël Bonhomme}
+    \end{minipage}
+}
+
+\newcommand{\signvalade}{
+    \vspace{2em}
+    \hfill % Pushes the minipage to the right side of the document
+    \begin{minipage}{6cm}
+        \centering
+        \includegraphics[height=1.5cm]{signatures/valade} \\
+        \vspace{-0.4cm}
+        \rule{\linewidth}{0.4pt} \\
+        \makebox[\linewidth][l]{Jonathan Valade}
+    \end{minipage}
+}
+
 \newcommand{\entry}[6]{
+    \fancyhead[R]{#1 - #2}
+    
     \section{#1}
     \vspace{-0.5em} 
     \noindent\rule{\textwidth}{0.4pt}
@@ -60,5 +86,10 @@
         \signmarc
         \signje
         \signtiroux
+        \signraph
+        \signvalade
     \newpage
+    
+    % Clear the header for the pages that follow
+    \fancyhead[C]{} 
 }
