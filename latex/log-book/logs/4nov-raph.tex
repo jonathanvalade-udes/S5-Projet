@@ -1,0 +1,26 @@
+\subsection{Mode réaliste et obstacles dans GoDot (Raphaël Bonhomme)}
+Le mode réaliste, décrit dans l'entrée du 3 novembre, est ajouté au dépôt avec ses réglages. Il ajoute à la simulation les imperfections attendues du robot réel : roues mal alignées (biais de 4\degree{}), jeu du servo de direction (2\degree{}), moteur à 93~\% de la vitesse demandée, latence de 60~ms, petits chocs aléatoires, bruit sur le capteur ultrason et erreurs occasionnelles sur le capteur de ligne.
+Il s'active avec la touche \texttt{R} de GoDot, et le hasard est tiré avec une graine fixe, ce qui rend un parcours reproductible.
+
+Les cubes de la simulation ont maintenant une collision : la voiture ne peut plus les traverser et le capteur ultrason les détecte.
+
+\subsection{Évitement d'obstacle, première version}
+Le FSM s'arrête devant l'obstacle, recule, le contourne par un côté puis retrouve la ligne.
+Le côté du contournement se choisit au lancement de la simulation avec \texttt{./run\_sim.sh --direction gauche} ou \texttt{droite}.
+La manœuvre tient compte de la vitesse réelle du robot, environ 0,32~m/s à 50~\% de puissance, et non de la vitesse interne du FSM.
+
+\subsection{Déploiement sur le robot}
+Deux scripts ont été ajoutés.
+Le premier, \texttt{build.sh --embedded}, compile les services pour le Raspberry Pi (ARM64) dans un conteneur \textit{Docker}.
+Le second, \texttt{deploy.sh}, envoie les binaires par \textit{SSH}, sauvegarde les anciens sur le robot et peut lancer le robot.
+
+\subsection{Fusion du code et correctifs de la simulation}
+La fusion avec le code refactorisé a laissé des erreurs de compilation, corrigées dans la journée.
+La simulation a ensuite révélé des fonctions perdues pendant la refonte, qui ont été rétablies :
+\begin{itemize}
+    \item Le robot ne démarrait plus en simulation : le tube de démarrage n'était plus créé. Le script \texttt{run\_sim.sh} le crée maintenant.
+    \item L'évitement échouait de façon aléatoire : le FSM tournait à 100~Hz alors que les gains sont réglés pour 50~Hz. Le fichier \texttt{fsm.conf} fixe maintenant 50~Hz.
+    \item Le choix du côté de contournement était ignoré : la variable \texttt{AVOID\_SIDE} n'était plus lue.
+    \item Le ralentissement à l'approche de l'obstacle avait disparu : le robot arrivait à pleine vitesse et se coinçait contre le cube. Il est rétabli et vérifié par un test unitaire.
+    \item Le robot corrigeait ses erreurs dans le mauvais sens : l'ordre des cinq capteurs de ligne n'était plus inversé entre GoDot et le robot (GoDot est en miroir de la convention du robot).
+\end{itemize}

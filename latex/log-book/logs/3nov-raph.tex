@@ -1,0 +1,8 @@
+\subsection{Capteurs de ligne analogiques (Raphaël Bonhomme)}
+Chaque capteur de ligne de la simulation GoDot lance maintenant 15 rayons verticaux répartis sur ses 19~mm de largeur.
+La fraction de rayons qui touche le ruban donne une valeur continue de 0 (blanc) à 1 (noir), comme un capteur lu par un convertisseur analogique.
+Cela évite les à-coups de direction qu'occasionne une lecture tout ou rien, où la position du ruban saute par pas de 19~mm.
+
+\subsection{Roues animées}
+Les quatre roues du modèle 3D roulent selon la distance parcourue et les roues avant braquent avec l'angle de direction.
+On voit donc à l'écran un éventuel défaut d'alignement des roues.

@@ -1,0 +1,51 @@
+\subsection{Arrêt à l'arrivée et protection de la bille (Raphaël Bonhomme)}
+La bille repose dans une coupelle conique très aplatie : rayon de 20~mm et profondeur de 1,5~mm, soit une pente $\tan\theta = 1{,}5 / 20 = 0{,}075$.
+La bille sort de la coupelle lorsque l'accélération du robot dépasse l'accélération critique :
+\[
+    a_{max} = g \tan\theta = 9{,}81 \times 0{,}075 \approx 0{,}735~\text{m/s}^2
+\]
+Le FSM la respecte avec un profil de vitesse qui limite la variation de vitesse à $a_{max}$ par seconde, et avec une vitesse maximale en virage $v = k\sqrt{a_{max}\,R}$, où $k$ est un facteur de sécurité et $R = L / \tan\delta$ est le rayon du virage ($L = 0{,}14$~m est l'empattement et $\delta$ l'angle des roues).
+
+En simulation, la bille tombait pourtant dès que le robot atteignait la barre d'arrivée.
+La cause était une coupure instantanée de la puissance moteur dans l'état \texttt{Stopped} : la vitesse passait de 0,32~m/s à zéro en un seul cycle de 20~ms, soit environ 16~m/s$^2$, plus de vingt fois la limite de la bille.
+
+La correction réserve la coupure immédiate aux vrais arrêts d'urgence et aux échecs.
+À l'arrivée, la vitesse suit maintenant le profil de freinage : le robot s'arrête en environ 0,43~s et quelques centimètres après la barre.
+Un test automatisé vérifie que la puissance ne baisse jamais de plus d'environ 2,3 points par cycle.
+En simulation, la bille tombait dans 2 essais sur 3 avant la correction et dans aucun des 3 essais après.
+
+\subsection{Évitement d'obstacle en 12 étapes}
+La manœuvre a été simplifiée en une suite d'étapes précises, où chaque angle et chaque durée est réglable.
+Les valeurs ci-dessous sont celles par défaut, validées en simulation.
+
+\begin{enumerate}
+    \item Reculer de 0,25~m.
+    \item Tourner les roues de 45\degree{} du côté choisi.
+    \item Avancer 1,10~s.
+    \item Mettre les roues droites.
+    \item Avancer 1,10~s (diagonale qui écarte le robot du cube).
+    \item Tourner les roues de 45\degree{} de l'autre côté.
+    \item Avancer 0,70~s.
+    \item Mettre les roues droites et avancer 1,00~s : le robot est parallèle à la ligne et dépasse le cube.
+    \item Tourner les roues de 45\degree{} vers la ligne.
+    \item Avancer 0,70~s.
+    \item Mettre les roues droites.
+    \item Avancer jusqu'à retrouver la ligne (durée maximale de 3,5~s).
+\end{enumerate}
+
+À 0,16~m/s, une seconde de déplacement correspond à 16~cm.
+Un virage de 45\degree{} avec les roues à fond tourne le cap d'environ 45\degree{} : allonger la durée d'un virage augmente la rotation du robot.
+Chaque angle, chaque durée et chaque vitesse est une clé \texttt{AVOID\_*} du fichier \texttt{fsm.conf}, bornée par le FSM et modifiable depuis le site de télémétrie.
+Les durées supposent la vitesse de manœuvre de 0,16~m/s, soit 25~\% de la puissance moteur lorsque la vitesse de croisière est à 0,32 : si la croisière change, il faut calibrer de nouveau.
+
+\subsection{Validation en simulation et problèmes ouverts}
+\begin{itemize}
+    \item Premier obstacle : contourné et ligne retrouvée dans les quatre cas testés (droite et gauche, avec et sans le mode réaliste).
+    \item Deuxième obstacle seul, sans le mode réaliste : réussi des deux côtés.
+    \item Avec le mode réaliste, le robot perd la ligne au premier virage de la piste, même sans obstacle. Le suivi de ligne est en cause, et ni la vitesse ni les gains testés ne règlent le problème.
+    \item Depuis la simplification de la machine à états, des tours complets s'arrêtent parfois à tort en cours de parcours (la barre d'arrivée est détectée trop tôt).
+    \item Les réglages de l'évitement et du freinage n'ont pas été validés sur le robot réel.
+\end{itemize}
+
+\subsection{Documentation}
+Une documentation de la simulation a été rédigée : lancement, scène GoDot, capteurs de ligne et de distance, communication avec le FSM, suiveur de ligne, bille, mode réaliste, tests et dépannage.

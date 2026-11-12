@@ -1,0 +1,35 @@
+\subsection{Évitement d'obstacle simplifié (Raphaël Bonhomme)}
+La manœuvre d'évitement a été refaite en cinq phases simples, avec des angles et des durées fixés à l'avance : reculer, s'écarter (virage puis diagonale), se redresser (virage puis ligne droite pour dépasser le cube), revenir (virage vers la ligne), puis avancer jusqu'à retrouver le ruban.
+Elle fonctionne en boucle ouverte : seule la dernière phase consulte les capteurs de ligne.
+
+Les durées ont été calibrées en simulation par des balayages de plusieurs dizaines de combinaisons, jusqu'à trouver une zone où l'évitement réussit des deux côtés.
+Les valeurs retenues sont au centre de cette zone, ce qui évite de dépendre d'un seul réglage chanceux.
+Le deuxième obstacle est placé à environ 0,6~m d'un coin à 90\degree{} : si la manœuvre avance trop longtemps, le robot arrive trop près du coin et la manœuvre échoue du côté droit.
+
+\subsection{Tests accélérés de la simulation}
+GoDot peut s'exécuter sans fenêtre et être piloté par des scripts de test qui relèvent la position du robot.
+Pour aller plus vite que le temps réel, il faut accélérer ensemble GoDot (temps et nombre de pas de physique) et la boucle du FSM, avec le même pas de temps logique.
+Un tour complet passe ainsi d'environ 53~s à 16~s à une vitesse de 5 fois.
+À 8 fois, le FSM ne suit plus.
+Ces scripts ne font pas encore partie du dépôt.
+
+\subsection{Réglages sans recompiler}
+Les angles, les durées et les vitesses de l'évitement sont des clés du fichier \texttt{fsm.conf}.
+Le FSM borne chaque valeur pour éviter un réglage dangereux.
+Les clés se modifient aussi à chaud depuis le site de télémétrie, dans une section dédiée à l'évitement d'obstacle, et le FSM écrit la nouvelle valeur dans le fichier.
+
+\subsection{Arrêt d'urgence}
+Le bouton d'arrêt d'urgence du site de télémétrie n'était envoyé qu'au service \texttt{Motors}, qui l'appliquait une seule fois.
+Le FSM n'était pas prévenu : il continuait à commander les moteurs et le robot repartait au cycle suivant.
+Le client envoie maintenant l'arrêt au FSM puis à \texttt{Motors}.
+Le FSM passe en état \texttt{Abort}, maintient la puissance à zéro et ne repart qu'après un nouvel ordre de démarrage.
+
+Un test automatisé vérifie que les deux ordres sont émis.
+En simulation, le robot reste immobile après l'arrêt (dérive de 0,000~m) et repart après le réarmement.
+
+\subsection{Puissance maximale}
+La conversion entre vitesse et puissance moteur est $\text{puissance} = (\text{vitesse} / \text{croisière}) \times 50~\%$.
+La vitesse de croisière n'est donc pas une vitesse réelle : la voiture est toujours à 50~\% de puissance (environ 0,32~m/s) à cette vitesse, quelle que soit sa valeur.
+Un nouveau paramètre, \texttt{MAX\_POWER\_PCT} (50~\% par défaut, borné de 20 à 75~\%), permet de choisir cette puissance.
+La vitesse de croisière est maintenant bornée entre 0,10 et 0,60, ce qui évite une valeur nulle ou négative.
+Une puissance plus élevée augmente le risque pour la bille : elle n'a pas été testée.
