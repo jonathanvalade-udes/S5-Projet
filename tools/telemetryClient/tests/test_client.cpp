@@ -74,17 +74,26 @@ void mock_telemetry_server(std::atomic<bool>& server_running, std::atomic<bool>&
     handshake_done.store(true);
     assert(send(cfd, pong_pkt.data(), pong_pkt.size(), 0) == static_cast<ssize_t>(pong_pkt.size()));
 
-    // 3. Envoi d'une trame de télémétrie complète avec registres et démons
+    // 3. Envoi d'une trame de télémétrie complète avec registres, démons et configurations
     shared::car::CarTelemetry telem{};
     telem.fsm.currentState = shared::fsm::MachineStates::LineFollowingForward;
     telem.fsm.requestedState = shared::fsm::MachineStates::LineFollowingForward;
     telem.fsm.flags = 0x0201;
     telem.fsm.errorCode = 0;
+    telem.fsm.config.hz = 50.0f;
+    telem.fsm.config.straight_cruise_speed = 0.32f;
+    telem.fsm.config.max_power_pct = 50.0f;
+    telem.fsm.config.curve_safety_factor = 0.90f;
+    telem.fsm.config.avoidance.angle_1_deg = 45.0f;
+    telem.fsm.config.avoidance.time_1_s = 1.10f;
 
     telem.sensors.ultrasonicSensor.calculatedDistance = 37.5f;
     telem.sensors.ultrasonicSensor.rawDistanceCm = 38.0f;
     telem.sensors.ultrasonicSensor.flags = 1;
     telem.sensors.ultrasonicSensor.errorCode = 0;
+    telem.sensors.config.hz = 50.0f;
+    telem.sensors.config.filter_alpha = 0.25f;
+    telem.sensors.config.median_window = 5.0f;
 
     telem.motors.state = shared::motors::MotorStates::Running;
     telem.motors.leftMotor.normalizedMotorThrottleApplied = 0.45f;
@@ -92,6 +101,9 @@ void mock_telemetry_server(std::atomic<bool>& server_running, std::atomic<bool>&
     telem.motors.rightMotor.motorEncoder = 1248;
     telem.motors.steeringServo.currentCCR = 307;
     telem.motors.steeringServo.targetedCCR = 310;
+    telem.motors.config.steering_offset = -2.5f;
+    telem.motors.config.hz = 100.0f;
+    telem.motors.config.invert = 0.0f;
 
     telem.services.deamonsLenght = 4;
     telem.services.daemons[0] = {1, 1, 0, 0};
@@ -108,34 +120,47 @@ void mock_telemetry_server(std::atomic<bool>& server_running, std::atomic<bool>&
     auto telem_pkt = shared::headers::serializePacket(telem_hdr, reinterpret_cast<const uint8_t*>(&telem), sizeof(telem));
     assert(send(cfd, telem_pkt.data(), telem_pkt.size(), 0) == static_cast<ssize_t>(telem_pkt.size()));
 
-    // 4. Attente de la commande du client (SetActive trigger_start)
-    char cmd_buf[512];
-    ssize_t cmd_n = recv(cfd, cmd_buf, sizeof(cmd_buf), 0);
-    assert(cmd_n > 0);
+    // 4 & 5. Attente des commandes du client (SetActive trigger_start puis SetConfigKey)
+    std::vector<uint8_t> cmd_stream;
+    bool got_set_active = false;
+    bool got_set_config = false;
+    uint8_t temp_buf[512];
 
-    shared::headers::PacketHeader cmd_hdr{};
-    std::vector<uint8_t> cmd_payload;
-    uint32_t cmd_crc = 0;
-    assert(shared::headers::deserializePacket(reinterpret_cast<const uint8_t*>(cmd_buf), cmd_n, cmd_hdr, cmd_payload, cmd_crc));
-    assert(cmd_hdr.type == shared::headers::HeadersType::Command);
-    assert(cmd_payload.size() >= sizeof(shared::commands::CommandsHeader));
+    while (!got_set_active || !got_set_config) {
+        ssize_t n = recv(cfd, temp_buf, sizeof(temp_buf), 0);
+        if (n <= 0) break;
+        cmd_stream.insert(cmd_stream.end(), temp_buf, temp_buf + n);
 
-    const auto* ch = reinterpret_cast<const shared::commands::CommandsHeader*>(cmd_payload.data());
-    assert(ch->serviceID == shared::commands::ServiceID::FSM);
-    assert(ch->commandID == shared::commands::CommandID::SetActive);
+        while (cmd_stream.size() >= sizeof(shared::headers::PacketHeader)) {
+            shared::headers::PacketHeader h{};
+            std::memcpy(&h, cmd_stream.data(), sizeof(h));
+            size_t crc_sz = (h.headerFlag & shared::headers::flags::CRC_ENABLED) ? sizeof(shared::crc::PacketCRC) : 0;
+            size_t total_sz = sizeof(h) + h.payloadLength + crc_sz;
+            if (cmd_stream.size() < total_sz) break;
 
-    // 5. Attente de la commande SetConfigKey
-    cmd_n = recv(cfd, cmd_buf, sizeof(cmd_buf), 0);
-    assert(cmd_n > 0);
-    assert(shared::headers::deserializePacket(reinterpret_cast<const uint8_t*>(cmd_buf), cmd_n, cmd_hdr, cmd_payload, cmd_crc));
-    assert(cmd_payload.size() == sizeof(shared::commands::CommandsHeader) + sizeof(shared::commands::config::SetConfigPayload));
-    ch = reinterpret_cast<const shared::commands::CommandsHeader*>(cmd_payload.data());
-    assert(ch->serviceID == shared::commands::ServiceID::FSM);
-    assert(ch->commandID == shared::commands::CommandID::SetConfigKey);
+            std::vector<uint8_t> p;
+            uint32_t c = 0;
+            assert(shared::headers::deserializePacket(cmd_stream.data(), total_sz, h, p, c));
+            assert(h.type == shared::headers::HeadersType::Command);
+            assert(p.size() >= sizeof(shared::commands::CommandsHeader));
 
-    const auto* cfg = reinterpret_cast<const shared::commands::config::SetConfigPayload*>(cmd_payload.data() + sizeof(shared::commands::CommandsHeader));
-    assert(std::string(cfg->key) == "CURVE_SAFETY_FACTOR");
-    assert(std::abs(cfg->value - 0.85f) < 0.001f);
+            const auto* ch = reinterpret_cast<const shared::commands::CommandsHeader*>(p.data());
+            if (ch->commandID == shared::commands::CommandID::SetActive) {
+                assert(ch->serviceID == shared::commands::ServiceID::FSM);
+                got_set_active = true;
+            } else if (ch->commandID == shared::commands::CommandID::SetConfigKey) {
+                assert(ch->serviceID == shared::commands::ServiceID::FSM);
+                assert(p.size() == sizeof(shared::commands::CommandsHeader) + sizeof(shared::commands::config::SetConfigPayload));
+                const auto* cfg = reinterpret_cast<const shared::commands::config::SetConfigPayload*>(p.data() + sizeof(shared::commands::CommandsHeader));
+                assert(std::string(cfg->key) == "CURVE_SAFETY_FACTOR");
+                assert(std::abs(cfg->value - 0.85f) < 0.001f);
+                got_set_config = true;
+            }
+
+            cmd_stream.erase(cmd_stream.begin(), cmd_stream.begin() + total_sz);
+        }
+    }
+    assert(got_set_active && got_set_config);
 
     close(cfd);
     close(sfd);
@@ -183,7 +208,12 @@ int main() {
     assert(json_str.find("\"encoder\":1250") != std::string::npos);
     assert(json_str.find("\"current_ccr\":307") != std::string::npos);
     assert(json_str.find("\"daemons\"") != std::string::npos);
-    std::cout << "  ✓ Génération du flux JSON enrichi (registres, drapeaux, démons) validée." << std::endl;
+    assert(json_str.find("\"straight_cruise_speed\":0.32") != std::string::npos);
+    assert(json_str.find("\"angle_1_deg\":45.00") != std::string::npos);
+    assert(json_str.find("\"steering_offset\":-2.50") != std::string::npos);
+    assert(json_str.find("\"filter_alpha\":0.25") != std::string::npos);
+    assert(json_str.find("\"median_window\":5.00") != std::string::npos);
+    std::cout << "  ✓ Génération du flux JSON enrichi (registres, drapeaux, démons, configurations) validée." << std::endl;
 
     // Test conversion JSON avec valeurs NaN et Inf (sécurité RFC 8259)
     shared::car::CarTelemetry nan_telem = received_telem;

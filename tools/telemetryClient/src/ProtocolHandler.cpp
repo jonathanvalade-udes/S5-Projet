@@ -398,7 +398,34 @@ std::string ProtocolHandler::telemetry_to_json(const shared::car::CarTelemetry& 
     ss << "\"requested_state_id\":" << static_cast<int>(fsm_req) << ",";
     ss << "\"requested_state_name\":\"" << fsm_state_to_string(fsm_req) << "\",";
     ss << "\"flags\":" << telem.fsm.flags << ",";
-    ss << "\"error_code\":" << telem.fsm.errorCode;
+    ss << "\"error_code\":" << telem.fsm.errorCode << ",";
+    ss << "\"config\":{";
+    ss << "\"hz\":" << safe_float(telem.fsm.config.hz) << ",";
+    ss << "\"max_acceleration\":" << safe_float(telem.fsm.config.max_acceleration) << ",";
+    ss << "\"straight_cruise_speed\":" << safe_float(telem.fsm.config.straight_cruise_speed) << ",";
+    ss << "\"max_power_pct\":" << safe_float(telem.fsm.config.max_power_pct) << ",";
+    ss << "\"min_curve_speed\":" << safe_float(telem.fsm.config.min_curve_speed) << ",";
+    ss << "\"curve_safety_factor\":" << safe_float(telem.fsm.config.curve_safety_factor) << ",";
+    ss << "\"line_kp\":" << safe_float(telem.fsm.config.line_kp) << ",";
+    ss << "\"line_kd\":" << safe_float(telem.fsm.config.line_kd) << ",";
+    ss << "\"obstacle_stop_dist_cm\":" << safe_float(telem.fsm.config.obstacle_stop_dist_cm) << ",";
+    ss << "\"reverse_speed\":" << safe_float(telem.fsm.config.reverse_speed) << ",";
+    ss << "\"avoid_side\":" << safe_float(telem.fsm.config.avoid_side) << ",";
+    ss << "\"avoidance\":{";
+    ss << "\"reverse_dist_m\":" << safe_float(telem.fsm.config.avoidance.reverse_dist_m) << ",";
+    ss << "\"angle_1_deg\":" << safe_float(telem.fsm.config.avoidance.angle_1_deg) << ",";
+    ss << "\"time_1_s\":" << safe_float(telem.fsm.config.avoidance.time_1_s) << ",";
+    ss << "\"diag_time_s\":" << safe_float(telem.fsm.config.avoidance.diag_time_s) << ",";
+    ss << "\"diag_speed\":" << safe_float(telem.fsm.config.avoidance.diag_speed) << ",";
+    ss << "\"angle_2_deg\":" << safe_float(telem.fsm.config.avoidance.angle_2_deg) << ",";
+    ss << "\"time_2_s\":" << safe_float(telem.fsm.config.avoidance.time_2_s) << ",";
+    ss << "\"parallel_time_s\":" << safe_float(telem.fsm.config.avoidance.parallel_time_s) << ",";
+    ss << "\"angle_3_deg\":" << safe_float(telem.fsm.config.avoidance.angle_3_deg) << ",";
+    ss << "\"time_3_s\":" << safe_float(telem.fsm.config.avoidance.time_3_s) << ",";
+    ss << "\"return_time_s\":" << safe_float(telem.fsm.config.avoidance.return_time_s) << ",";
+    ss << "\"return_speed\":" << safe_float(telem.fsm.config.avoidance.return_speed);
+    ss << "}";
+    ss << "}";
     ss << "},";
 
     // 2. Sensors
@@ -424,6 +451,11 @@ std::string ProtocolHandler::telemetry_to_json(const shared::car::CarTelemetry& 
         ss << "}" << (i < 4 ? "," : "");
     }
     ss << "]";
+    ss << "},";
+    ss << "\"config\":{";
+    ss << "\"hz\":" << safe_float(telem.sensors.config.hz) << ",";
+    ss << "\"filter_alpha\":" << safe_float(telem.sensors.config.filter_alpha) << ",";
+    ss << "\"median_window\":" << safe_float(telem.sensors.config.median_window);
     ss << "}";
     ss << "},";
 
@@ -474,6 +506,12 @@ std::string ProtocolHandler::telemetry_to_json(const shared::car::CarTelemetry& 
     ss << "\"coefficient\":" << safe_float(st.coefficient) << ",";
     ss << "\"flags\":" << st.flags << ",";
     ss << "\"error_code\":" << st.errorCode;
+    ss << "}";
+    ss << "},";
+    ss << "\"config\":{";
+    ss << "\"steering_offset\":" << safe_float(telem.motors.config.steering_offset) << ",";
+    ss << "\"hz\":" << safe_float(telem.motors.config.hz) << ",";
+    ss << "\"invert\":" << safe_float(telem.motors.config.invert);
     ss << "}";
     ss << "},";
 

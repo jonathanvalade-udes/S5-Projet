@@ -164,16 +164,29 @@ function initDOMCache() {
     // Éléments de retour télémétrique en direct pour les configurations
     DOM.live = {
         fsmCruise: document.getElementById('live-fsm-cruise'),
+        fsmMaxPower: document.getElementById('live-fsm-maxpower'),
         fsmMinCurve: document.getElementById('live-fsm-mincurve'),
         fsmSafety: document.getElementById('live-fsm-safety'),
         fsmAccel: document.getElementById('live-fsm-accel'),
         fsmKp: document.getElementById('live-fsm-kp'),
         fsmKd: document.getElementById('live-fsm-kd'),
-        fsmDist: document.getElementById('live-fsm-dist'),
         fsmReverse: document.getElementById('live-fsm-reverse'),
-        fsmSide: document.getElementById('live-fsm-side'),
         fsmAutostart: document.getElementById('live-fsm-autostart'),
         fsmHz: document.getElementById('live-fsm-hz'),
+        fsmDist: document.getElementById('live-fsm-dist'),
+        fsmSide: document.getElementById('live-fsm-side'),
+        avoidRev: document.getElementById('live-avoid-rev'),
+        avoidA1: document.getElementById('live-avoid-a1'),
+        avoidT1: document.getElementById('live-avoid-t1'),
+        avoidDiag: document.getElementById('live-avoid-diag'),
+        avoidDiagSpeed: document.getElementById('live-avoid-diag-speed'),
+        avoidA2: document.getElementById('live-avoid-a2'),
+        avoidT2: document.getElementById('live-avoid-t2'),
+        avoidPar: document.getElementById('live-avoid-par'),
+        avoidA3: document.getElementById('live-avoid-a3'),
+        avoidT3: document.getElementById('live-avoid-t3'),
+        avoidRet: document.getElementById('live-avoid-ret'),
+        avoidRetSpeed: document.getElementById('live-avoid-ret-speed'),
         motOffset: document.getElementById('live-mot-offset'),
         motInvert: document.getElementById('live-mot-invert'),
         motHz: document.getElementById('live-mot-hz'),
@@ -297,6 +310,80 @@ function updateHex(el, key, num, width = 8) {
 
 function valNum(v, fallback = 0) {
     return (typeof v === 'number' && !isNaN(v) && isFinite(v)) ? v : fallback;
+}
+
+const pendingConfigs = {};
+
+const inputToLiveMap = {
+    'cfg-fsm-cruise': 'live-fsm-cruise',
+    'cfg-fsm-maxpower': 'live-fsm-maxpower',
+    'cfg-fsm-mincurve': 'live-fsm-mincurve',
+    'cfg-fsm-safety': 'live-fsm-safety',
+    'cfg-fsm-accel': 'live-fsm-accel',
+    'cfg-fsm-kp': 'live-fsm-kp',
+    'cfg-fsm-kd': 'live-fsm-kd',
+    'cfg-fsm-reverse': 'live-fsm-reverse',
+    'cfg-fsm-autostart': 'live-fsm-autostart',
+    'cfg-fsm-hz': 'live-fsm-hz',
+    'cfg-fsm-dist': 'live-fsm-dist',
+    'cfg-fsm-side': 'live-fsm-side',
+    'cfg-avoid-rev': 'live-avoid-rev',
+    'cfg-avoid-a1': 'live-avoid-a1',
+    'cfg-avoid-t1': 'live-avoid-t1',
+    'cfg-avoid-diag-time': 'live-avoid-diag',
+    'cfg-avoid-diag-speed': 'live-avoid-diag-speed',
+    'cfg-avoid-a2': 'live-avoid-a2',
+    'cfg-avoid-t2': 'live-avoid-t2',
+    'cfg-avoid-par': 'live-avoid-par',
+    'cfg-avoid-a3': 'live-avoid-a3',
+    'cfg-avoid-t3': 'live-avoid-t3',
+    'cfg-avoid-ret-time': 'live-avoid-ret',
+    'cfg-avoid-ret-speed': 'live-avoid-ret-speed',
+    'cfg-mot-offset': 'live-mot-offset',
+    'cfg-mot-invert': 'live-mot-invert',
+    'cfg-mot-hz': 'live-mot-hz',
+    'cfg-sns-alpha': 'live-sns-alpha',
+    'cfg-sns-window': 'live-sns-window',
+    'cfg-sns-hz': 'live-sns-hz'
+};
+
+function updateLiveConfig(domEl, inputId, paramKey, robotVal, unit = '', decimals = 2) {
+    if (!domEl) return;
+    const v = valNum(robotVal, NaN);
+    if (isNaN(v)) {
+        updateText(domEl, `cfg_${paramKey}`, `Actuel (robot) : -- ${unit}`.trim());
+        if (domEl.className !== 'live-tag') domEl.className = 'live-tag';
+        return;
+    }
+
+    const formatted = (decimals !== null && decimals >= 0) ? v.toFixed(decimals) : v.toString();
+    const pending = pendingConfigs[paramKey];
+    const inputEl = document.getElementById(inputId);
+    const inputVal = inputEl ? parseFloat(inputEl.value) : NaN;
+
+    if (pending) {
+        if (Math.abs(v - pending.targetValue) < 0.015) {
+            delete pendingConfigs[paramKey];
+            if (domEl.className !== 'live-tag synced') domEl.className = 'live-tag synced';
+            updateText(domEl, `cfg_${paramKey}`, `✓ Confirmé par le robot : ${formatted} ${unit}`.trim());
+            return;
+        } else if (Date.now() - pending.timestamp > 4000) {
+            delete pendingConfigs[paramKey];
+        } else {
+            if (domEl.className !== 'live-tag pending') domEl.className = 'live-tag pending';
+            updateText(domEl, `cfg_${paramKey}`, `⏳ Application... (actuel : ${formatted} ${unit})`.trim());
+            return;
+        }
+    }
+
+    const isMatching = !isNaN(inputVal) && Math.abs(v - inputVal) < 0.015;
+    if (isMatching) {
+        if (domEl.className !== 'live-tag synced') domEl.className = 'live-tag synced';
+        updateText(domEl, `cfg_${paramKey}`, `✓ Actuel (robot) : ${formatted} ${unit}`.trim());
+    } else {
+        if (domEl.className !== 'live-tag') domEl.className = 'live-tag';
+        updateText(domEl, `cfg_${paramKey}`, `Actuel (robot) : ${formatted} ${unit}`.trim());
+    }
 }
 
 // ------------------------------------------------------------------------------
@@ -578,42 +665,57 @@ function applyTelemetry(telem) {
         }
     }
 
-    // 8. Mise à jour des valeurs actuelles réelles dans les contrôles de configuration
+    // 8. Mise à jour des valeurs actuelles réelles dans les contrôles de configuration (avec double vérification)
     if (DOM.live) {
-        if (telem.motors && telem.motors.left) {
-            const throttlePct = Math.round(valNum(telem.motors.left.applied_throttle, 0) * 100);
-            const approxSpeedMs = ((throttlePct / 50.0) * 0.32).toFixed(2);
-            updateText(DOM.live.fsmCruise, 'live_fsm_cruise', `Actuel: ~${approxSpeedMs} m/s (${throttlePct}%)`);
-            updateText(DOM.live.fsmMinCurve, 'live_fsm_mincurve', `Consigne: ${Math.round(valNum(telem.motors.left.target_throttle, 0) * 100)}%`);
-        }
-        if (telem.fsm) {
-            updateText(DOM.live.fsmSafety, 'live_fsm_safety', `État FSM: ${telem.fsm.state_name || 'Inconnu'}`);
-            updateText(DOM.live.fsmSide, 'live_fsm_side', (telem.fsm.flags & (1 << 10)) ? `Évitement Auto Activé` : `Actuel: Nominal`);
-        }
-        if (telem.sensors && telem.sensors.ultrasonic) {
-            const curDist = valNum(telem.sensors.ultrasonic.calc_dist_cm, 0).toFixed(1);
-            const rawDist = valNum(telem.sensors.ultrasonic.raw_dist_cm, 0).toFixed(1);
-            updateText(DOM.live.fsmDist, 'live_fsm_dist', `Sonar actuel: ${curDist} cm (brut: ${rawDist} cm)`);
-            updateText(DOM.live.snsAlpha, 'live_sns_alpha', `Calculé: ${curDist} cm`);
-        }
-        if (telem.sensors && telem.sensors.line_follower) {
-            const lf = telem.sensors.line_follower;
-            const anyDetected = (lf.flags & (1 << 3)) !== 0;
-            updateText(DOM.live.fsmKp, 'live_fsm_kp', anyDetected ? `Suivi actif (Ligne OK)` : `Recherche / Ligne perdue`);
-            if (Array.isArray(lf.sensors) && lf.sensors.length > 2) {
-                const centerCorr = valNum(lf.sensors[2].corrector, 0).toFixed(2);
-                updateText(DOM.live.fsmKd, 'live_fsm_kd', `Corr. Centre: ${centerCorr}`);
+        // FSM Config
+        if (telem.fsm && telem.fsm.config) {
+            const fc = telem.fsm.config;
+            updateLiveConfig(DOM.live.fsmCruise, 'cfg-fsm-cruise', 'FSM.STRAIGHT_CRUISE_SPEED', fc.straight_cruise_speed, 'm/s', 2);
+            updateLiveConfig(DOM.live.fsmMaxPower, 'cfg-fsm-maxpower', 'FSM.MAX_POWER_PCT', fc.max_power_pct, '%', 0);
+            updateLiveConfig(DOM.live.fsmMinCurve, 'cfg-fsm-mincurve', 'FSM.MIN_CURVE_SPEED', fc.min_curve_speed, 'm/s', 2);
+            updateLiveConfig(DOM.live.fsmSafety, 'cfg-fsm-safety', 'FSM.CURVE_SAFETY_FACTOR', fc.curve_safety_factor, '', 2);
+            updateLiveConfig(DOM.live.fsmAccel, 'cfg-fsm-accel', 'FSM.MAX_ACCELERATION', fc.max_acceleration, 'm/s²', 3);
+            updateLiveConfig(DOM.live.fsmKp, 'cfg-fsm-kp', 'FSM.LINE_KP', fc.line_kp, '', 2);
+            updateLiveConfig(DOM.live.fsmKd, 'cfg-fsm-kd', 'FSM.LINE_KD', fc.line_kd, '', 3);
+            updateLiveConfig(DOM.live.fsmReverse, 'cfg-fsm-reverse', 'FSM.REVERSE_SPEED', fc.reverse_speed, 'm/s', 2);
+            updateLiveConfig(DOM.live.fsmHz, 'cfg-fsm-hz', 'FSM.HZ', fc.hz, 'Hz', 1);
+
+            updateLiveConfig(DOM.live.fsmDist, 'cfg-fsm-dist', 'FSM.OBSTACLE_STOP_DIST_CM', fc.obstacle_stop_dist_cm, 'cm', 1);
+            const sideSuffix = fc.avoid_side < 0 ? '(-1.0 Gauche)' : '+1.0 Droite';
+            updateLiveConfig(DOM.live.fsmSide, 'cfg-fsm-side', 'FSM.AVOID_SIDE', fc.avoid_side, sideSuffix, 1);
+
+            if (fc.avoidance) {
+                const av = fc.avoidance;
+                updateLiveConfig(DOM.live.avoidRev, 'cfg-avoid-rev', 'FSM.AVOID_REVERSE_DIST_M', av.reverse_dist_m, 'm', 2);
+                updateLiveConfig(DOM.live.avoidA1, 'cfg-avoid-a1', 'FSM.AVOID_ANGLE_1_DEG', av.angle_1_deg, '°', 0);
+                updateLiveConfig(DOM.live.avoidT1, 'cfg-avoid-t1', 'FSM.AVOID_TIME_1_S', av.time_1_s, 's', 2);
+                updateLiveConfig(DOM.live.avoidDiag, 'cfg-avoid-diag-time', 'FSM.AVOID_DIAG_TIME_S', av.diag_time_s, 's', 2);
+                updateLiveConfig(DOM.live.avoidDiagSpeed, 'cfg-avoid-diag-speed', 'FSM.AVOID_DIAG_SPEED', av.diag_speed, 'm/s', 2);
+                updateLiveConfig(DOM.live.avoidA2, 'cfg-avoid-a2', 'FSM.AVOID_ANGLE_2_DEG', av.angle_2_deg, '°', 0);
+                updateLiveConfig(DOM.live.avoidT2, 'cfg-avoid-t2', 'FSM.AVOID_TIME_2_S', av.time_2_s, 's', 2);
+                updateLiveConfig(DOM.live.avoidPar, 'cfg-avoid-par', 'FSM.AVOID_PARALLEL_TIME_S', av.parallel_time_s, 's', 2);
+                updateLiveConfig(DOM.live.avoidA3, 'cfg-avoid-a3', 'FSM.AVOID_ANGLE_3_DEG', av.angle_3_deg, '°', 0);
+                updateLiveConfig(DOM.live.avoidT3, 'cfg-avoid-t3', 'FSM.AVOID_TIME_3_S', av.time_3_s, 's', 2);
+                updateLiveConfig(DOM.live.avoidRet, 'cfg-avoid-ret-time', 'FSM.AVOID_RETURN_TIME_S', av.return_time_s, 's', 2);
+                updateLiveConfig(DOM.live.avoidRetSpeed, 'cfg-avoid-ret-speed', 'FSM.AVOID_RETURN_SPEED', av.return_speed, 'm/s', 2);
             }
         }
-        if (telem.motors && telem.motors.steering) {
-            const st = telem.motors.steering;
-            const curAngle = valNum(st.current_angle, 0).toFixed(1);
-            const ccr = st.current_ccr !== undefined ? st.current_ccr : '--';
-            const coeff = valNum(st.coefficient, 1.0).toFixed(2);
-            updateText(DOM.live.motOffset, 'live_mot_offset', `Angle: ${curAngle}° | CCR: ${ccr} | Trim: ${coeff}`);
+
+        // Motors Config
+        if (telem.motors && telem.motors.config) {
+            const mc = telem.motors.config;
+            updateLiveConfig(DOM.live.motOffset, 'cfg-mot-offset', 'MOTORS.STEERING_OFFSET', mc.steering_offset, '°', 1);
+            const invertSuffix = mc.invert > 0.5 ? '(1 Inversé)' : '(0 Normal)';
+            updateLiveConfig(DOM.live.motInvert, 'cfg-mot-invert', 'MOTORS.INVERT', mc.invert, invertSuffix, 0);
+            updateLiveConfig(DOM.live.motHz, 'cfg-mot-hz', 'MOTORS.HZ', mc.hz, 'Hz', 1);
         }
-        if (telem.motors) {
-            updateText(DOM.live.motInvert, 'live_mot_invert', `État Moteur: ${telem.motors.state_name || 'Inconnu'}`);
+
+        // Sensors Config
+        if (telem.sensors && telem.sensors.config) {
+            const sc = telem.sensors.config;
+            updateLiveConfig(DOM.live.snsAlpha, 'cfg-sns-alpha', 'SENSORS.FILTER_ALPHA', sc.filter_alpha, '', 2);
+            updateLiveConfig(DOM.live.snsWindow, 'cfg-sns-window', 'SENSORS.MEDIAN_WINDOW', sc.median_window, 'échantillons', 0);
+            updateLiveConfig(DOM.live.snsHz, 'cfg-sns-hz', 'SENSORS.HZ', sc.hz, 'Hz', 1);
         }
     }
 }
@@ -690,72 +792,6 @@ function avoidDistanceText(timeId, speedId, tagId, label, tMin, tMax, vMin, vMax
     tag.textContent = `${label} : ~${(tc * vc * 100).toFixed(0)} cm${clamped}`;
 }
 
-// Vitesse maximale estimee a partir de la puissance a la croisiere : 50 % = environ 0,32 m/s (lineaire)
-function updateMaxPowerSpeed() {
-    const input = document.getElementById('cfg-fsm-maxpower');
-    const tag = document.getElementById('live-fsm-maxpower');
-    if (!input || !tag) return;
-    const p = parseFloat(input.value);
-    if (isNaN(p)) { tag.textContent = 'Vitesse max estimée : -- m/s'; return; }
-    const pc = Math.min(75, Math.max(20, p));          // memes bornes que le FSM
-    const clamped = (pc !== p) ? ' (valeur ramenée aux bornes du FSM)' : '';
-    tag.textContent = `Vitesse max estimée : ~${(pc / 50 * 0.32).toFixed(2)} m/s${clamped}`;
-}
-document.addEventListener('DOMContentLoaded', updateMaxPowerSpeed);
-
-// Evitement d'obstacle (12 etapes) : etiquettes en direct sous chaque reglage, avec les memes bornes que le FSM.
-// Distance = vitesse x duree. Rotation du cap : estimation lineaire (45 deg pour 45 deg de braquage et la duree de reference) ;
-// simple repere, la vraie rotation depend de la vitesse et du servo (a valider en simulation).
-const AVOID_FORWARD_SPEED = 0.16;   // vitesse d'avance des etapes sans vitesse reglable (m/s du FSM)
-
-function updateAvoidTags() {
-    const num = id => parseFloat((document.getElementById(id) || {}).value);
-    const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
-    const setTag = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
-    const note = (v, c) => (c !== v ? ' (ramené aux bornes du FSM)' : '');
-    const cm = m => Math.round(m * 100);
-
-    // Etape 1 : recul
-    const rev = num('cfg-avoid-rev');
-    if (isNaN(rev)) setTag('live-avoid-rev', 'Recul : --');
-    else { const c = clamp(rev, 0.10, 0.50); setTag('live-avoid-rev', `Recul : ${cm(c)} cm (~${(c / AVOID_FORWARD_SPEED).toFixed(1)} s)${note(rev, c)}`); }
-
-    // Angles des 3 virages
-    const angles = {};
-    for (const [n, tag] of [['a1', 'live-avoid-a1'], ['a2', 'live-avoid-a2'], ['a3', 'live-avoid-a3']]) {
-        const a = num('cfg-avoid-' + n);
-        if (isNaN(a)) { setTag(tag, 'Braquage : --'); angles[n] = 45; }
-        else { const c = clamp(a, 15, 45); angles[n] = c; setTag(tag, `Braquage : ${c}°${note(a, c)}`); }
-    }
-
-    // Durees des 3 virages : rotation du cap estimee
-    for (const [t, a, tag, ref, lo, hi] of [['t1', 'a1', 'live-avoid-t1', 1.10, 0.3, 3.0],
-                                            ['t2', 'a2', 'live-avoid-t2', 0.70, 0.2, 2.0],
-                                            ['t3', 'a3', 'live-avoid-t3', 0.70, 0.2, 2.0]]) {
-        const v = num('cfg-avoid-' + t);
-        if (isNaN(v)) setTag(tag, 'Rotation du cap estimée : --');
-        else { const c = clamp(v, lo, hi); setTag(tag, `Rotation du cap estimée : ~${Math.round(45 * c / ref * angles[a] / 45)}°${note(v, c)}`); }
-    }
-
-    // Lignes droites : distance parcourue
-    const diagT = num('cfg-avoid-diag-time'), diagV = num('cfg-avoid-diag-speed');
-    if (isNaN(diagT) || isNaN(diagV)) setTag('live-avoid-diag', 'Distance diagonale : -- cm');
-    else { const tc = clamp(diagT, 0.3, 3.0), vc = clamp(diagV, 0.12, 0.25);
-           setTag('live-avoid-diag', `Distance diagonale : ~${cm(tc * vc)} cm${(tc !== diagT || vc !== diagV) ? ' (ramené aux bornes du FSM)' : ''}`); }
-    setTag('live-avoid-diag-speed', 'Distance = vitesse × durée');
-
-    const par = num('cfg-avoid-par');
-    if (isNaN(par)) setTag('live-avoid-par', 'Distance : -- cm');
-    else { const c = clamp(par, 0.2, 4.0); setTag('live-avoid-par', `Distance : ~${cm(c * AVOID_FORWARD_SPEED)} cm${note(par, c)}`); }
-
-    const retT = num('cfg-avoid-ret-time'), retV = num('cfg-avoid-ret-speed');
-    if (isNaN(retT) || isNaN(retV)) setTag('live-avoid-ret', 'Distance maximale : -- cm');
-    else { const tc = clamp(retT, 1.0, 5.0), vc = clamp(retV, 0.12, 0.25);
-           setTag('live-avoid-ret', `Distance maximale : ~${cm(tc * vc)} cm${(tc !== retT || vc !== retV) ? ' (ramené aux bornes du FSM)' : ''}`); }
-    setTag('live-avoid-ret-speed', 'Distance max = vitesse × durée max');
-}
-document.addEventListener('DOMContentLoaded', updateAvoidTags);
-
 async function applyConfig(service, key, inputId) {
     const input = document.getElementById(inputId);
     if (!input) return;
@@ -763,6 +799,21 @@ async function applyConfig(service, key, inputId) {
     if (isNaN(val)) {
         logConsole(`[ERR] Valeur invalide saisie pour ${service}.${key}`, 'error');
         return;
+    }
+
+    const paramKey = `${service.toUpperCase()}.${key.toUpperCase()}`;
+    pendingConfigs[paramKey] = {
+        targetValue: val,
+        timestamp: Date.now()
+    };
+
+    const liveId = inputToLiveMap[inputId];
+    if (liveId) {
+        const liveEl = document.getElementById(liveId);
+        if (liveEl) {
+            liveEl.className = 'live-tag pending';
+            liveEl.textContent = `⏳ Application... (cible: ${val})`;
+        }
     }
 
     logConsole(`[TX] Envoi Config : ${service}.${key} = ${val} (Validation CRC32)`, 'sent');
