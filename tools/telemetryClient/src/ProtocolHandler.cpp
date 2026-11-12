@@ -506,7 +506,6 @@ std::string ProtocolHandler::telemetry_to_json(const shared::car::CarTelemetry& 
     ss << "\"coefficient\":" << safe_float(st.coefficient) << ",";
     ss << "\"flags\":" << st.flags << ",";
     ss << "\"error_code\":" << st.errorCode;
-    ss << "}";
     ss << "},";
     ss << "\"config\":{";
     ss << "\"steering_offset\":" << safe_float(telem.motors.config.steering_offset) << ",";
