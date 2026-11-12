@@ -1,13 +1,13 @@
 # Fdb version 4
-["biber main"] 1794415588.31264 "main.bcf" "main.bbl" "main" 1794416062.60744 0
-  "main.bcf" 1794416062.44166 107301 d468d2572e28699b5da6c220a3fa25af "pdflatex"
+["biber main"] 0 "main.bcf" "main.bbl" "main" 1794443791.62958 -1
+  "main.bcf" 1794443791.45869 107301 d468d2572e28699b5da6c220a3fa25af "pdflatex"
   (generated)
   "main.bbl"
   "main.blg"
   (rewritten before read)
-["pdflatex"] 1794416060.24487 "/home/marc/Documents/Local/ProjetS5/S5-Projet/latex/log-book/main.tex" "main.pdf" "main" 1794416062.60796 0
+["pdflatex"] 1794443789.15582 "/home/marc/Documents/Local/ProjetS5/S5-Projet/latex/log-book/main.tex" "main.pdf" "main" 1794443791.63009 0
   "/etc/texmf/web2c/texmf.cnf" 1786477503.59595 475 c0e671620eb5563b2130f56340a5fde8 ""
-  "/home/marc/Documents/Local/ProjetS5/S5-Projet/latex/log-book/main.tex" 1794415974.8152 2390 177e1befa490bd153cb00ed0bae5a1ff ""
+  "/home/marc/Documents/Local/ProjetS5/S5-Projet/latex/log-book/main.tex" 1794443480.65594 2390 177e1befa490bd153cb00ed0bae5a1ff ""
   "/usr/share/texlive/texmf-dist/fonts/map/fontname/texfonts.map" 1577235249 3524 cb3e574dea2d1052e39280babc910dc8 ""
   "/usr/share/texlive/texmf-dist/fonts/tfm/jknappen/ec/ecbx1095.tfm" 1136768653 3584 21b378cca2e40816b0e6d74a4dc98f04 ""
   "/usr/share/texlive/texmf-dist/fonts/tfm/jknappen/ec/ecbx1440.tfm" 1136768653 3584 13049b61b922a28b158a38aeff75ee9b ""
@@ -191,9 +191,9 @@
   "/var/lib/texmf/fonts/map/pdftex/updmap/pdftex.map" 1786642388 5541477 3118940318599480888143717dd32d64 ""
   "/var/lib/texmf/web2c/pdftex/pdflatex.fmt" 1786642460 3639379 b38464b71122c0a817d38ad0252bfc2e ""
   "document.sty" 1793308672 8633 ba720209217550eee4cb2a7c6f9f40e4 ""
-  "entry.aux" 1794416061.9455 4845 27518cd4bdb3fbd44534ec953e8f3ce7 "pdflatex"
-  "entry.tex" 1794411818.97917 1651 c26b54d7eaf2b50bc101795933364e69 ""
-  "figures.aux" 1794416061.94328 4847 0eb7aec406a9e5aac2459a68dd716f64 "pdflatex"
+  "entry.aux" 1794443790.81121 4845 27518cd4bdb3fbd44534ec953e8f3ce7 "pdflatex"
+  "entry.tex" 1794443786.46026 2385 a8e3f180c944c1e6f66a96570e4e4a27 ""
+  "figures.aux" 1794443790.8086 4847 0eb7aec406a9e5aac2459a68dd716f64 "pdflatex"
   "figures.tex" 1793308674 182 48c90aee218368650ff4896d8bd69962 ""
   "logs/2nov.tex" 1794414072.95132 1311 c9e494018ff67568207e3e5ad0395fd1 ""
   "logs/3nov.tex" 1794415185.95758 1166 593d663a41f1338b44d23137ad42d3a3 ""
@@ -201,17 +201,19 @@
   "logs/architecture1.tex" 1794411040.13079 1316 97abda5e16ba59c0d82b7727e5c080b6 ""
   "logs/godot1.tex" 1794414561.6192 254 d30a19ad126be8156a832a6efa0a4cfb ""
   "logs/os.tex" 1794413103.28675 1333 c26602dbf6272a65be2c238c21529c5e ""
-  "main.aux" 1794416062.42066 3750 4e39cf95a23281ddabb3a5c8e2972f2e "pdflatex"
+  "main.aux" 1794443791.43869 3755 bad8c2a854a0ebb834e500b8133b3bf0 "pdflatex"
   "main.bbl" 1794415589.16773 0 d41d8cd98f00b204e9800998ecf8427e "biber main"
-  "main.lof" 1794416062.44415 63 19658107f9ceb13243a55f2bb9bdaccd "pdflatex"
-  "main.lot" 1794416062.44415 63 19658107f9ceb13243a55f2bb9bdaccd "pdflatex"
-  "main.out" 1794416062.43766 3785 2c5f7c9d7b3020c162355eb3e016714f "pdflatex"
-  "main.run.xml" 1794416062.44415 2320 aac8a9fd44955c62009c2a228c2d10ce "pdflatex"
-  "main.tex" 1794415974.8152 2390 177e1befa490bd153cb00ed0bae5a1ff ""
-  "main.toc" 1794416062.44415 2161 3f167c963e783039c12b575c0f3d1b4d "pdflatex"
+  "main.lof" 1794443791.46149 63 19658107f9ceb13243a55f2bb9bdaccd "pdflatex"
+  "main.lot" 1794443791.46149 63 19658107f9ceb13243a55f2bb9bdaccd "pdflatex"
+  "main.out" 1794443791.45469 3785 2c5f7c9d7b3020c162355eb3e016714f "pdflatex"
+  "main.run.xml" 1794443791.46149 2320 aac8a9fd44955c62009c2a228c2d10ce "pdflatex"
+  "main.tex" 1794443480.65594 2390 177e1befa490bd153cb00ed0bae5a1ff ""
+  "main.toc" 1794443791.46149 2166 42cb34bf792920ca84048a7fbe75b105 "pdflatex"
+  "signatures/bonhomme.png" 1794443278.1289 20545 9783276ada9d744b1fa351c02417cd81 ""
   "signatures/je.png" 1794411244.61326 10753 1b11f64214be5d6799416693b8251d91 ""
   "signatures/marc.png" 1794411201.57168 22381 d305baefc82d2b9a857c2da016571eb0 ""
   "signatures/tiroux.png" 1794411280.05636 15631 a95e7a7dbcd49b49934cac8696626eb5 ""
+  "signatures/valade.png" 1794443735.99335 66986 c1761a5e1fac8f90b3e46aa466a188fd ""
   "titlepage.sty" 1793308674 2309 53a1b9549275e6be31b09021c4d3444d ""
   "toolbox.sty" 1793308672 1758 7eb91da91faf0e208746f40d42317b4a ""
   (generated)

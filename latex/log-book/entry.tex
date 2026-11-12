@@ -39,6 +39,30 @@
     \end{minipage}
 }
 
+\newcommand{\signraph}{
+    \vspace{2em}
+    \hfill % Pushes the minipage to the right side of the document
+    \begin{minipage}{6cm}
+        \centering
+        \includegraphics[height=1.5cm]{signatures/bonhomme} \\
+        \vspace{-0.4cm}
+        \rule{\linewidth}{0.4pt} \\
+        \makebox[\linewidth][l]{Raphaël Bonhomme}
+    \end{minipage}
+}
+
+\newcommand{\signvalade}{
+    \vspace{2em}
+    \hfill % Pushes the minipage to the right side of the document
+    \begin{minipage}{6cm}
+        \centering
+        \includegraphics[height=1.5cm]{signatures/valade} \\
+        \vspace{-0.4cm}
+        \rule{\linewidth}{0.4pt} \\
+        \makebox[\linewidth][l]{Jonathan Valade}
+    \end{minipage}
+}
+
 \newcommand{\entry}[6]{
     \section{#1}
     \vspace{-0.5em} 
@@ -60,5 +84,7 @@
         \signmarc
         \signje
         \signtiroux
+        \signraph
+        \signvalade
     \newpage
 }
