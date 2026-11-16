@@ -24,6 +24,7 @@ const lastRendered = {};
 // Initialisation au chargement du DOM
 window.addEventListener('DOMContentLoaded', () => {
     initDOMCache();
+    buildParamPanel();
     initEventSource();
     startRateCalculator();
     requestAnimationFrame(renderLoop);
@@ -160,40 +161,6 @@ function initDOMCache() {
     };
 
     DOM.cmdLogs = document.getElementById('cmd-logs');
-
-    // Éléments de retour télémétrique en direct pour les configurations
-    DOM.live = {
-        fsmCruise: document.getElementById('live-fsm-cruise'),
-        fsmMaxPower: document.getElementById('live-fsm-maxpower'),
-        fsmMinCurve: document.getElementById('live-fsm-mincurve'),
-        fsmSafety: document.getElementById('live-fsm-safety'),
-        fsmAccel: document.getElementById('live-fsm-accel'),
-        fsmKp: document.getElementById('live-fsm-kp'),
-        fsmKd: document.getElementById('live-fsm-kd'),
-        fsmReverse: document.getElementById('live-fsm-reverse'),
-        fsmAutostart: document.getElementById('live-fsm-autostart'),
-        fsmHz: document.getElementById('live-fsm-hz'),
-        fsmDist: document.getElementById('live-fsm-dist'),
-        fsmSide: document.getElementById('live-fsm-side'),
-        avoidRev: document.getElementById('live-avoid-rev'),
-        avoidA1: document.getElementById('live-avoid-a1'),
-        avoidT1: document.getElementById('live-avoid-t1'),
-        avoidDiag: document.getElementById('live-avoid-diag'),
-        avoidDiagSpeed: document.getElementById('live-avoid-diag-speed'),
-        avoidA2: document.getElementById('live-avoid-a2'),
-        avoidT2: document.getElementById('live-avoid-t2'),
-        avoidPar: document.getElementById('live-avoid-par'),
-        avoidA3: document.getElementById('live-avoid-a3'),
-        avoidT3: document.getElementById('live-avoid-t3'),
-        avoidRet: document.getElementById('live-avoid-ret'),
-        avoidRetSpeed: document.getElementById('live-avoid-ret-speed'),
-        motOffset: document.getElementById('live-mot-offset'),
-        motInvert: document.getElementById('live-mot-invert'),
-        motHz: document.getElementById('live-mot-hz'),
-        snsAlpha: document.getElementById('live-sns-alpha'),
-        snsWindow: document.getElementById('live-sns-window'),
-        snsHz: document.getElementById('live-sns-hz')
-    };
 }
 
 // ------------------------------------------------------------------------------
@@ -310,80 +277,6 @@ function updateHex(el, key, num, width = 8) {
 
 function valNum(v, fallback = 0) {
     return (typeof v === 'number' && !isNaN(v) && isFinite(v)) ? v : fallback;
-}
-
-const pendingConfigs = {};
-
-const inputToLiveMap = {
-    'cfg-fsm-cruise': 'live-fsm-cruise',
-    'cfg-fsm-maxpower': 'live-fsm-maxpower',
-    'cfg-fsm-mincurve': 'live-fsm-mincurve',
-    'cfg-fsm-safety': 'live-fsm-safety',
-    'cfg-fsm-accel': 'live-fsm-accel',
-    'cfg-fsm-kp': 'live-fsm-kp',
-    'cfg-fsm-kd': 'live-fsm-kd',
-    'cfg-fsm-reverse': 'live-fsm-reverse',
-    'cfg-fsm-autostart': 'live-fsm-autostart',
-    'cfg-fsm-hz': 'live-fsm-hz',
-    'cfg-fsm-dist': 'live-fsm-dist',
-    'cfg-fsm-side': 'live-fsm-side',
-    'cfg-avoid-rev': 'live-avoid-rev',
-    'cfg-avoid-a1': 'live-avoid-a1',
-    'cfg-avoid-t1': 'live-avoid-t1',
-    'cfg-avoid-diag-time': 'live-avoid-diag',
-    'cfg-avoid-diag-speed': 'live-avoid-diag-speed',
-    'cfg-avoid-a2': 'live-avoid-a2',
-    'cfg-avoid-t2': 'live-avoid-t2',
-    'cfg-avoid-par': 'live-avoid-par',
-    'cfg-avoid-a3': 'live-avoid-a3',
-    'cfg-avoid-t3': 'live-avoid-t3',
-    'cfg-avoid-ret-time': 'live-avoid-ret',
-    'cfg-avoid-ret-speed': 'live-avoid-ret-speed',
-    'cfg-mot-offset': 'live-mot-offset',
-    'cfg-mot-invert': 'live-mot-invert',
-    'cfg-mot-hz': 'live-mot-hz',
-    'cfg-sns-alpha': 'live-sns-alpha',
-    'cfg-sns-window': 'live-sns-window',
-    'cfg-sns-hz': 'live-sns-hz'
-};
-
-function updateLiveConfig(domEl, inputId, paramKey, robotVal, unit = '', decimals = 2) {
-    if (!domEl) return;
-    const v = valNum(robotVal, NaN);
-    if (isNaN(v)) {
-        updateText(domEl, `cfg_${paramKey}`, `Actuel (robot) : -- ${unit}`.trim());
-        if (domEl.className !== 'live-tag') domEl.className = 'live-tag';
-        return;
-    }
-
-    const formatted = (decimals !== null && decimals >= 0) ? v.toFixed(decimals) : v.toString();
-    const pending = pendingConfigs[paramKey];
-    const inputEl = document.getElementById(inputId);
-    const inputVal = inputEl ? parseFloat(inputEl.value) : NaN;
-
-    if (pending) {
-        if (Math.abs(v - pending.targetValue) < 0.015) {
-            delete pendingConfigs[paramKey];
-            if (domEl.className !== 'live-tag synced') domEl.className = 'live-tag synced';
-            updateText(domEl, `cfg_${paramKey}`, `✓ Confirmé par le robot : ${formatted} ${unit}`.trim());
-            return;
-        } else if (Date.now() - pending.timestamp > 4000) {
-            delete pendingConfigs[paramKey];
-        } else {
-            if (domEl.className !== 'live-tag pending') domEl.className = 'live-tag pending';
-            updateText(domEl, `cfg_${paramKey}`, `⏳ Application... (actuel : ${formatted} ${unit})`.trim());
-            return;
-        }
-    }
-
-    const isMatching = !isNaN(inputVal) && Math.abs(v - inputVal) < 0.015;
-    if (isMatching) {
-        if (domEl.className !== 'live-tag synced') domEl.className = 'live-tag synced';
-        updateText(domEl, `cfg_${paramKey}`, `✓ Actuel (robot) : ${formatted} ${unit}`.trim());
-    } else {
-        if (domEl.className !== 'live-tag') domEl.className = 'live-tag';
-        updateText(domEl, `cfg_${paramKey}`, `Actuel (robot) : ${formatted} ${unit}`.trim());
-    }
 }
 
 // ------------------------------------------------------------------------------
@@ -665,59 +558,8 @@ function applyTelemetry(telem) {
         }
     }
 
-    // 8. Mise à jour des valeurs actuelles réelles dans les contrôles de configuration (avec double vérification)
-    if (DOM.live) {
-        // FSM Config
-        if (telem.fsm && telem.fsm.config) {
-            const fc = telem.fsm.config;
-            updateLiveConfig(DOM.live.fsmCruise, 'cfg-fsm-cruise', 'FSM.STRAIGHT_CRUISE_SPEED', fc.straight_cruise_speed, 'm/s', 2);
-            updateLiveConfig(DOM.live.fsmMaxPower, 'cfg-fsm-maxpower', 'FSM.MAX_POWER_PCT', fc.max_power_pct, '%', 0);
-            updateLiveConfig(DOM.live.fsmMinCurve, 'cfg-fsm-mincurve', 'FSM.MIN_CURVE_SPEED', fc.min_curve_speed, 'm/s', 2);
-            updateLiveConfig(DOM.live.fsmSafety, 'cfg-fsm-safety', 'FSM.CURVE_SAFETY_FACTOR', fc.curve_safety_factor, '', 2);
-            updateLiveConfig(DOM.live.fsmAccel, 'cfg-fsm-accel', 'FSM.MAX_ACCELERATION', fc.max_acceleration, 'm/s²', 3);
-            updateLiveConfig(DOM.live.fsmKp, 'cfg-fsm-kp', 'FSM.LINE_KP', fc.line_kp, '', 2);
-            updateLiveConfig(DOM.live.fsmKd, 'cfg-fsm-kd', 'FSM.LINE_KD', fc.line_kd, '', 3);
-            updateLiveConfig(DOM.live.fsmReverse, 'cfg-fsm-reverse', 'FSM.REVERSE_SPEED', fc.reverse_speed, 'm/s', 2);
-            updateLiveConfig(DOM.live.fsmHz, 'cfg-fsm-hz', 'FSM.HZ', fc.hz, 'Hz', 1);
-
-            updateLiveConfig(DOM.live.fsmDist, 'cfg-fsm-dist', 'FSM.OBSTACLE_STOP_DIST_CM', fc.obstacle_stop_dist_cm, 'cm', 1);
-            const sideSuffix = fc.avoid_side < 0 ? '(-1.0 Gauche)' : '+1.0 Droite';
-            updateLiveConfig(DOM.live.fsmSide, 'cfg-fsm-side', 'FSM.AVOID_SIDE', fc.avoid_side, sideSuffix, 1);
-
-            if (fc.avoidance) {
-                const av = fc.avoidance;
-                updateLiveConfig(DOM.live.avoidRev, 'cfg-avoid-rev', 'FSM.AVOID_REVERSE_DIST_M', av.reverse_dist_m, 'm', 2);
-                updateLiveConfig(DOM.live.avoidA1, 'cfg-avoid-a1', 'FSM.AVOID_ANGLE_1_DEG', av.angle_1_deg, '°', 0);
-                updateLiveConfig(DOM.live.avoidT1, 'cfg-avoid-t1', 'FSM.AVOID_TIME_1_S', av.time_1_s, 's', 2);
-                updateLiveConfig(DOM.live.avoidDiag, 'cfg-avoid-diag-time', 'FSM.AVOID_DIAG_TIME_S', av.diag_time_s, 's', 2);
-                updateLiveConfig(DOM.live.avoidDiagSpeed, 'cfg-avoid-diag-speed', 'FSM.AVOID_DIAG_SPEED', av.diag_speed, 'm/s', 2);
-                updateLiveConfig(DOM.live.avoidA2, 'cfg-avoid-a2', 'FSM.AVOID_ANGLE_2_DEG', av.angle_2_deg, '°', 0);
-                updateLiveConfig(DOM.live.avoidT2, 'cfg-avoid-t2', 'FSM.AVOID_TIME_2_S', av.time_2_s, 's', 2);
-                updateLiveConfig(DOM.live.avoidPar, 'cfg-avoid-par', 'FSM.AVOID_PARALLEL_TIME_S', av.parallel_time_s, 's', 2);
-                updateLiveConfig(DOM.live.avoidA3, 'cfg-avoid-a3', 'FSM.AVOID_ANGLE_3_DEG', av.angle_3_deg, '°', 0);
-                updateLiveConfig(DOM.live.avoidT3, 'cfg-avoid-t3', 'FSM.AVOID_TIME_3_S', av.time_3_s, 's', 2);
-                updateLiveConfig(DOM.live.avoidRet, 'cfg-avoid-ret-time', 'FSM.AVOID_RETURN_TIME_S', av.return_time_s, 's', 2);
-                updateLiveConfig(DOM.live.avoidRetSpeed, 'cfg-avoid-ret-speed', 'FSM.AVOID_RETURN_SPEED', av.return_speed, 'm/s', 2);
-            }
-        }
-
-        // Motors Config
-        if (telem.motors && telem.motors.config) {
-            const mc = telem.motors.config;
-            updateLiveConfig(DOM.live.motOffset, 'cfg-mot-offset', 'MOTORS.STEERING_OFFSET', mc.steering_offset, '°', 1);
-            const invertSuffix = mc.invert > 0.5 ? '(1 Inversé)' : '(0 Normal)';
-            updateLiveConfig(DOM.live.motInvert, 'cfg-mot-invert', 'MOTORS.INVERT', mc.invert, invertSuffix, 0);
-            updateLiveConfig(DOM.live.motHz, 'cfg-mot-hz', 'MOTORS.HZ', mc.hz, 'Hz', 1);
-        }
-
-        // Sensors Config
-        if (telem.sensors && telem.sensors.config) {
-            const sc = telem.sensors.config;
-            updateLiveConfig(DOM.live.snsAlpha, 'cfg-sns-alpha', 'SENSORS.FILTER_ALPHA', sc.filter_alpha, '', 2);
-            updateLiveConfig(DOM.live.snsWindow, 'cfg-sns-window', 'SENSORS.MEDIAN_WINDOW', sc.median_window, 'échantillons', 0);
-            updateLiveConfig(DOM.live.snsHz, 'cfg-sns-hz', 'SENSORS.HZ', sc.hz, 'Hz', 1);
-        }
-    }
+    // 8. Valeurs actuelles du robot dans le panneau de réglages
+    updateParamsLive(telem);
 }
 
 // ------------------------------------------------------------------------------
@@ -774,86 +616,6 @@ async function sendCommand(cmdStr) {
     }
 }
 
-// Evitement d'obstacle : distance parcourue en diagonale = vitesse x duree (memes bornes que le FSM)
-function avoidDistanceText(timeId, speedId, tagId, label, tMin, tMax, vMin, vMax) {
-    const timeInput = document.getElementById(timeId);
-    const speedInput = document.getElementById(speedId);
-    const tag = document.getElementById(tagId);
-    if (!timeInput || !speedInput || !tag) return;
-    const t = parseFloat(timeInput.value);
-    const v = parseFloat(speedInput.value);
-    if (isNaN(t) || isNaN(v)) {
-        tag.textContent = `${label} : -- cm`;
-        return;
-    }
-    const tc = Math.min(tMax, Math.max(tMin, t));
-    const vc = Math.min(vMax, Math.max(vMin, v));
-    const clamped = (tc !== t || vc !== v) ? ' (valeurs ramenées aux bornes du FSM)' : '';
-    tag.textContent = `${label} : ~${(tc * vc * 100).toFixed(0)} cm${clamped}`;
-}
-
-async function applyConfig(service, key, inputId) {
-    const input = document.getElementById(inputId);
-    if (!input) return;
-    const val = parseFloat(input.value);
-    if (isNaN(val)) {
-        logConsole(`[ERR] Valeur invalide saisie pour ${service}.${key}`, 'error');
-        return;
-    }
-
-    const paramKey = `${service.toUpperCase()}.${key.toUpperCase()}`;
-    pendingConfigs[paramKey] = {
-        targetValue: val,
-        timestamp: Date.now()
-    };
-
-    const liveId = inputToLiveMap[inputId];
-    if (liveId) {
-        const liveEl = document.getElementById(liveId);
-        if (liveEl) {
-            liveEl.className = 'live-tag pending';
-            liveEl.textContent = `⏳ Application... (cible: ${val})`;
-        }
-    }
-
-    logConsole(`[TX] Envoi Config : ${service}.${key} = ${val} (Validation CRC32)`, 'sent');
-
-    try {
-        const resp = await fetch('/api/command', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ service, key, value: val })
-        });
-
-        if (resp.ok) {
-            const resJson = await resp.json();
-            logConsole(`[RX] Ack serveur : ${resJson.command || 'OK'}`, 'received');
-        } else {
-            logConsole(`[ERR] HTTP ${resp.status} lors de l'envoi de ${key}`, 'error');
-        }
-    } catch (err) {
-        logConsole(`[ERR] Erreur de communication : ${err.message}`, 'error');
-    }
-}
-
-function applyCustomConfig() {
-    const srvSelect = document.getElementById('cfg-custom-srv');
-    const keyInput = document.getElementById('cfg-custom-key');
-    const valInput = document.getElementById('cfg-custom-val');
-
-    if (!srvSelect || !keyInput || !valInput) return;
-    const srv = srvSelect.value;
-    const key = keyInput.value.trim();
-    const val = parseFloat(valInput.value);
-
-    if (!key || isNaN(val)) {
-        logConsole('[ERR] Veuillez renseigner une clé valide et une valeur numérique float', 'error');
-        return;
-    }
-
-    applyConfig(srv, key, 'cfg-custom-val');
-}
-
 async function sendServiceActive(service, active) {
     const action = active ? 'start' : 'stop';
     logConsole(`[TX] Commande ${action.toUpperCase()} transmise au service ${service} (CRC32)`, 'sent');
@@ -872,33 +634,6 @@ async function sendServiceActive(service, active) {
     } catch (err) {
         logConsole(`[ERR] Échec: ${err.message}`, 'error');
     }
-}
-
-async function sendEmergencyStop(service = 'MOTORS') {
-    logConsole(`[TX] ARRÊT D'URGENCE GLOBAL émis vers ${service} (CRC32)`, 'sent');
-    try {
-        const resp = await fetch('/api/command', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ service, action: 'emergency' })
-        });
-        if (resp.ok) {
-            const resJson = await resp.json();
-            logConsole(`[RX] Arrêt d'urgence appliqué avec succès: ${resJson.status}`, 'received');
-        } else {
-            logConsole(`[ERR] HTTP ${resp.status}`, 'error');
-        }
-    } catch (err) {
-        logConsole(`[ERR] Échec: ${err.message}`, 'error');
-    }
-}
-
-function applyParam(paramName, inputId) {
-    const input = document.getElementById(inputId);
-    if (!input) return;
-    const val = input.value;
-    const cmd = `${paramName}=${val}`;
-    sendCommand(cmd);
 }
 
 function submitCustomCommand() {
@@ -924,4 +659,496 @@ function logConsole(message, type = 'system') {
         DOM.cmdLogs.removeChild(DOM.cmdLogs.firstChild);
     }
     DOM.cmdLogs.scrollTop = DOM.cmdLogs.scrollHeight;
+}
+
+// ==============================================================================
+// RÉGLAGES DU ROBOT
+// Un seul catalogue décrit chaque paramètre ; le panneau (titres, descriptions, champs, valeurs en direct) en est généré.
+// Pour ajouter un réglage : une ligne dans PARAMS (le service doit accepter la clé, voir tests/test_params_catalogue.js).
+//
+// Champs d'un paramètre :
+//   service  FSM | MOTORS | SENSORS     key      clé envoyée au service
+//   group    groupe d'affichage (PARAM_GROUPS)
+//   title    nom en français             desc     à quoi ça sert, ce qui se passe si on l'augmente ou le diminue
+//   unit     unité affichée              def      valeur par défaut (celle de fsm.conf)
+//   step     pas des flèches du champ    decimals décimales affichées
+//   rec      [min, max] plage conseillée : seulement un avertissement, jamais un blocage
+//   hard     [min, max] limites imposées par le robot (il ramène la valeur dedans) ; absent = aucune limite
+//   live     chemin de la valeur actuelle dans la télémétrie ; absent = le robot ne la renvoie pas
+//   options  liste déroulante [{value, label}] au lieu d'un champ numérique
+//   dist     distance parcourue estimée (vitesse x durée) : {speed: m/s constant} ou {speedKey: clé d'une autre ligne}
+// ==============================================================================
+const PARAM_GROUPS = [
+    { id: 'speed', title: 'Vitesse et accélération',
+      intro: "Ce qui fixe la rapidité du robot sur la ligne. La bille sort de la coupelle quand l'accélération dépasse 0,735 m/s²." },
+    { id: 'line', title: 'Suivi de ligne',
+      intro: "Comment la direction réagit quand le robot s'éloigne de la ligne." },
+    { id: 'obstacle', title: "Obstacle : ralentir et s'arrêter",
+      intro: "Ce que fait le robot quand l'ultrason voit un obstacle, avant la manœuvre d'évitement : il ralentit, s'arrête, attend, puis décide." },
+    { id: 'avoid', title: "Évitement d'obstacle (12 étapes)",
+      intro: "Manœuvre sans capteurs pour contourner le cube : le robot recule, fait 3 virages et 3 lignes droites, puis avance jusqu'à retrouver la ligne. Distance parcourue = vitesse × durée." },
+    { id: 'motors', title: 'Moteurs et direction', intro: "Réglages mécaniques de la propulsion et du servo de direction." },
+    { id: 'sensors', title: 'Capteur de distance (ultrason)', intro: "Filtrage de la mesure de distance avant qu'elle n'arrive au FSM." },
+    { id: 'loops', title: 'Fréquences des boucles (avancé)',
+      intro: "Nombre de cycles par seconde de chaque service. Ne les changer que si on sait pourquoi : les gains du suivi de ligne sont réglés pour 50 Hz." },
+];
+
+const SIDE_OPTIONS = [{ value: -1, label: 'Gauche' }, { value: 1, label: 'Droite' }];
+const FORWARD_SPEED_MS = 0.16;   // vitesse des virages et des lignes droites de l'évitement quand elle n'a pas son propre réglage
+
+const PARAMS = [
+    // ---- Vitesse et accélération ----
+    { service: 'FSM', key: 'MAX_POWER_PCT', group: 'speed', title: 'Puissance moteur en ligne droite', unit: '%', def: 50, step: 1, decimals: 0,
+      desc: "Puissance envoyée aux moteurs quand le robot est à la vitesse de croisière : c'est elle qui fixe la vitesse réelle. 50 % correspond à environ 0,32 m/s (valeur validée). Plus haut = plus vite, mais la bille risque de tomber. N'affecte pas l'évitement.",
+      rec: [20, 75], hard: [5, 100], live: 'fsm.config.max_power_pct' },
+    { service: 'FSM', key: 'STRAIGHT_CRUISE_SPEED', group: 'speed', title: 'Vitesse de référence (croisière)', unit: 'm/s', def: 0.32, step: 0.01, decimals: 2,
+      desc: "Vitesse de référence du FSM. La puissance des moteurs vaut vitesse ÷ croisière × la puissance ci-dessus : en ligne droite le robot est donc toujours à la puissance réglée. Une croisière plus grande rend surtout les virages plus lents par rapport à la ligne droite.",
+      rec: [0.15, 0.45], hard: [0.05, 2], live: 'fsm.config.straight_cruise_speed' },
+    { service: 'FSM', key: 'MIN_CURVE_SPEED', group: 'speed', title: 'Vitesse minimale en virage serré', unit: 'm/s', def: 0.20, step: 0.01, decimals: 2,
+      desc: "Plancher de vitesse dans les virages. Sert aussi quand la ligne est perdue : le robot garde son dernier braquage à cette vitesse en cherchant le ruban.",
+      rec: [0.1, 0.3], live: 'fsm.config.min_curve_speed' },
+    { service: 'FSM', key: 'CURVE_SAFETY_FACTOR', group: 'speed', title: 'Marge de sécurité en virage', unit: '', def: 0.8, step: 0.05, decimals: 2,
+      desc: "Vitesse en virage = marge × √(accélération max × rayon du virage). Sous 1, le robot ralentit plus dans les virages et la bille est protégée ; au-dessus de 1, il dépasse la limite théorique et la bille peut tomber.",
+      rec: [0.5, 1], hard: [0.05, 5], live: 'fsm.config.curve_safety_factor' },
+    { service: 'FSM', key: 'MAX_ACCELERATION', group: 'speed', title: 'Accélération maximale', unit: 'm/s²', def: 0.735, step: 0.05, decimals: 3,
+      desc: "Limite de la rampe de vitesse : départ, freinage, ralentissement devant un obstacle. 0,735 m/s² est le seuil critique de la bille ; au-dessus, elle sort de la coupelle.",
+      rec: [0.3, 0.735], live: 'fsm.config.max_acceleration' },
+
+    // ---- Suivi de ligne ----
+    { service: 'FSM', key: 'LINE_KP', group: 'line', title: 'Réactivité de la direction (gain P)', unit: '', def: 0.58, step: 0.01, decimals: 2,
+      desc: "Plus il est grand, plus le robot braque fort quand il s'éloigne de la ligne. Trop grand : il zigzague. Trop petit : il sort des virages.",
+      rec: [0.3, 1], live: 'fsm.config.line_kp' },
+    { service: 'FSM', key: 'LINE_KD', group: 'line', title: 'Amortissement de la direction (gain D)', unit: '', def: 0.035, step: 0.005, decimals: 3,
+      desc: "Freine les corrections quand l'erreur change vite : calme le zigzag. Trop grand : la direction devient nerveuse au moindre bruit des capteurs.",
+      rec: [0, 0.1], live: 'fsm.config.line_kd' },
+
+    // ---- Obstacle : ralentir et s'arrêter ----
+    { service: 'FSM', key: 'OBSTACLE_SLOWDOWN_DIST_CM', group: 'obstacle', title: 'Distance de ralentissement', unit: 'cm', def: 45, step: 5, decimals: 0,
+      desc: "Le robot commence à ralentir quand l'obstacle est plus près que cette distance. Il règle sa vitesse pour pouvoir s'arrêter à la distance d'arrêt sans dépasser l'accélération maximale.",
+      rec: [30, 100], hard: [5, 400] },
+    { service: 'FSM', key: 'OBSTACLE_STOP_DIST_CM', group: 'obstacle', title: "Distance d'arrêt", unit: 'cm', def: 20, step: 1, decimals: 0,
+      desc: "Le robot s'arrête quand l'obstacle est à cette distance. Trop petit : il risque de toucher le cube avant de s'arrêter.",
+      rec: [10, 40], hard: [2, 400], live: 'fsm.config.obstacle_stop_dist_cm' },
+    { service: 'FSM', key: 'OBSTACLE_AVOID_MARGIN_CM', group: 'obstacle', title: "Marge avant l'évitement", unit: 'cm', def: 5, step: 1, decimals: 0,
+      desc: "Après l'arrêt, le robot évite l'obstacle s'il est encore à (distance d'arrêt + cette marge). Sinon, il considère la voie libre et reprend la ligne.",
+      rec: [0, 20], hard: [0, 100] },
+    { service: 'FSM', key: 'OBSTACLE_STOP_WAIT_S', group: 'obstacle', title: "Attente après l'arrêt", unit: 's', def: 0.2, step: 0.1, decimals: 1,
+      desc: "Temps d'attente à l'arrêt avant de décider : éviter ou repartir. Plus long = laisse le temps à un obstacle mobile de s'écarter.",
+      rec: [0, 2], hard: [0, 10] },
+    { service: 'FSM', key: 'AVOID_SIDE', group: 'obstacle', title: 'Côté du contournement', unit: '', def: 1, options: SIDE_OPTIONS, decimals: 0,
+      desc: "Du côté où le robot passe pour contourner l'obstacle : le premier virage de l'évitement va de ce côté.",
+      live: 'fsm.config.avoid_side' },
+
+    // ---- Évitement d'obstacle (12 étapes) ----
+    { service: 'FSM', key: 'AVOID_REVERSE_DIST_M', group: 'avoid', title: 'Étape 1 · Reculer', unit: 'm', def: 0.25, step: 0.01, decimals: 2,
+      desc: "Distance de recul avant de contourner, pour se donner de la place.",
+      rec: [0.1, 0.5], hard: [0.02, 3], live: 'fsm.config.avoidance.reverse_dist_m' },
+    { service: 'FSM', key: 'AVOID_ANGLE_1_DEG', group: 'avoid', title: 'Étape 2 · Angle du 1er virage', unit: '°', def: 45, step: 1, decimals: 0,
+      desc: "Braquage des roues vers le côté choisi. 45° est le braquage maximal du robot.",
+      rec: [15, 45], hard: [0, 45], live: 'fsm.config.avoidance.angle_1_deg' },
+    { service: 'FSM', key: 'AVOID_TIME_1_S', group: 'avoid', title: 'Étape 3 · Durée du 1er virage', unit: 's', def: 1.1, step: 0.05, decimals: 2,
+      desc: "Temps pendant lequel le robot avance roues braquées. Plus long = il tourne davantage (le cap change d'environ l'angle) et s'écarte plus du cube.",
+      rec: [0.3, 3], hard: [0.05, 30], live: 'fsm.config.avoidance.time_1_s', dist: { speed: FORWARD_SPEED_MS } },
+    { service: 'FSM', key: 'AVOID_DIAG_TIME_S', group: 'avoid', title: 'Étapes 4-5 · Durée de la diagonale', unit: 's', def: 1.1, step: 0.05, decimals: 2,
+      desc: "Roues droites : le robot avance en ligne droite en s'écartant du cube. Plus long = il s'en écarte davantage.",
+      rec: [0.3, 3], hard: [0.05, 30], live: 'fsm.config.avoidance.diag_time_s', dist: { speedKey: 'AVOID_DIAG_SPEED' } },
+    { service: 'FSM', key: 'AVOID_DIAG_SPEED', group: 'avoid', title: 'Étapes 4-5 · Vitesse de la diagonale', unit: 'm/s', def: 0.16, step: 0.01, decimals: 2,
+      desc: "Vitesse pendant la diagonale. Les durées des autres étapes ont été calibrées à 0,16 m/s : si tu changes cette vitesse, il faudra peut-être ajuster la durée.",
+      rec: [0.12, 0.25], hard: [0.05, 0.6], live: 'fsm.config.avoidance.diag_speed' },
+    { service: 'FSM', key: 'AVOID_ANGLE_2_DEG', group: 'avoid', title: 'Étape 6 · Angle du 2e virage', unit: '°', def: 45, step: 1, decimals: 0,
+      desc: "Braquage vers l'autre côté pour se remettre parallèle à la ligne.",
+      rec: [15, 45], hard: [0, 45], live: 'fsm.config.avoidance.angle_2_deg' },
+    { service: 'FSM', key: 'AVOID_TIME_2_S', group: 'avoid', title: 'Étape 7 · Durée du 2e virage', unit: 's', def: 0.7, step: 0.05, decimals: 2,
+      desc: "Temps de ce virage. Il doit redresser le robot : trop court, il reste en biais ; trop long, il repart vers le cube.",
+      rec: [0.2, 2], hard: [0.05, 30], live: 'fsm.config.avoidance.time_2_s', dist: { speed: FORWARD_SPEED_MS } },
+    { service: 'FSM', key: 'AVOID_PARALLEL_TIME_S', group: 'avoid', title: 'Étape 8 · Durée en ligne droite parallèle', unit: 's', def: 1, step: 0.05, decimals: 2,
+      desc: "Le robot est parallèle à la ligne et dépasse le cube. Plus long = il va plus loin avant de revenir vers la ligne.",
+      rec: [0.2, 4], hard: [0.05, 30], live: 'fsm.config.avoidance.parallel_time_s', dist: { speed: FORWARD_SPEED_MS } },
+    { service: 'FSM', key: 'AVOID_ANGLE_3_DEG', group: 'avoid', title: 'Étape 9 · Angle du 3e virage', unit: '°', def: 45, step: 1, decimals: 0,
+      desc: "Braquage vers la ligne pour y revenir.",
+      rec: [15, 45], hard: [0, 45], live: 'fsm.config.avoidance.angle_3_deg' },
+    { service: 'FSM', key: 'AVOID_TIME_3_S', group: 'avoid', title: 'Étape 10 · Durée du 3e virage', unit: 's', def: 0.7, step: 0.05, decimals: 2,
+      desc: "Temps de ce virage vers la ligne. Plus long = le robot arrive à la ligne plus en biais.",
+      rec: [0.2, 2], hard: [0.05, 30], live: 'fsm.config.avoidance.time_3_s', dist: { speed: FORWARD_SPEED_MS } },
+    { service: 'FSM', key: 'AVOID_RETURN_TIME_S', group: 'avoid', title: 'Étapes 11-12 · Durée maximale de recherche de la ligne', unit: 's', def: 3.5, step: 0.1, decimals: 2,
+      desc: "Roues droites, le robot avance jusqu'à voir la ligne. S'il ne la trouve pas avant cette durée, il s'arrête en erreur (état Failure).",
+      rec: [1, 5], hard: [0.5, 60], live: 'fsm.config.avoidance.return_time_s', dist: { speedKey: 'AVOID_RETURN_SPEED', prefix: 'au plus' } },
+    { service: 'FSM', key: 'AVOID_RETURN_SPEED', group: 'avoid', title: 'Étapes 11-12 · Vitesse de recherche de la ligne', unit: 'm/s', def: 0.16, step: 0.01, decimals: 2,
+      desc: "Vitesse pendant la recherche de la ligne. Trop rapide : il peut dépasser la ligne sans la voir.",
+      rec: [0.12, 0.25], hard: [0.05, 0.6], live: 'fsm.config.avoidance.return_speed' },
+
+    // ---- Moteurs et direction ----
+    { service: 'MOTORS', key: 'STEERING_OFFSET', group: 'motors', title: 'Trim de la direction', unit: '°', def: 0, step: 0.5, decimals: 1,
+      desc: "Corrige un défaut d'alignement des roues : si le robot dévie d'un côté en ligne droite, décale la direction de quelques degrés dans l'autre sens.",
+      rec: [-10, 10], live: 'motors.config.steering_offset' },
+    { service: 'MOTORS', key: 'INVERT', group: 'motors', title: 'Sens des moteurs', unit: '', def: 0, decimals: 0,
+      options: [{ value: 0, label: 'Normal' }, { value: 1, label: 'Inversé' }],
+      desc: "À inverser si le robot recule alors qu'il devrait avancer (fils des moteurs branchés à l'envers).",
+      live: 'motors.config.invert' },
+
+    // ---- Capteur de distance ----
+    { service: 'SENSORS', key: 'FILTER_ALPHA', group: 'sensors', title: 'Lissage de la distance', unit: '', def: 0.25, step: 0.05, decimals: 2,
+      desc: "Entre 0,01 et 1. Petit = mesure très lissée mais lente à réagir à un obstacle ; 1 = aucun lissage (mesure brute, plus bruitée). Cette limite est mathématique.",
+      rec: [0.05, 1], hard: [0.01, 1], live: 'sensors.config.filter_alpha' },
+    { service: 'SENSORS', key: 'MEDIAN_WINDOW', group: 'sensors', title: 'Fenêtre du filtre médian', unit: 'mesures', def: 5, step: 1, decimals: 0,
+      desc: "Nombre de mesures comparées pour ignorer une valeur aberrante isolée. Plus grand = plus robuste, mais la détection d'un obstacle est plus lente. Limite imposée par le robot : 15.",
+      rec: [3, 9], hard: [1, 15], live: 'sensors.config.median_window' },
+
+    // ---- Fréquences des boucles ----
+    { service: 'FSM', key: 'HZ', group: 'loops', title: 'Fréquence de la boucle FSM', unit: 'Hz', def: 50, step: 5, decimals: 0,
+      desc: "Nombre de décisions du FSM par seconde. LINE_KP et LINE_KD sont réglés pour 50 Hz : à 100 Hz, l'évitement échouait en simulation.",
+      rec: [20, 100], hard: [10, 10000], live: 'fsm.config.hz' },
+    { service: 'MOTORS', key: 'HZ', group: 'loops', title: 'Fréquence de la boucle Motors', unit: 'Hz', def: 100, step: 10, decimals: 0,
+      desc: "Nombre de mises à jour des moteurs et du servo par seconde.",
+      rec: [50, 200], hard: [10, 10000], live: 'motors.config.hz' },
+    { service: 'SENSORS', key: 'HZ', group: 'loops', title: 'Fréquence de la boucle Sensors', unit: 'Hz', def: 50, step: 5, decimals: 0,
+      desc: "Nombre de lectures des capteurs par seconde.",
+      rec: [20, 100], hard: [10, 10000], live: 'sensors.config.hz' },
+];
+
+const APPLY_CONFIRM_TIMEOUT_MS = 4000;   // au-delà, si le robot n'a pas la valeur demandée, on affiche ce qu'il a gardé
+const paramState = {};                    // par paramètre : champ, étiquette, dernière demande envoyée, valeur modifiée à la main
+
+function paramId(p) { return `${p.service}.${p.key}`; }
+
+function getPath(obj, path) {
+    return path.split('.').reduce((o, k) => (o === undefined || o === null ? undefined : o[k]), obj);
+}
+
+function el(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+}
+
+// Nombre sans zéros inutiles (100.0 -> 100) suivi de son unité (le degré est collé au nombre)
+function withUnit(v, unit, decimals = 2) {
+    const n = String(Number(Number(v).toFixed(decimals)));
+    if (!unit) return n;
+    return unit === '°' ? `${n}°` : `${n} ${unit}`;
+}
+
+function fmtRange(range, unit, decimals = 2) {
+    const lo = withUnit(range[0], '', decimals);
+    return `${lo} à ${withUnit(range[1], unit, decimals)}`;
+}
+
+function sameValue(a, b) {
+    return Math.abs(a - b) <= Math.max(1e-4, 1e-3 * Math.abs(b));
+}
+
+// ------------------------------------------------------------------------------
+// Construction du panneau
+// ------------------------------------------------------------------------------
+function buildParamPanel() {
+    const host = document.getElementById('param-groups');
+    if (!host) return;
+
+    for (const group of PARAM_GROUPS) {
+        const details = el('details', 'param-group');
+        details.dataset.group = group.id;
+        details.open = group.id !== 'loops';
+        const summary = el('summary', 'param-group-title');
+        summary.appendChild(el('span', 'param-group-name', group.title));
+        const count = PARAMS.filter((p) => p.group === group.id).length;
+        summary.appendChild(el('span', 'param-group-count', `${count} réglage${count > 1 ? 's' : ''}`));
+        const applyAll = el('button', 'btn-sm param-apply-all', 'Appliquer les valeurs modifiées');
+        applyAll.type = 'button';
+        applyAll.addEventListener('click', (e) => { e.preventDefault(); applyGroup(group.id); });
+        summary.appendChild(applyAll);
+        details.appendChild(summary);
+        details.appendChild(el('p', 'param-group-intro', group.intro));
+
+        const list = el('div', 'param-list');
+        for (const p of PARAMS.filter((x) => x.group === group.id)) list.appendChild(buildParamRow(p));
+        details.appendChild(list);
+        host.appendChild(details);
+    }
+
+    const search = document.getElementById('param-search');
+    if (search) search.addEventListener('input', () => filterParams(search.value));
+    PARAMS.forEach(updateHint);
+}
+
+function buildParamRow(p) {
+    const id = paramId(p);
+    const row = el('div', 'param-row');
+    row.dataset.param = id;
+    row.dataset.search = `${p.title} ${p.key} ${p.desc} ${p.service}`.toLowerCase();
+
+    // Colonne de gauche : nom, description, plages, valeur actuelle
+    const info = el('div', 'param-info');
+    const head = el('div', 'param-head');
+    head.appendChild(el('span', 'param-title', p.title));
+    head.appendChild(el('code', 'param-key', p.key));
+    head.appendChild(el('span', `param-service service-${p.service.toLowerCase()}`, p.service));
+    info.appendChild(head);
+    info.appendChild(el('div', 'param-desc', p.desc));
+
+    const defaultText = p.options ? labelOf(p, p.def) : withUnit(p.def, p.unit, p.decimals + 1);
+    const meta = [`Défaut : ${defaultText}`];
+    if (p.rec) meta.push(`Conseillé : ${fmtRange(p.rec, p.unit, p.decimals + 1)}`);
+    if (p.hard) meta.push(`Limite du robot : ${fmtRange(p.hard, p.unit, p.decimals + 1)}`);
+    else if (!p.options) meta.push('Aucune limite imposée par le robot');
+    info.appendChild(el('div', 'param-meta', meta.join(' · ')));
+
+    const hint = el('div', 'param-hint');
+    info.appendChild(hint);
+    const live = el('span', p.live ? 'live-tag' : 'live-tag nolive', p.live ? 'Actuel (robot) : --' : 'Pas de retour du robot pour ce réglage');
+    info.appendChild(live);
+    row.appendChild(info);
+
+    // Colonne de droite : champ, unité, boutons
+    const controls = el('div', 'param-controls');
+    let input;
+    if (p.options) {
+        input = el('select', 'param-input');
+        for (const o of p.options) {
+            const opt = el('option', '', o.label);
+            opt.value = String(o.value);
+            input.appendChild(opt);
+        }
+        input.value = String(p.def);
+    } else {
+        input = el('input', 'param-input');
+        input.type = 'number';
+        input.step = String(p.step || 'any');   // pas de min ni de max : aucune limite côté navigateur
+        input.value = String(p.def);
+    }
+    input.id = `cfg-${p.service.toLowerCase()}-${p.key.toLowerCase()}`;
+    input.setAttribute('aria-label', `${p.title} (${p.key})`);
+    controls.appendChild(input);
+    if (p.unit && !p.options) controls.appendChild(el('span', 'param-unit', p.unit));
+
+    const apply = el('button', 'btn-sm', 'Appliquer');
+    apply.type = 'button';
+    apply.addEventListener('click', () => applyParam(p));
+    const reset = el('button', 'btn-sm btn-icon', '↺');
+    reset.type = 'button';
+    reset.title = 'Remettre la valeur par défaut dans le champ (sans l’envoyer)';
+    reset.addEventListener('click', () => { input.value = String(p.def); markTouched(p); updateHint(p); updateDependentHints(p); });
+    controls.appendChild(apply);
+    controls.appendChild(reset);
+    row.appendChild(controls);
+
+    const onEdit = () => { markTouched(p); updateHint(p); updateDependentHints(p); };
+    input.addEventListener('input', onEdit);
+    input.addEventListener('change', onEdit);
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') applyParam(p); });
+
+    paramState[id] = { p, row, input, hint, live, touched: false, sent: null, confirmedUntil: 0, liveSeen: false };
+    return row;
+}
+
+function labelOf(p, value) {
+    const o = (p.options || []).find((x) => sameValue(x.value, value));
+    return o ? o.label : String(value);
+}
+
+function markTouched(p) {
+    const st = paramState[paramId(p)];
+    st.touched = true;
+    st.row.classList.add('dirty');
+}
+
+// ------------------------------------------------------------------------------
+// Avertissements sous chaque champ (plage conseillée, limites du robot, distance estimée)
+// ------------------------------------------------------------------------------
+function currentInputValue(p) {
+    const v = parseFloat(paramState[paramId(p)].input.value);
+    return isNaN(v) ? null : v;
+}
+
+function currentInputValueByKey(key) {
+    const other = PARAMS.find((x) => x.key === key && x.service === 'FSM');
+    return other ? currentInputValue(other) : null;
+}
+
+// Les durées affichent une distance qui dépend d'une vitesse réglée ailleurs : on les recalcule quand cette vitesse change
+function updateDependentHints(p) {
+    PARAMS.filter((q) => q.dist && q.dist.speedKey === p.key && q.service === p.service).forEach(updateHint);
+}
+
+function updateHint(p) {
+    const st = paramState[paramId(p)];
+    const v = currentInputValue(p);
+    const parts = [];
+    let level = '';
+
+    if (v === null) {
+        parts.push('Saisis un nombre.');
+        level = 'warn';
+    } else if (p.hard && (v < p.hard[0] || v > p.hard[1])) {
+        const kept = Math.min(p.hard[1], Math.max(p.hard[0], v));
+        parts.push(`⛔ Le robot ramènera cette valeur à ${withUnit(kept, p.unit, p.decimals + 1)} (limite ${fmtRange(p.hard, p.unit, p.decimals + 1)}).`);
+        level = 'limit';
+    } else if (p.rec && (v < p.rec[0] || v > p.rec[1])) {
+        parts.push(`⚠ Hors de la plage conseillée (${fmtRange(p.rec, p.unit, p.decimals + 1)}) : le robot l'accepte quand même.`);
+        level = 'warn';
+    }
+
+    if (v !== null && p.dist) {
+        const speed = p.dist.speed !== undefined ? p.dist.speed : currentInputValueByKey(p.dist.speedKey);
+        if (speed !== null && speed !== undefined) {
+            parts.push(`≈ ${p.dist.prefix ? p.dist.prefix + ' ' : ''}${(v * speed * 100).toFixed(0)} cm parcourus (${withUnit(speed, 'm/s')} × ${withUnit(v, 's')}).`);
+        }
+    }
+
+    st.hint.textContent = parts.join(' ');
+    st.hint.className = 'param-hint' + (level ? ' ' + level : '');
+    st.input.classList.toggle('out-of-range', level === 'warn' || level === 'limit');
+}
+
+// ------------------------------------------------------------------------------
+// Recherche
+// ------------------------------------------------------------------------------
+function filterParams(text) {
+    const q = text.trim().toLowerCase();
+    document.querySelectorAll('.param-group').forEach((group) => {
+        let visible = 0;
+        group.querySelectorAll('.param-row').forEach((row) => {
+            const match = !q || row.dataset.search.includes(q);
+            row.hidden = !match;
+            if (match) visible++;
+        });
+        group.hidden = visible === 0;
+        if (q && visible > 0) group.open = true;
+    });
+}
+
+// ------------------------------------------------------------------------------
+// Valeurs actuelles du robot (appelé à chaque trame de télémétrie)
+// ------------------------------------------------------------------------------
+function updateParamsLive(telem) {
+    for (const id in paramState) {
+        const st = paramState[id];
+        const p = st.p;
+        if (!p.live) continue;
+        const robot = valNum(getPath(telem, p.live), NaN);
+        if (isNaN(robot)) continue;
+
+        // Premier retour du robot : le champ part de la vraie valeur, pas de la valeur par défaut
+        if (!st.liveSeen) {
+            st.liveSeen = true;
+            if (!st.touched) {
+                st.input.value = p.options ? String(robot) : String(Number(robot.toFixed(Math.max(p.decimals + 1, 3))));
+                updateHint(p);
+                updateDependentHints(p);
+            }
+        }
+
+        const text = formatLive(p, robot, st);
+        updateText(st.live, `live_${id}`, text.message);
+        if (lastRendered[`livecls_${id}`] !== text.cls) {
+            st.live.className = 'live-tag' + (text.cls ? ' ' + text.cls : '');
+            lastRendered[`livecls_${id}`] = text.cls;
+        }
+
+        // « modifié » = le champ est différent de ce que le robot a vraiment
+        const inputVal = currentInputValue(p);
+        st.row.classList.toggle('dirty', st.touched && inputVal !== null && !sameValue(inputVal, robot));
+    }
+}
+
+function formatLive(p, robot, st) {
+    const shown = p.options ? labelOf(p, robot) : withUnit(robot, p.unit, p.decimals);
+    const req = st.sent;
+    if (!req && st.confirmedUntil > Date.now()) {
+        return { message: `✓ Confirmé par le robot : ${shown}`, cls: 'synced' };
+    }
+    if (req) {
+        if (sameValue(robot, req.value)) {
+            st.sent = null;                                          // fini : on n'attend plus rien de ce réglage
+            st.confirmedUntil = Date.now() + APPLY_CONFIRM_TIMEOUT_MS;
+            return { message: `✓ Confirmé par le robot : ${shown}`, cls: 'synced' };
+        }
+        if (Date.now() - req.time < APPLY_CONFIRM_TIMEOUT_MS) {
+            return { message: `⏳ Envoi… (actuel : ${shown})`, cls: 'pending' };
+        }
+        const asked = p.options ? labelOf(p, req.value) : withUnit(req.value, p.unit, p.decimals);
+        return { message: `⚠ Le robot a gardé ${shown} au lieu de ${asked} (limite ou refus)`, cls: 'mismatch' };
+    }
+    const inputVal = currentInputValue(p);
+    if (inputVal !== null && sameValue(robot, inputVal)) {
+        return { message: `✓ Actuel (robot) : ${shown}`, cls: 'synced' };
+    }
+    return { message: `Actuel (robot) : ${shown}`, cls: '' };
+}
+
+// ------------------------------------------------------------------------------
+// Envoi des réglages
+// ------------------------------------------------------------------------------
+async function sendConfig(service, key, value) {
+    logConsole(`[TX] Réglage : ${service}.${key} = ${value}`, 'sent');
+    try {
+        const resp = await fetch('/api/command', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ service, key, value })
+        });
+        if (resp.ok) {
+            const resJson = await resp.json();
+            logConsole(`[RX] Ack serveur : ${resJson.command || 'OK'}`, 'received');
+            return true;
+        }
+        logConsole(`[ERR] HTTP ${resp.status} lors de l'envoi de ${key}`, 'error');
+    } catch (err) {
+        logConsole(`[ERR] Erreur de communication : ${err.message}`, 'error');
+    }
+    return false;
+}
+
+async function applyParam(p) {
+    const st = paramState[paramId(p)];
+    const value = currentInputValue(p);
+    if (value === null) {
+        logConsole(`[ERR] Valeur invalide saisie pour ${p.service}.${p.key}`, 'error');
+        return;
+    }
+    // Valeur que le robot devrait avoir après avoir appliqué ses propres limites
+    const expected = p.hard ? Math.min(p.hard[1], Math.max(p.hard[0], value)) : value;
+    st.sent = { value: expected, time: Date.now() };
+    st.touched = false;
+    st.row.classList.remove('dirty');
+    updateText(st.live, `live_${paramId(p)}`, '⏳ Envoi…');
+    st.live.className = 'live-tag pending';
+    lastRendered[`livecls_${paramId(p)}`] = 'pending';
+    const ok = await sendConfig(p.service, p.key, value);
+    if (!p.live) {
+        // Le robot ne renvoie pas cette valeur : on ne peut pas la confirmer
+        const unit = p.unit ? ' ' + p.unit : '';
+        st.live.textContent = ok ? `Envoyé : ${value}${unit} (le robot ne renvoie pas cette valeur : voir la console du FSM)` : '⚠ Envoi échoué';
+        st.live.className = 'live-tag' + (ok ? ' synced' : ' mismatch');
+        lastRendered[`live_${paramId(p)}`] = st.live.textContent;
+        lastRendered[`livecls_${paramId(p)}`] = ok ? 'synced' : 'mismatch';
+        st.sent = null;
+    }
+}
+
+// Applique d'un coup toutes les lignes d'un groupe dont la valeur a été modifiée à la main
+async function applyGroup(groupId) {
+    const changed = PARAMS.filter((p) => p.group === groupId && paramState[paramId(p)].touched);
+    if (changed.length === 0) {
+        logConsole('[INFO] Aucune valeur modifiée dans ce groupe.', 'system');
+        return;
+    }
+    for (const p of changed) {
+        await applyParam(p);
+    }
+}
+
+// Réglage libre : n'importe quelle clé sur n'importe quel service (pour les clés absentes du catalogue)
+function applyCustomConfig() {
+    const srv = document.getElementById('cfg-custom-srv');
+    const keyInput = document.getElementById('cfg-custom-key');
+    const valInput = document.getElementById('cfg-custom-val');
+    if (!srv || !keyInput || !valInput) return;
+    const key = keyInput.value.trim();
+    const val = parseFloat(valInput.value);
+    if (!key || isNaN(val)) {
+        logConsole('[ERR] Veuillez renseigner une clé valide et une valeur numérique', 'error');
+        return;
+    }
+    sendConfig(srv.value, key, val);
 }

@@ -43,6 +43,7 @@ private:
     float m_avoid_side{1.0f};
     float m_max_power_pct{FsmNavigator::REFERENCE_POWER_PCT};   // puissance moteur (%) quand la vitesse atteint la croisiere
     AvoidanceSettings m_avoid;   // reglages de l'evitement d'obstacle : angles, durees et vitesses des 12 etapes (cles AVOID_*)
+    ObstacleTuning m_obstacle_tuning;   // approche d'un obstacle : distance de ralentissement, marge, attente (cles OBSTACLE_*)
 
     FsmNavigator m_navigator;
     FsmEventPipe m_event_pipe;

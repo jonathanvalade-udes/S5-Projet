@@ -1,0 +1,17 @@
+\subsection{GoDot (Raphaël Bonhomme)}
+Le GoDot a été nettoyé et des tests pour les calibrations du capteur de distance et le déviement d'obstacle a été terminé.
+
+\subsection{Client pour télémétrie (Tristan Faucher)}
+Le client externe pour afficher la télémétrie du robot à été retouché afin de permettre une modification des valeurs suivant la réception des paquets par le robot.
+
+\subsection{Rapport (Jérémie Perron)}
+Le prochain rapport a été commencé et le capteur ultrason à reçu une batterie de tests pour reconfirmer les valeurs.
+
+\subsection{Affinage des paramètres (Jonathan Valade)}
+Le robot est en configuration des paramètres maximales pour effectuer un parcour sans faute.
+
+\subsection{Modification de la bibliothèque partagé}
+La présente proposition modifierait les paquets de télémétrie des services afin d'implémenter les valeurs de configuration de chacun des services.
+
+Ainsi, le partage via \textit{SHM} et par le service de télémétrie représenterais les valeurs des paramètres utilisés.
+L'objectif est que le client externe puisse avoir accès aux valeurs utilisées dans la configuration.
