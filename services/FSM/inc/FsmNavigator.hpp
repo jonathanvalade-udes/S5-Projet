@@ -37,11 +37,20 @@ public:
 
     void reset_controllers();
     float get_current_speed() const;
-    float compute_bounded_velocity(float desired_v, float dt);
+    /// Rampe de vitesse couplee (SpeedPlanner) : a_longitudinale ET a_laterale (virage) bornees ensemble sous le seuil bille.
+    /// steer_deg : braquage commande ; avoiding : pendant l'evitement la puissance de reference est utilisee (pas de compensation).
+    float compute_bounded_velocity(float desired_v, float dt, float steer_deg = 0.0f, bool avoiding = false);
+
+    /// Puissance moteur (%) a la croisiere. Au-dessus de REFERENCE_POWER_PCT la voiture va plus vite pour la meme consigne en m/s
+    /// du FSM : l'acceleration reelle est multipliee d'autant, donc la rampe est reduite dans le meme rapport.
+    void set_power_pct(float max_power_pct);
+    /// Defaillance materielle (capteurs muets, urgence SHM) : coupure immediate de la puissance. Sinon (ligne perdue, evitement
+    /// echoue) l'etat Failure freine en rampe pour ne pas faire tomber la bille.
+    void set_hard_failure(bool hard) { m_hard_failure = hard; }
     /// Puissance moteur (%) pour une vitesse donnee : vitesse / croisiere x power_at_cruise_pct.
     float compute_motor_power(float bounded_v, float cruise_speed, float power_at_cruise_pct = REFERENCE_POWER_PCT);
 
-    /// Vrai si la puissance moteur doit etre coupee d'un coup : urgence demandee, Failure ou Abort. L'etat Stopped n'en fait PAS
+    /// Vrai si la puissance moteur doit etre coupee d'un coup : urgence demandee ou Abort (une Failure dure demande l'urgence). L'etat Stopped n'en fait PAS
     /// partie : a l'arrivee (ou en pause) le profil de vitesse freine progressivement (acceleration maximale), ce qui evite de
     /// faire tomber la bille. Une coupure brusque a pleine vitesse la ferait tomber.
     static bool must_cut_power(shared::fsm::MachineStates state, bool req_emergency);
@@ -51,6 +60,8 @@ public:
     /// Bornes de MAX_POWER_PCT (puissance a la croisiere) et de STRAIGHT_CRUISE_SPEED.
     static constexpr float MIN_POWER_PCT = 20.0f;
     static constexpr float MAX_POWER_PCT = 75.0f;
+    /// Marge de securite : la rampe vise 88 % du seuil bille (0,735 -> ~0,65 m/s^2) pour absorber jitter, latence et bruit.
+    static constexpr float BALL_ACCEL_MARGIN = 0.88f;
     static constexpr float MIN_CRUISE_SPEED = 0.10f;
     static constexpr float MAX_CRUISE_SPEED = 0.60f;
 
@@ -72,6 +83,11 @@ private:
     VehicleModel m_vehicle_model;
     SpeedPlanner m_speed_planner;
 
+    void apply_planner_limits(float accel_scale);
+
+    float m_max_accel{0.735f};
+    float m_power_accel_scale{1.0f};
+    bool m_hard_failure{false};
     float m_cruise_speed{0.35f};
     float m_min_curve_speed{0.17f};
     float m_last_steer_degrees{0.0f};

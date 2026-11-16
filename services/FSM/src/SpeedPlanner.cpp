@@ -65,7 +65,10 @@ float SpeedPlanner::update(float target_speed_m_s,
     // a_x_max = sqrt(max(0, a_bille_max² - a_y²))
     float ay_sq = m_last_ay * m_last_ay;
     float ball_sq = m_ball_max_accel * m_ball_max_accel;
-    float max_ax_allowed = (ball_sq > ay_sq) ? std::sqrt(ball_sq - ay_sq) : 0.05f;
+    // Plancher : même en virage serré, on garde une capacité de freinage/accélération (sinon la voiture ne peut plus
+    // ralentir devant un obstacle). Freiner réduit aussi v donc a_y, ce qui ramène vite a_res sous le seuil.
+    float max_ax_allowed = std::max((ball_sq > ay_sq) ? std::sqrt(ball_sq - ay_sq) : 0.0f,
+                                    MIN_LONG_ACCEL_FRACTION * m_ball_max_accel);
 
     // 5. Rampe temporelle asymétrique avec respect strict de l'accélération résultante bille
     if (v_target > m_current_speed) {

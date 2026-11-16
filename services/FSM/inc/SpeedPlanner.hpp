@@ -20,6 +20,7 @@ public:
     static constexpr float DEFAULT_MAX_JERK       = 6.0f;      // m/s³ (limitation des à-coups)
     static constexpr float DEFAULT_REACTION_TIME  = 0.05f;     // s (temps de réaction estimé)
     static constexpr float DEFAULT_STOP_MARGIN_M  = 0.04f;     // m (marge d'arrêt obstacle)
+    static constexpr float MIN_LONG_ACCEL_FRACTION = 0.30f;    // plancher de a_x (fraction de a_bille_max) en virage serré
 
     explicit SpeedPlanner(float ball_max_accel = DEFAULT_BALL_MAX_ACCEL,
                           float max_accel = DEFAULT_MAX_ACCEL,

@@ -1,0 +1,11 @@
+# Fichiers temporaires des outils de mesure (tools/run_closed_loop.py)
+worlds/_closed_loop_*.wbt
+worlds/textures/_line_track_r*.png
+worlds/_ball_lab*.wbt
+worlds/_ball_lab_result.json
+worlds/textures/_test_*.png
+worlds/_live_*.wbt
+# Etat d interface de Webots (propre a chaque poste)
+worlds/.*.wbproj
+# Caches Python
+__pycache__/

@@ -195,6 +195,20 @@ void test_line_follower_analog() {
         assert(!out.is_finished && !out.is_line_lost);
     }
 
+    // 5b. Ruban de 18 mm centré entre deux capteurs (pas ~19 mm) : ~0,45 chacun, aucun > 0,5, mais la ligne est vue.
+    //     Avant le correctif : fausse perte de ligne -> braquage maintenu à 85 % (cause du wobble 0°/45° en simulation).
+    {
+        LineFollowerController c(0.58f, 0.035f, 0.32f, 0.20f);
+        const float centered[5] = {0.0f, 0.0f, 1.0f, 0.0f, 0.0f};
+        for (int k = 0; k < 10; ++k) c.update_analog(centered, dt);
+        const float gap[5] = {0.0f, 0.0f, 0.45f, 0.45f, 0.0f};
+        LineFollowerOutput out{};
+        for (int k = 0; k < 10; ++k) out = c.update_analog(gap, dt);
+        assert(!out.is_line_lost && !out.is_finished);
+        // barycentre = +0,5 pas : braquage modéré (~0,29), loin du maintien à 0,85
+        assert(out.steer_normalized > 0.1f && out.steer_normalized < 0.5f);
+    }
+
     // 6. Continuité et monotonie stricte du barycentre (passage continu de capteur 2 à capteur 3)
     {
         LineFollowerController c(0.65f, 0.05f, 0.32f, 0.14f);

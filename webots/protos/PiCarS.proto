@@ -1,0 +1,394 @@
+#VRML_SIM R2023b utf8
+# license: Apache License 2.0
+# Model of the SunFounder PiCar-S robot car
+# tags: vehicle, robot
+
+PROTO PiCarS [
+  field SFVec3f    translation     0 0 0.0225
+  field SFRotation rotation        0 0 1 0
+  field SFString   name            "PiCar-S"
+  field SFString   controller      "picar_s_controller"
+  field MFString   controllerArgs  []
+  field SFString   customData      ""
+  field SFBool     supervisor      FALSE
+  field SFBool     synchronization TRUE
+  field SFFloat    irPitch         0.019   # ecart entre sondes (m) ; manuel SunFounder : ~ largeur du ruban (18-30 mm), module de 124-125 mm
+  field SFFloat    irSpotDiameter  0.007   # tache vue au sol (m) : TCRT5000 a 10 mm, demi-angle ~18 deg -> ~7 mm (estimation)
+  field SFFloat    irNoise         0.01    # bruit relatif de la lecture (ecart-type / valeur), ~1 % comme un ADC 10 bits
+]
+{
+  Robot {
+    translation IS translation
+    rotation IS rotation
+    name IS name
+    controller IS controller
+    controllerArgs IS controllerArgs
+    customData IS customData
+    supervisor IS supervisor
+    synchronization IS synchronization
+    children [
+      # Chassis (visuel). Repere : x vers l'avant, y vers la gauche, origine au centre de l'essieu arriere, z = 0 au bas du chassis.
+      CadShape {
+        url [
+          "../cad/Chassis.dae"
+        ]
+      }
+
+      # Pivot de direction left (Ackermann : chaque roue a son propre pivot ; le controleur calcule les deux angles)
+      HingeJoint {
+        jointParameters HingeJointParameters {
+          axis 0 0 1
+          anchor 0.14 0.050 0.012
+          minStop -1.12
+          maxStop 1.12
+        }
+        device [
+          RotationalMotor {
+            name "left_steer"
+            # Plage : roue interieure a 61.8 deg quand le braquage equivalent (bicyclette) vaut 45 deg (L = 0.14, voie = 0.13)
+            minPosition -1.10
+            maxPosition 1.10
+            maxVelocity 9.1     # servo SF0180 (manuel) : 0.12 s / 60 deg a 4.8 V, 0.09 s a 6 V ; alimente en 5 V
+            maxTorque 0.2       # 2.0 kg.cm a 4.8 V
+          }
+        ]
+        endPoint Solid {
+          translation 0.14 0.050 0.012
+          name "front_left_knuckle"
+          children [
+            HingeJoint {
+              jointParameters HingeJointParameters {
+                axis 0 1 0
+                anchor 0 0.015 0
+              }
+              endPoint Solid {
+                translation 0 0.015 0
+                rotation 1 0 0 -1.57079632679
+                name "wheel_front_left"
+                contactMaterial "picar_tire"
+                children [
+                  CadShape {
+                    url [
+                      "../cad/WheelFrontLeft.dae"
+                    ]
+                  }
+                ]
+                boundingObject Cylinder {
+                  height 0.0255
+                  radius 0.0335
+                }
+                physics Physics {
+                  density -1
+                  mass 0.025
+                }
+              }
+            }
+          ]
+          physics Physics {
+            density -1
+            mass 0.008
+            centerOfMass [ 0 0 0 ]
+            inertiaMatrix [ 1e-06 1e-06 1e-06 0 0 0 ]
+          }
+        }
+      }
+      # Pivot de direction right (Ackermann : chaque roue a son propre pivot ; le controleur calcule les deux angles)
+      HingeJoint {
+        jointParameters HingeJointParameters {
+          axis 0 0 1
+          anchor 0.14 -0.050 0.012
+          minStop -1.12
+          maxStop 1.12
+        }
+        device [
+          RotationalMotor {
+            name "right_steer"
+            # Plage : roue interieure a 61.8 deg quand le braquage equivalent (bicyclette) vaut 45 deg (L = 0.14, voie = 0.13)
+            minPosition -1.10
+            maxPosition 1.10
+            maxVelocity 9.1     # servo SF0180 (manuel) : 0.12 s / 60 deg a 4.8 V, 0.09 s a 6 V ; alimente en 5 V
+            maxTorque 0.2       # 2.0 kg.cm a 4.8 V
+          }
+        ]
+        endPoint Solid {
+          translation 0.14 -0.050 0.012
+          name "front_right_knuckle"
+          children [
+            HingeJoint {
+              jointParameters HingeJointParameters {
+                axis 0 1 0
+                anchor 0 -0.015 0
+              }
+              endPoint Solid {
+                translation 0 -0.015 0
+                rotation 1 0 0 -1.57079632679
+                name "wheel_front_right"
+                contactMaterial "picar_tire"
+                children [
+                  CadShape {
+                    url [
+                      "../cad/WheelFrontRight.dae"
+                    ]
+                  }
+                ]
+                boundingObject Cylinder {
+                  height 0.0255
+                  radius 0.0335
+                }
+                physics Physics {
+                  density -1
+                  mass 0.025
+                }
+              }
+            }
+          ]
+          physics Physics {
+            density -1
+            mass 0.008
+            centerOfMass [ 0 0 0 ]
+            inertiaMatrix [ 1e-06 1e-06 1e-06 0 0 0 ]
+          }
+        }
+      }
+      # Roue arriere left : un moteur par roue comme sur le vrai PiCar-S (2 moteurs TT), donc pas d'essieu rigide qui ripe en virage
+      HingeJoint {
+        jointParameters HingeJointParameters {
+          axis 0 1 0
+          anchor 0 0.065 0.012
+        }
+        device [
+          RotationalMotor {
+            name "rear_left_motor"
+            maxVelocity 19     # moteur F130 + reducteur 1:48 (manuel) : ~200 tr/min a vide, 180 mesures -> 0.63 m/s
+            maxTorque 0.1      # ordre de grandeur du couple au decrochage d'un moteur 130 + 1:48
+          }
+        ]
+        endPoint Solid {
+          translation 0 0.065 0.012
+          rotation 1 0 0 -1.57079632679
+          name "wheel_rear_left"
+          contactMaterial "picar_tire"
+          children [
+            CadShape {
+              url [
+                "../cad/WheelRearLeft.dae"
+              ]
+            }
+          ]
+          boundingObject Cylinder {
+            height 0.0268
+            radius 0.0335
+          }
+          physics Physics {
+            density -1
+            mass 0.03
+          }
+        }
+      }
+      # Roue arriere right : un moteur par roue comme sur le vrai PiCar-S (2 moteurs TT), donc pas d'essieu rigide qui ripe en virage
+      HingeJoint {
+        jointParameters HingeJointParameters {
+          axis 0 1 0
+          anchor 0 -0.065 0.012
+        }
+        device [
+          RotationalMotor {
+            name "rear_right_motor"
+            maxVelocity 19     # moteur F130 + reducteur 1:48 (manuel) : ~200 tr/min a vide, 180 mesures -> 0.63 m/s
+            maxTorque 0.1      # ordre de grandeur du couple au decrochage d'un moteur 130 + 1:48
+          }
+        ]
+        endPoint Solid {
+          translation 0 -0.065 0.012
+          rotation 1 0 0 -1.57079632679
+          name "wheel_rear_right"
+          contactMaterial "picar_tire"
+          children [
+            CadShape {
+              url [
+                "../cad/WheelRearRight.dae"
+              ]
+            }
+          ]
+          boundingObject Cylinder {
+            height 0.0268
+            radius 0.0335
+          }
+          physics Physics {
+            density -1
+            mass 0.03
+          }
+        }
+      }
+
+      # Support de bille FastDrink (godot/assets/plaquette_blender_scale.blend -> cad/Plaquette.obj) : plaque PLA 50 x 50 mm,
+      # coupelle en BOL (pas un cone) : fond a 2.5 mm, rebord a 4.0 mm a r = 20 mm, profil ~ sphere de 133 mm de rayon.
+      # Position de Godot (main.tscn) : 48 mm devant l'essieu arriere, 95 mm au-dessus du sol (z = 0.0735 dans ce repere).
+      # Solid sans joint = fixe au chassis. Sa forme de collision est le maillage lui-meme : la bille (Solid "ball" du monde)
+      # roule vraiment dedans (moteur physique), il n'y a plus de formule.
+      DEF CUP_PLATE Solid {
+        translation 0.048 0 0.0735
+        name "cup_plate"
+        contactMaterial "pla"
+        children [
+          Shape {
+            appearance PBRAppearance {
+              baseColor 0.92 0.92 0.95
+              roughness 0.7
+              metalness 0
+            }
+            geometry DEF CUP_MESH Mesh {
+              url [
+                "../cad/Plaquette.obj"
+              ]
+            }
+          }
+          # Entretoises (visuel) entre le haut du chassis (z = 0.048) et la plaque
+          Transform {
+            translation 0 0 -0.01275
+            children [
+              DEF STANDOFFS Group {
+                children [
+                  Transform { translation 0.02 0.02 0 children [ DEF POST Shape { appearance PBRAppearance { baseColor 0.75 0.6 0.2 metalness 0.8 roughness 0.3 } geometry Cylinder { height 0.0255 radius 0.0025 } } ] }
+                  Transform { translation 0.02 -0.02 0 children [ USE POST ] }
+                  Transform { translation -0.02 0.02 0 children [ USE POST ] }
+                  Transform { translation -0.02 -0.02 0 children [ USE POST ] }
+                ]
+              }
+            ]
+          }
+        ]
+        boundingObject USE CUP_MESH
+        physics Physics {
+          density -1
+          mass 0.009              # plaque PLA ~7 cm3 a 1.24 g/cm3 (+ entretoises)
+        }
+      }
+
+      # Verite terrain (position, vitesse, cap) : sert a verifier la physique et a calibrer ; le FSM ne les utilise pas.
+      GPS {
+        name "gps"
+      }
+      InertialUnit {
+        name "imu"
+      }
+
+      # 5 capteurs de ligne (TCRT5000), x = 0.17 m devant l'essieu arriere, pas de 19 mm, ordre gauche (IR_0, +y) -> droite (IR_4).
+      # Places SOUS le chassis (z < 0, sinon les rayons infra-rouges touchent le robot), a ~1 cm du sol comme dans le manuel.
+      # Hauteur au-dessus du sol h = 0.010 m (origine du robot a 0.0215 m). Modele Webots : distance / f avec f = 0.2 + 0.8 * rouge * (1 - 0.5
+      # * roughness) ; le sol a roughness 1 donc f = 0.6 sur le blanc et 0.2 sur le noir. Chaque rayon renvoie donc h / 0.6 ou
+      # h / 0.2 et Webots fait la moyenne ponderee des rayons AVANT la table : une table LINEAIRE entre ces deux distances donne
+      # une sortie proportionnelle a la fraction de la tache couverte par le ruban (100 = blanc, 950 = noir), une vraie valeur continue.
+      # Le pas, la tache et le bruit sont des champs du PROTO (irPitch, irSpotDiameter, irNoise). 16 rayons = resolution ~6 %.
+      %<
+        // Hauteur des capteurs au-dessus du sol : origine du robot a 0.0215 m (rayon de roue 0.0335 - centre de roue 0.012),
+        // capteurs a ~1 cm du sol (manuel SunFounder : "about 1cm away"). Sol : roughness 1 -> f = 0.6 (blanc), 0.2 (noir). 1.01 = allongement des rayons obliques.
+        const irHeight = 0.010;
+        const dWhite = irHeight / 0.6 * 1.01;
+        const dBlack = irHeight / 0.2 * 1.01;
+        const irAperture = 2 * Math.atan(fields.irSpotDiameter.value / 2 / irHeight);
+        const pitch = fields.irPitch.value;
+        const noise = fields.irNoise.value;
+      >%
+      DEF IR_0 DistanceSensor {
+        translation 0.17 %<= (2) * pitch >% -0.0115
+        rotation 0 1 0 1.57079632679
+        name "IR_0"
+        type "infra-red"
+        numberOfRays 16
+        aperture %<= irAperture >%
+        lookupTable [
+          0 100 %<= noise >%
+          %<= dWhite >% 100 %<= noise >%
+          %<= dBlack >% 950 %<= noise >%
+          1 950 %<= noise >%
+        ]
+      }
+      DEF IR_1 DistanceSensor {
+        translation 0.17 %<= (1) * pitch >% -0.0115
+        rotation 0 1 0 1.57079632679
+        name "IR_1"
+        type "infra-red"
+        numberOfRays 16
+        aperture %<= irAperture >%
+        lookupTable [
+          0 100 %<= noise >%
+          %<= dWhite >% 100 %<= noise >%
+          %<= dBlack >% 950 %<= noise >%
+          1 950 %<= noise >%
+        ]
+      }
+      DEF IR_2 DistanceSensor {
+        translation 0.17 %<= (0) * pitch >% -0.0115
+        rotation 0 1 0 1.57079632679
+        name "IR_2"
+        type "infra-red"
+        numberOfRays 16
+        aperture %<= irAperture >%
+        lookupTable [
+          0 100 %<= noise >%
+          %<= dWhite >% 100 %<= noise >%
+          %<= dBlack >% 950 %<= noise >%
+          1 950 %<= noise >%
+        ]
+      }
+      DEF IR_3 DistanceSensor {
+        translation 0.17 %<= (-1) * pitch >% -0.0115
+        rotation 0 1 0 1.57079632679
+        name "IR_3"
+        type "infra-red"
+        numberOfRays 16
+        aperture %<= irAperture >%
+        lookupTable [
+          0 100 %<= noise >%
+          %<= dWhite >% 100 %<= noise >%
+          %<= dBlack >% 950 %<= noise >%
+          1 950 %<= noise >%
+        ]
+      }
+      DEF IR_4 DistanceSensor {
+        translation 0.17 %<= (-2) * pitch >% -0.0115
+        rotation 0 1 0 1.57079632679
+        name "IR_4"
+        type "infra-red"
+        numberOfRays 16
+        aperture %<= irAperture >%
+        lookupTable [
+          0 100 %<= noise >%
+          %<= dWhite >% 100 %<= noise >%
+          %<= dBlack >% 950 %<= noise >%
+          1 950 %<= noise >%
+        ]
+      }
+      # Ultrason SunFounder 25 kHz (manuel) : cone d'environ 30 deg, moins precis qu'un HC-SR04
+      DEF SONAR DistanceSensor {
+        translation 0.185 0 0.04
+        rotation 0 0 1 0
+        name "sonar"
+        type "sonar"
+        numberOfRays 5
+        aperture 0.52
+        lookupTable [
+          0.02 0.02 0
+          4 4 0.001
+        ]
+      }
+    ]
+    # Collision du chassis : seulement le bloc central, entre les roues (les roues ont leurs propres cylindres)
+    boundingObject Transform {
+      translation 0.064 0 0.025
+      children [
+        Box {
+          size 0.22 0.09 0.04
+        }
+      ]
+    }
+    # Masse totale ~0.61 kg : kit ~0.5 kg (annonces : 499 g / 1.1 lb) + Raspberry Pi 3 (45 g) + 2 x 18650 (~90 g). A PESER.
+    # Centre de masse vers l'arriere : batteries et moteurs sont au-dessus de l'essieu arriere.
+    physics Physics {
+      density -1
+      mass 0.48
+      centerOfMass [ 0.045 0 0.02 ]
+    }
+  }
+}

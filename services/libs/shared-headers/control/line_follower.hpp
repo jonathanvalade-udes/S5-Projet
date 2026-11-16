@@ -32,6 +32,7 @@ public:
     static constexpr float ANALOG_ERROR_ALPHA = 0.4f;          // Filtre EMA de l'erreur analogique (1 = aucun filtre)
     static constexpr float ANALOG_CENTER_KNEE = 0.15f;         // Erreur (en pas de capteur ~19 mm) sous laquelle on atténue
     static constexpr float ANALOG_MIN_TOTAL_DARKNESS = 0.25f;  // Noirceur totale minimale pour dire "ligne vue"
+    static constexpr float ANALOG_GAP_TOTAL_DARKNESS = 0.50f;  // Ruban entre deux capteurs (~0,45 + ~0,45) : ligne vue
 
 private:
     float kp;
@@ -236,7 +237,9 @@ public:
         }
 
         const bool is_t_stop = finish_detection_enabled && (dark_count >= 4 || total >= 3.6f);
-        const bool has_line = (dark_count >= 1 || max_d >= 0.50f);
+        // Noirceur TOTALE aussi : le ruban de 18 mm centre entre deux capteurs (pas ~19 mm) donne ~0,45 sur chacun,
+        // aucun ne depasse 0,5 alors que la ligne est bien vue (sinon fausse perte -> braquage maintenu a 85 %).
+        const bool has_line = (dark_count >= 1 || max_d >= 0.50f || total >= ANALOG_GAP_TOTAL_DARKNESS);
         float error = (has_line && total > 0.01f) ? (weighted / total) : 0.0f;
 
         // Filtrage passe-bas de l'erreur AVANT la dérivée : sans lui, le bruit de mesure (quantification,

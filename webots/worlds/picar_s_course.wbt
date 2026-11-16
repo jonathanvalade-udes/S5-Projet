@@ -1,0 +1,139 @@
+#VRML_SIM R2023b utf8
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/floors/protos/RectangleArena.proto"
+EXTERNPROTO "../protos/PiCarS.proto"
+
+WorldInfo {
+  info [
+    "Circuit de Godot (godot/assets/parcours.blend) : virages, demi-tours, 2 obstacles et barre d'arrivee en T."
+    "Bille FastDrink physique (verre, 20 mm, 10 g) dans la coupelle du support (cad/Plaquette.obj)."
+  ]
+  title "PiCar-S Course"
+  # Physique a 4 ms ; le controleur garde 20 ms (50 Hz).
+  basicTimeStep 4
+  coordinateSystem "ENU"
+  contactProperties [
+    # Pneu caoutchouc sur sol lisse : frottement ~0.9, aucun rebond (le defaut Webots est bounce 0.5).
+    ContactProperties {
+      material1 "default"
+      material2 "picar_tire"
+      coulombFriction [
+        0.9
+      ]
+      bounce 0
+      softCFM 1e-05
+    }
+    # Bille de verre sur coupelle PLA : frottement ~0.4, petit rebond. rollingFriction 1e-4 : amortissement zeta = 0.23,
+    # periode 0.79 s (tools/ball_lab.py) ; proche de l hypothese de Godot (6/s). A MESURER (filmer la bille apres un choc).
+    ContactProperties {
+      material1 "glass"
+      material2 "pla"
+      coulombFriction [
+        0.4
+      ]
+      rollingFriction 1e-4 1e-4 0
+      bounce 0.1
+      bounceVelocity 0.05
+      softCFM 1e-06
+    }
+  ]
+}
+Viewpoint {
+  # Vue de 3/4 arriere sur la voiture au depart (camera Webots : regarde selon +x, z vers le haut).
+  orientation -0.3520 0.3239 0.8782 1.7823
+  position -0.96 -2.15 1.1
+  follow "PiCar-S"
+  followSmoothness 0.05
+}
+TexturedBackground {
+}
+DirectionalLight {
+  ambientIntensity 0.5
+  direction -0.4 0.5 -1
+  intensity 1
+  castShadows TRUE
+}
+# Sol de 3.4 m centre en (0.15, 0.23) : doit correspondre aux options de tools/generate_course_texture.py
+RectangleArena {
+  translation 0.15 0.23 0
+  floorSize 3.4 3.4
+  floorTileSize 3.4 3.4
+  floorAppearance PBRAppearance {
+    baseColorMap ImageTexture {
+      url [
+        "textures/godot_course.png"
+      ]
+    }
+    roughness 1
+    metalness 0
+  }
+  wallHeight 0.05
+}
+# Depart de Godot (main.tscn : PiCar en (-0.95, 0.02, 1), tourne de 180 deg) : essieu arriere en (-1.06, -1.0), cap +x.
+# supervisor TRUE : le controleur lit la position de la bille (Solid BALL) pour savoir si elle est tombee.
+PiCarS {
+  translation -1.06 -1.0 0.0225
+  rotation 0 0 1 0
+  name "PiCar-S"
+  controller "picar_s_controller"
+  supervisor TRUE
+}
+# Bille FastDrink : verre, diametre 20 mm, 10 g (Godot : mass 0.01, rayon 0.01). Posee au centre de la coupelle :
+# x = -1.06 + 0.048, z = 0.0215 (origine voiture) + 0.0735 (plaque) + 0.0025 (fond de coupelle) + 0.010 (rayon) + 0.0005.
+DEF BALL Solid {
+  translation -1.012 -1.0 0.108
+  name "ball"
+  contactMaterial "glass"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.55 0.8 1
+        transparency 0.25
+        roughness 0.05
+        metalness 0
+      }
+      geometry DEF BALL_SPHERE Sphere {
+        radius 0.01
+        subdivision 3
+      }
+    }
+  ]
+  boundingObject USE BALL_SPHERE
+  physics Physics {
+    density -1
+    mass 0.01
+  }
+}
+# Obstacles de Godot (obstacle.blend : 0.2 x 0.06 x 0.2 m), coordonnees converties (x, -z_godot) et rotation autour de z.
+DEF OBSTACLE_1 Solid {
+  translation -0.0013 -1.005 0.1
+  rotation 0 0 1 -1.5702
+  name "obstacle_1"
+  children [
+    DEF OBSTACLE_SHAPE Shape {
+      appearance PBRAppearance {
+        baseColor 0.8 0.35 0.1
+        roughness 0.8
+        metalness 0
+      }
+      geometry Box {
+        size 0.2 0.06 0.2
+      }
+    }
+  ]
+  boundingObject Box {
+    size 0.2 0.06 0.2
+  }
+}
+DEF OBSTACLE_2 Solid {
+  translation -0.3226 0.4394 0.1
+  rotation 0 0 1 -0.0041
+  name "obstacle_2"
+  children [
+    USE OBSTACLE_SHAPE
+  ]
+  boundingObject Box {
+    size 0.2 0.06 0.2
+  }
+}

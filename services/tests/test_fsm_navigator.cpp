@@ -1,4 +1,5 @@
 // Tests du ralentissement a l'approche d'un obstacle (FsmNavigator::limit_approach_speed).
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <iostream>
@@ -16,6 +17,8 @@ int main() {
 
     const float stop_cm = 20.0f;
     const float cruise = 0.45f;
+    // La rampe et le freinage visent le seuil bille avec marge : 0,735 x BALL_ACCEL_MARGIN
+    const float a_eff = 0.735f * FsmNavigator::BALL_ACCEL_MARGIN;
 
     // Loin de l'obstacle (>= 45 cm) : la consigne n'est pas modifiee
     assert(near(nav.limit_approach_speed(cruise, 100.0f, stop_cm), cruise));
@@ -24,12 +27,12 @@ int main() {
     // Dans la zone de ralentissement : v <= sqrt(2 * a * d)
     // (consigne 1,0 m/s : superieure a la limite, c'est donc la limite qui s'applique)
     const float v35 = nav.limit_approach_speed(1.0f, 35.0f, stop_cm);
-    assert(near(v35, std::sqrt(2.0f * 0.735f * 0.15f)));
+    assert(near(v35, std::sqrt(2.0f * a_eff * 0.15f)));
 
     // Plus on est pres, plus la vitesse autorisee diminue
     const float v25 = nav.limit_approach_speed(1.0f, 25.0f, stop_cm);
     assert(v25 < v35);
-    assert(near(v25, std::sqrt(2.0f * 0.735f * 0.05f)));
+    assert(near(v25, std::sqrt(2.0f * a_eff * 0.05f)));
 
     // A 25 cm, la croisiere (0,45 m/s) depasse la limite (~0,27 m/s) : elle est bien reduite
     assert(nav.limit_approach_speed(cruise, 25.0f, stop_cm) < cruise);
@@ -154,7 +157,7 @@ int main() {
         assert(!FsmNavigator::must_cut_power(MachineStates::Stopped, false));            // arrivee / pause : freinage progressif
         assert(!FsmNavigator::must_cut_power(MachineStates::LineFollowingForward, false));
         assert(!FsmNavigator::must_cut_power(MachineStates::Armed, false));
-        assert(FsmNavigator::must_cut_power(MachineStates::Failure, false));             // echec : coupure immediate
+        assert(!FsmNavigator::must_cut_power(MachineStates::Failure, false));            // echec logiciel (ligne perdue) : rampe
         assert(FsmNavigator::must_cut_power(MachineStates::Abort, false));               // arret d'urgence
         assert(FsmNavigator::must_cut_power(MachineStates::LineFollowingForward, true)); // urgence demandee par la navigation
 
@@ -173,7 +176,7 @@ int main() {
             prev_power = power;
             if (power <= 0.0f && steps_to_stop == 0) steps_to_stop = i + 1;
         }
-        assert(steps_to_stop >= 20 && steps_to_stop <= 24);                                  // ~0,43 s pour s'arreter depuis 0,32 m/s
+        assert(steps_to_stop >= 23 && steps_to_stop <= 27);                                  // ~0,5 s pour s'arreter depuis 0,32 m/s (a = 0,65)
         assert(near(prev_power, 0.0f));
     }
 
@@ -189,6 +192,73 @@ int main() {
         assert(FsmNavigator::MIN_POWER_PCT < FsmNavigator::REFERENCE_POWER_PCT);
         assert(FsmNavigator::REFERENCE_POWER_PCT < FsmNavigator::MAX_POWER_PCT);
         assert(FsmNavigator::MIN_CRUISE_SPEED > 0.0f);
+    }
+
+    // --- Protection bille : la resultante sqrt(ax^2 + ay^2) reste sous le seuil critique, avec marge ---
+    {
+        const float dt = 0.02f;
+        const float crit = 9.81f * 0.075f;                     // 0,7358 m/s^2
+        FsmNavigator n;
+        n.init(0.58f, 0.035f, 0.32f, 0.20f, 0.735f);
+        float prev = 0.0f, worst = 0.0f, settled = 0.0f;
+        // Acceleration en ligne droite, virage de 25 deg pris a pleine consigne, puis virage serre de 45 deg
+        for (int i = 0; i < 600; ++i) {
+            const float steer = (i < 100) ? 0.0f : (i < 300 ? 25.0f : 45.0f);
+            const float v = n.compute_bounded_velocity(0.32f, dt, steer);
+            const float ax = (v - prev) / dt;
+            const float ay = (steer > 1.0f) ? v * v * std::tan(steer * 3.14159265f / 180.0f) / 0.14f : 0.0f;
+            const float a_res = std::sqrt(ax * ax + ay * ay);
+            if (i < 300) worst = std::max(worst, a_res);       // transitoire du virage 45 deg : entree a vitesse de croisiere
+            if (i >= 550) settled = std::max(settled, a_res);  // regime etabli en virage serre
+            prev = v;
+        }
+        assert(worst < crit);                                  // resultante sous le seuil critique
+        assert(worst <= 0.735f * FsmNavigator::BALL_ACCEL_MARGIN + 0.02f);
+        assert(settled < crit);
+
+        // MAX_POWER_PCT 75 : la rampe en m/s du FSM est reduite de 50/75 (acceleration reelle multipliee par 1,5)
+        FsmNavigator fast;
+        fast.init(0.58f, 0.035f, 0.32f, 0.20f, 0.735f);
+        fast.set_power_pct(75.0f);
+        const float v1 = fast.compute_bounded_velocity(0.32f, dt);
+        assert(near(v1 / dt, 0.735f * FsmNavigator::BALL_ACCEL_MARGIN * (50.0f / 75.0f), 1e-3f));
+        // L'evitement garde la puissance de reference : pas de compensation
+        FsmNavigator avoid;
+        avoid.init(0.58f, 0.035f, 0.32f, 0.20f, 0.735f);
+        avoid.set_power_pct(75.0f);
+        const float v2 = avoid.compute_bounded_velocity(0.32f, dt, 0.0f, true);
+        assert(near(v2 / dt, 0.735f * FsmNavigator::BALL_ACCEL_MARGIN, 1e-3f));
+
+        // Freinage possible meme en virage serre (plancher de a_x)
+        FsmNavigator brk;
+        brk.init(0.58f, 0.035f, 0.32f, 0.20f, 0.735f);
+        for (int i = 0; i < 100; ++i) brk.compute_bounded_velocity(0.32f, dt, 45.0f);
+        const float before = brk.get_current_speed();
+        const float after = brk.compute_bounded_velocity(0.0f, dt, 45.0f);
+        assert(before - after > 0.002f);
+    }
+
+    // --- Ligne perdue : Failure en rampe ; defaillance materielle : coupure immediate ---
+    {
+        using shared::fsm::MachineStates;
+        const float dark[5] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+        FsmNavigator n;
+        n.init(0.58f, 0.035f, 0.32f, 0.20f, 0.735f);
+        n.reset_controllers();
+        MachineStates st = MachineStates::LineFollowingForward;
+        for (int i = 0; i < 400 && st == MachineStates::LineFollowingForward; ++i) {
+            auto out = n.step(st, 0.02f, 100.0f, dark, false, 1.0f, 20.0f, 0.12f, 0.8f);
+            assert(!out.req_emergency);
+            if (out.state_changed) st = out.next_state;
+        }
+        assert(st == MachineStates::Failure);
+        auto soft = n.step(st, 0.02f, 100.0f, dark, false, 1.0f, 20.0f, 0.12f, 0.8f);
+        assert(!soft.req_emergency && near(soft.desired_velocity, 0.0f));   // rampe : consigne 0, pas de coupure
+        n.set_hard_failure(true);
+        assert(n.step(st, 0.02f, 100.0f, dark, false, 1.0f, 20.0f, 0.12f, 0.8f).req_emergency);
+        n.reset_controllers();
+        assert(!n.step(st, 0.02f, 100.0f, dark, false, 1.0f, 20.0f, 0.12f, 0.8f).req_emergency);
+        assert(n.step(MachineStates::Abort, 0.02f, 100.0f, dark, false, 1.0f, 20.0f, 0.12f, 0.8f).req_emergency);
     }
 
     std::cout << "test_fsm_navigator: tous les tests passent" << std::endl;

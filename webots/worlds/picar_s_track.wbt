@@ -1,0 +1,64 @@
+#VRML_SIM R2023b utf8
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/floors/protos/RectangleArena.proto"
+EXTERNPROTO "../protos/PiCarS.proto"
+
+WorldInfo {
+  info [
+    "SunFounder PiCar-S line tracking simulation world."
+    "Autonomous line tracking test bench connecting to SimBridge via TCP."
+  ]
+  title "PiCar-S Track"
+  # Physique a 4 ms (roues de 25 g : 20 ms est trop grossier pour les contacts) ; le controleur garde sa boucle a 20 ms (50 Hz).
+  basicTimeStep 4
+  coordinateSystem "ENU"
+  contactProperties [
+    # Pneu caoutchouc sur sol lisse : frottement ~0.9, aucun rebond (le defaut Webots est bounce 0.5).
+    ContactProperties {
+      material1 "default"
+      material2 "picar_tire"
+      coulombFriction [
+        0.9
+      ]
+      bounce 0
+      softCFM 1e-05
+    }
+  ]
+}
+Viewpoint {
+  # Camera Webots (convention ENU, R2022+) : regarde selon son axe +x, z vers le haut. Vue de 3/4 arriere sur le robot au depart.
+  # (L'ancienne orientation 0.28 0.21 -0.93 2.65 regardait dos a la piste : vue 3D vide.)
+  orientation -0.3520 0.3239 0.8782 1.7823
+  position 0.2 -2.8 2.2
+  follow "PiCar-S"
+  followSmoothness 0.05
+}
+TexturedBackground {
+}
+DirectionalLight {
+  ambientIntensity 0.5
+  direction -0.4 0.5 -1
+  intensity 1
+  castShadows TRUE
+}
+RectangleArena {
+  floorSize 3 3
+  floorTileSize 3 3
+  floorAppearance PBRAppearance {
+    baseColorMap ImageTexture {
+      url [
+        "textures/line_track.png"
+      ]
+    }
+    roughness 1
+    metalness 0
+  }
+  wallHeight 0.05
+}
+PiCarS {
+  translation 0 -0.5 0.0225
+  rotation 0 0 1 0
+  name "PiCar-S"
+  controller "picar_s_controller"
+}

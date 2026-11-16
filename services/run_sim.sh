@@ -76,7 +76,27 @@ if ! kill -0 "${PIDS[0]}" 2>/dev/null; then
     exit 1
 fi
 
-"$BUILD_DIR/FSM/FSM" & PIDS+=($!)
+# Configuration propre a la simulation : copie de fsm.conf (robot) + surcharges de fsm.sim.conf, dans un dossier temporaire.
+# Le FSM cherche d'abord ./fsm.conf : lance depuis ce dossier, il lit (et reecrit) la copie, jamais le vrai fichier.
+SIM_CONF_DIR="${SIM_CONF_DIR:-/tmp/picar-sim-conf}"
+mkdir -p "$SIM_CONF_DIR"
+: > "$SIM_CONF_DIR/fsm.conf"
+for base in "$SRC_DIR/fsm.conf" "$SRC_DIR/../fsm.conf" "/fsm.conf"; do   # /fsm.conf : montage Docker
+    if [ -f "$base" ]; then cp "$base" "$SIM_CONF_DIR/fsm.conf"; break; fi
+done
+if [ -f "$SRC_DIR/fsm.sim.conf" ]; then
+    while IFS= read -r line; do
+        case "$line" in ''|'#'*|' '*'#'*) continue ;; esac
+        key="${line%%=*}"
+        grep -v "^${key}=" "$SIM_CONF_DIR/fsm.conf" > "$SIM_CONF_DIR/fsm.conf.tmp"
+        mv "$SIM_CONF_DIR/fsm.conf.tmp" "$SIM_CONF_DIR/fsm.conf"
+        echo "$line" >> "$SIM_CONF_DIR/fsm.conf"
+    done < "$SRC_DIR/fsm.sim.conf"
+    overrides="$(grep -v '^ *#' "$SRC_DIR/fsm.sim.conf" | grep '=' | tr '\n' ' ')"
+    echo "[run_sim] fsm.conf de simulation : $SIM_CONF_DIR/fsm.conf (surcharges : ${overrides:-aucune, memes valeurs que le robot})"
+fi
+
+(cd "$SIM_CONF_DIR" && exec "$BUILD_DIR/FSM/FSM") & PIDS+=($!)
 
 if [ "${TELEMETRY:-0}" = "1" ]; then
     "$BUILD_DIR/TelemetryService/TelemetryService" --no-ui & PIDS+=($!)

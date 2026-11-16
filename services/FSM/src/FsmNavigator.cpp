@@ -12,9 +12,23 @@ void FsmNavigator::init(float kp, float kd, float cruise_speed, float min_curve_
     m_min_curve_speed = min_curve_speed;
     m_line_controller = std::make_unique<LineFollowerController>(kp, kd, cruise_speed, min_curve_speed);
     m_motion_profiler = std::make_unique<MotionProfiler>(max_accel, cruise_speed);
-    m_speed_planner.set_max_accel(max_accel);
-    m_speed_planner.set_max_brake(max_accel);
-    m_speed_planner.set_ball_max_accel(max_accel);
+    m_max_accel = max_accel;
+    apply_planner_limits(1.0f);
+}
+
+void FsmNavigator::apply_planner_limits(float accel_scale) {
+    // Seuil bille avec marge ; la meme valeur borne l'acceleration, le freinage et la resultante (longitudinale + laterale).
+    // La limite laterale du planificateur (filet de securite) est aussi le seuil avec marge ; la navigation reduit deja la
+    // vitesse en courbe par Ackermann x facteur de securite, plus stricte en usage normal.
+    const float ball = m_max_accel * BALL_ACCEL_MARGIN * accel_scale;
+    m_speed_planner.set_ball_max_accel(ball);
+    m_speed_planner.set_max_accel(ball);
+    m_speed_planner.set_max_brake(ball);
+    m_speed_planner.set_max_lat_accel(ball);
+}
+
+void FsmNavigator::set_power_pct(float max_power_pct) {
+    m_power_accel_scale = REFERENCE_POWER_PCT / std::max(max_power_pct, REFERENCE_POWER_PCT);
 }
 
 void FsmNavigator::update_controllers(float kp, float kd, float cruise_speed, float min_curve_speed, float max_accel) {
@@ -30,9 +44,8 @@ void FsmNavigator::update_controllers(float kp, float kd, float cruise_speed, fl
         m_line_controller->set_cruise_speed(cruise_speed);
         m_line_controller->set_min_curve_speed(min_curve_speed);
     }
-    m_speed_planner.set_max_accel(max_accel);
-    m_speed_planner.set_max_brake(max_accel);
-    m_speed_planner.set_ball_max_accel(max_accel);
+    m_max_accel = max_accel;
+    apply_planner_limits(1.0f);
 }
 
 void FsmNavigator::reset_controllers() {
@@ -44,20 +57,22 @@ void FsmNavigator::reset_controllers() {
     m_state_distance = 0.0f;
     m_line_lost_timer = 0.0f;
     m_course_finished = false;
+    m_hard_failure = false;
 }
 
 float FsmNavigator::get_current_speed() const {
-    return m_motion_profiler ? m_motion_profiler->get_current_speed() : 0.0f;
+    return m_speed_planner.get_current_speed();
 }
 
-float FsmNavigator::compute_bounded_velocity(float desired_v, float dt) {
-    return m_motion_profiler ? m_motion_profiler->update(desired_v, dt) : desired_v;
+float FsmNavigator::compute_bounded_velocity(float desired_v, float dt, float steer_deg, bool avoiding) {
+    apply_planner_limits(avoiding ? 1.0f : m_power_accel_scale);
+    const float target = std::clamp(desired_v, -m_cruise_speed, m_cruise_speed);
+    // Pas d'obstacle ici (-1) : l'approche est geree par limit_approach_speed, et l'evitement doit pouvoir passer pres de l'obstacle.
+    return m_speed_planner.update(target, steer_deg, -1.0f, 0.0f, dt, 1.0f);
 }
 
 bool FsmNavigator::must_cut_power(shared::fsm::MachineStates state, bool req_emergency) {
-    return req_emergency ||
-           state == shared::fsm::MachineStates::Failure ||
-           state == shared::fsm::MachineStates::Abort;
+    return req_emergency || state == shared::fsm::MachineStates::Abort;
 }
 
 float FsmNavigator::compute_motor_power(float bounded_v, float cruise_speed, float power_at_cruise_pct) {
@@ -67,9 +82,9 @@ float FsmNavigator::compute_motor_power(float bounded_v, float cruise_speed, flo
 }
 
 float FsmNavigator::limit_approach_speed(float desired_v, float current_dist_cm, float obstacle_stop_dist_cm) const {
-    if (!m_motion_profiler || current_dist_cm >= OBSTACLE_SLOWDOWN_THRESHOLD_CM) return desired_v;
+    if (current_dist_cm >= OBSTACLE_SLOWDOWN_THRESHOLD_CM) return desired_v;
     const float distance_to_stop_m = (current_dist_cm - obstacle_stop_dist_cm) / 100.0f;
-    return std::min(desired_v, m_motion_profiler->calculate_max_safe_approach_speed(distance_to_stop_m));
+    return std::min(desired_v, m_speed_planner.calculate_max_safe_approach_speed(distance_to_stop_m));
 }
 
 FsmNavOutput FsmNavigator::step(shared::fsm::MachineStates current_state, float dt,
@@ -141,10 +156,10 @@ FsmNavOutput FsmNavigator::step(shared::fsm::MachineStates current_state, float 
                     out.desired_velocity = min_curve_spd * 0.85f;
                 } else {
                     // Étape 3 délai de recherche expiré -> arrêt sécuritaire
+                    // Ligne perdue : arret en rampe (pas de coupure brutale, la bille tomberait)
                     set_transition(shared::fsm::MachineStates::Failure);
                     out.desired_velocity = 0.0f;
                     out.desired_steering = 0.0f;
-                    out.req_emergency = true;
                     break;
                 }
             } else {
@@ -202,8 +217,9 @@ FsmNavOutput FsmNavigator::step(shared::fsm::MachineStates current_state, float 
             if (res == ObstacleAvoidance::DeviationResult::LineFound) {
                 set_transition(shared::fsm::MachineStates::LineFollowingForward);
             } else if (res == ObstacleAvoidance::DeviationResult::SearchLine) {
-                set_transition(shared::fsm::MachineStates::Failure);
-                out.req_emergency = true;
+                set_transition(shared::fsm::MachineStates::Failure);   // arret en rampe
+                out.desired_velocity = 0.0f;
+                out.desired_steering = 0.0f;
             }
             break;
         }
@@ -213,7 +229,8 @@ FsmNavOutput FsmNavigator::step(shared::fsm::MachineStates current_state, float 
         default:
             out.desired_velocity = 0.0f;
             out.desired_steering = 0.0f;
-            out.req_emergency = true;
+            // Abort et defaillance materielle : coupure immediate ; Failure logicielle (ligne perdue) : rampe de freinage
+            out.req_emergency = (current_state != shared::fsm::MachineStates::Failure) || m_hard_failure;
             break;
     }
 

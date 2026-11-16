@@ -101,6 +101,7 @@ bool FSM::init() {
     m_hz = std::clamp(static_cast<int>(m_ipc_handler.get_float("HZ", static_cast<float>(m_hz))), 10, 10000);
 
     m_navigator.init(m_line_kp, m_line_kd, m_straight_cruise_speed, m_min_curve_speed, m_max_acceleration);
+    m_navigator.set_power_pct(m_max_power_pct);
 
     if (!m_shm_bridge.init(shared::fsm::MachineStates::Init)) {
         std::cerr << "[FSM] Failed to initialize SHM bridge!" << std::endl;
@@ -163,6 +164,7 @@ void FSM::run() {
             if (m_shm_bridge.check_watchdog(max_watchdog_cycles)) {
                 if (m_current_state != shared::fsm::MachineStates::Failure) {
                     std::cerr << "[FSM] Watchdog: Sensor heartbeat timeout (250ms) -> Failure" << std::endl;
+                    m_navigator.set_hard_failure(true);
                     transition_to(shared::fsm::MachineStates::Failure);
                 }
             }
@@ -171,6 +173,7 @@ void FSM::run() {
         }
 
         if (shm_emergency && m_current_state != shared::fsm::MachineStates::Failure) {
+            m_navigator.set_hard_failure(true);
             transition_to(shared::fsm::MachineStates::Failure);
         }
 
@@ -194,10 +197,11 @@ void FSM::run() {
         }
 
         // 6. Smooth velocity profiling & power computation
-        float bounded_velocity = m_navigator.compute_bounded_velocity(nav_out.desired_velocity, dt);
         // L'evitement d'obstacle garde la puissance de reference (ses durees sont calibrees pour elle) ; le reste suit MAX_POWER_PCT
         const bool avoiding = (m_current_state == shared::fsm::MachineStates::RightDeviation ||
                                m_current_state == shared::fsm::MachineStates::LeftDeviation);
+        float bounded_velocity = m_navigator.compute_bounded_velocity(nav_out.desired_velocity, dt,
+                                                                      nav_out.desired_steering, avoiding);
         float motor_power_pct = m_navigator.compute_motor_power(bounded_velocity, m_straight_cruise_speed,
                                                                 avoiding ? FsmNavigator::REFERENCE_POWER_PCT : m_max_power_pct);
         // Coupure immediate seulement en urgence/echec. En Stopped (arrivee, pause), la vitesse suit le profil de freinage
@@ -254,6 +258,7 @@ bool FSM::apply_config_key(const std::string& key, float value) {
     }
     if (key == "MAX_POWER_PCT") {
         m_max_power_pct = std::clamp(value, FsmNavigator::MIN_POWER_PCT, FsmNavigator::MAX_POWER_PCT);
+        m_navigator.set_power_pct(m_max_power_pct);
         m_ipc_handler.set_float("MAX_POWER_PCT", m_max_power_pct);
         return true;
     }

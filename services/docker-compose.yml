@@ -25,6 +25,9 @@ services:
     container_name: picar-sim
     volumes:
       - .:/workspace
+      # fsm.conf est a la racine du depot : sans ce montage, le FSM de simulation tournait avec les valeurs C++ par defaut.
+      # run_sim.sh le copie (+ surcharges de fsm.sim.conf) ; lecture seule, le vrai fichier n'est jamais modifie.
+      - ../fsm.conf:/fsm.conf:ro
     working_dir: /workspace
     ports:
       - "9000:9000"
